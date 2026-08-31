@@ -1,0 +1,32 @@
+{
+  "name": "attendance-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Windows desktop Attendance Management System (Electron + NestJS + MySQL)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:api": "pnpm --filter @attendance/api dev",
+    "dev:desktop": "pnpm --filter @attendance/desktop dev",
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "db:up": "docker compose up -d mysql",
+    "db:down": "docker compose down",
+    "package:desktop": "pnpm --filter @attendance/desktop package"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.10.1",
+    "eslint": "^9.15.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.14",
+    "prettier": "^3.4.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.16.0"
+  }
+}

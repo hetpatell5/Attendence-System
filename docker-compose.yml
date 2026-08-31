@@ -1,0 +1,48 @@
+# Local development only.
+# Production MySQL is hosted and managed on CloudPanel — this container
+# is never used in production and the desktop app never connects to it (or
+# any database) directly. Only the NestJS API talks to MySQL.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: attendance-mysql-dev
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_password
+      MYSQL_USER: attendance
+      MYSQL_PASSWORD: attendance_dev_password
+      MYSQL_DATABASE: attendance_dev
+    ports:
+      - "3306:3306"
+    volumes:
+      - attendance_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_dev_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Temporary vessel for the one-off legacy BMA data migration only. Not part
+  # of normal dev — start explicitly with `--profile legacy-migration` and
+  # tear down (`down -v`) once the migration script has finished, since the
+  # mounted dump contains real employee PII and a leaked SMTP credential.
+  legacy-mysql:
+    image: mysql:8.4
+    container_name: attendance-legacy-mysql
+    profiles: ["legacy-migration"]
+    environment:
+      MYSQL_ROOT_PASSWORD: legacy
+      MYSQL_DATABASE: bma_legacy
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./Data:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -plegacy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  attendance_mysql_data:

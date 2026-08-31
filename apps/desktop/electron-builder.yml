@@ -1,0 +1,26 @@
+# Windows packaging configuration (Phase 10).
+appId: com.attendance.desktop
+productName: Attendance Management System
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - package.json
+  - dist/**/*
+  - dist-electron/**/*
+extraMetadata:
+  main: dist-electron/main.js
+win:
+  target: nsis
+  artifactName: "${productName}-Setup-${version}.${ext}"
+  # icon: build/icon.ico   # uncomment once a real 256x256 .ico is added at apps/desktop/build/icon.ico —
+  #                          without it electron-builder falls back to the default Electron icon.
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Attendance
+# No update server exists yet — do not attempt to publish artifacts anywhere.
+publish: null

@@ -1,0 +1,61 @@
+src/pages/admin/AnnouncementsPage.tsx(9,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/admin/AnnouncementsPage.tsx(12,10): error TS6133: 'Megaphone' is declared but its value is never read.
+src/pages/admin/AnnouncementsPage.tsx(58,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/AnnouncementsPage.tsx(65,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/AttendanceManagementPage.tsx(7,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/admin/AttendanceManagementPage.tsx(142,18): error TS2339: Property 'isLate' does not exist on type 'Attendance & { employee: Employee; }'.
+src/pages/admin/AttendanceManagementPage.tsx(255,20): error TS2339: Property 'meta' does not exist on type 'NoInfer<Paginated<Attendance & { employee: Employee; }>>'.
+src/pages/admin/AttendanceManagementPage.tsx(255,33): error TS2339: Property 'meta' does not exist on type 'Paginated<Attendance & { employee: Employee; }>'.
+src/pages/admin/AttendanceManagementPage.tsx(258,78): error TS2339: Property 'meta' does not exist on type 'Paginated<Attendance & { employee: Employee; }>'.
+src/pages/admin/AttendanceManagementPage.tsx(258,105): error TS2339: Property 'meta' does not exist on type 'Paginated<Attendance & { employee: Employee; }>'.
+src/pages/admin/AttendanceManagementPage.tsx(262,114): error TS2339: Property 'meta' does not exist on type 'Paginated<Attendance & { employee: Employee; }>'.
+src/pages/admin/EmployeeDetailPage.tsx(48,27): error TS2339: Property 'shiftId' does not exist on type 'Employee'.
+src/pages/admin/EmployeeDetailPage.tsx(279,92): error TS2339: Property 'shift' does not exist on type 'Employee'.
+src/pages/admin/EmployeesPage.tsx(82,53): error TS2339: Property 'user' does not exist on type 'Employee'.
+src/pages/admin/EmployeesPage.tsx(113,21): error TS2339: Property 'meta' does not exist on type 'NoInfer<Paginated<Employee>>'.
+src/pages/admin/EmployeesPage.tsx(113,39): error TS2339: Property 'meta' does not exist on type 'Paginated<Employee>'.
+src/pages/admin/EmployeesPage.tsx(116,79): error TS2339: Property 'meta' does not exist on type 'Paginated<Employee>'.
+src/pages/admin/EmployeesPage.tsx(116,111): error TS2339: Property 'meta' does not exist on type 'Paginated<Employee>'.
+src/pages/admin/EmployeesPage.tsx(131,45): error TS2339: Property 'meta' does not exist on type 'Paginated<Employee>'.
+src/pages/admin/HolidaysPage.tsx(8,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/admin/HolidaysPage.tsx(50,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/HolidaysPage.tsx(52,37): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/pages/admin/HolidaysPage.tsx(57,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/LeaveManagementPage.tsx(8,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/admin/LeaveManagementPage.tsx(32,76): error TS2353: Object literal may only specify known properties, and 'defaultDaysOff' does not exist in type 'Partial<LeaveType> | (() => Partial<LeaveType>)'.
+src/pages/admin/LeaveManagementPage.tsx(66,31): error TS2353: Object literal may only specify known properties, and 'defaultDaysOff' does not exist in type 'SetStateAction<Partial<LeaveType>>'.
+src/pages/admin/LeaveManagementPage.tsx(97,67): error TS2339: Property 'description' does not exist on type 'LeaveType'.
+src/pages/admin/LeaveManagementPage.tsx(98,75): error TS2339: Property 'defaultDaysOff' does not exist on type 'LeaveType'.
+src/pages/admin/LeaveManagementPage.tsx(105,17): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/LeaveManagementPage.tsx(109,13): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'SetStateAction<Partial<LeaveType>>'.
+src/pages/admin/LeaveManagementPage.tsx(109,28): error TS2339: Property 'description' does not exist on type 'LeaveType'.
+src/pages/admin/LeaveManagementPage.tsx(110,31): error TS2339: Property 'defaultDaysOff' does not exist on type 'LeaveType'.
+src/pages/admin/LeaveManagementPage.tsx(133,37): error TS2353: Object literal may only specify known properties, and 'defaultDaysOff' does not exist in type 'SetStateAction<Partial<LeaveType>>'.
+src/pages/admin/LeaveManagementPage.tsx(237,33): error TS2339: Property 'description' does not exist on type 'Partial<LeaveType>'.
+src/pages/admin/LeaveManagementPage.tsx(238,60): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'SetStateAction<Partial<LeaveType>>'.
+src/pages/admin/LeaveManagementPage.tsx(247,35): error TS2339: Property 'defaultDaysOff' does not exist on type 'Partial<LeaveType>'.
+src/pages/admin/LeaveManagementPage.tsx(248,62): error TS2353: Object literal may only specify known properties, and 'defaultDaysOff' does not exist in type 'SetStateAction<Partial<LeaveType>>'.
+src/pages/admin/OrganizationPage.tsx(7,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/admin/OrganizationPage.tsx(48,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/OrganizationPage.tsx(56,21): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/OrganizationPage.tsx(136,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/OrganizationPage.tsx(144,21): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/OrganizationPage.tsx(226,19): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/OrganizationPage.tsx(234,21): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/SalaryManagementPage.tsx(8,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/admin/SalaryManagementPage.tsx(117,17): error TS2322: Type '"icon"' is not assignable to type '"default" | "sm" | "lg" | null | undefined'.
+src/pages/admin/SalaryManagementPage.tsx(203,91): error TS18046: 'r' is of type 'unknown'.
+src/pages/employee/EmployeeDashboardPage.tsx(10,1): error TS6133: 'cn' is declared but its value is never read.
+src/pages/employee/MyAttendancePage.tsx(9,1): error TS6133: 'cn' is declared but its value is never read.
+src/pages/employee/MyLeavesPage.tsx(6,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/employee/MySalaryPage.tsx(6,18): error TS6133: 'DialogHeader' is declared but its value is never read.
+src/pages/employee/MySalaryPage.tsx(6,32): error TS6133: 'DialogTitle' is declared but its value is never read.
+src/pages/employee/MySalaryPage.tsx(6,45): error TS6133: 'DialogFooter' is declared but its value is never read.
+src/pages/employee/MySalaryPage.tsx(6,59): error TS2305: Module '"@/components/ui/dialog"' has no exported member 'DialogContent'.
+src/pages/employee/MySalaryPage.tsx(9,40): error TS6133: 'Clock' is declared but its value is never read.
+src/pages/employee/MySalaryPage.tsx(144,33): error TS2339: Property 'payType' does not exist on type 'SalaryRecord'.
+src/pages/employee/MySalaryPage.tsx(147,89): error TS2339: Property 'advanceDeducted' does not exist on type 'SalaryRecord'.
+src/pages/employee/ProfilePage.tsx(8,27): error TS6133: 'Phone' is declared but its value is never read.
+src/pages/LoginPage.tsx(8,1): error TS6192: All imports in import declaration are unused.
+src/pages/SettingsPage.tsx(30,30): error TS2339: Property 'allowedIps' does not exist on type 'NoInfer<CompanySettings>'.

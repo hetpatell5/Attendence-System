@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+release/
+*.tsbuildinfo
+
+# Electron builder
+apps/desktop/dist-electron/
+apps/desktop/release/
+
+# Env files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Prisma
+apps/api/generated/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+
+# Legacy migration source data — contains real employee PII and a leaked
+# SMTP credential; must never be committed.
+Data/

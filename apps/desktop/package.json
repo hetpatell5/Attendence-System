@@ -1,0 +1,44 @@
+{
+  "name": "@attendance/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c blue,green \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on tcp:5173 && tsc -p electron/tsconfig.json && electron .",
+    "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p electron/tsconfig.json",
+    "package": "pnpm build && electron-builder --win --config electron-builder.yml",
+    "package:dir": "pnpm build && electron-builder --dir --config electron-builder.yml",
+    "shadcn": "shadcn@latest"
+  },
+  "dependencies": {
+    "@attendance/shared": "workspace:*",
+    "@radix-ui/react-slot": "^1.1.1",
+    "@tanstack/react-query": "^5.62.7",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dotenv": "^17.4.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.85.0",
+    "react-router-dom": "^6.28.0",
+    "tailwind-merge": "^2.5.5",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.16",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "wait-on": "^8.0.1"
+  }
+}

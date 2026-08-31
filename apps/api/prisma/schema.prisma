@@ -1,0 +1,958 @@
+// Prisma schema — auth/RBAC (Phase 2) + organization/attendance/leave/salary/
+// notifications (Phase 3+).
+//
+// Single-tenant for now: CompanySettings is a seeded singleton row (see
+// common/constants.ts for its fixed id). No companyId column exists on any
+// domain table. If multi-tenancy is needed later, each table gains an
+// additive `companyId` column (backfilled to the singleton's id) and each
+// service's list-query "scope" helper gains a companyId clause — this schema
+// is deliberately structured so that migration is additive, not a rewrite.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  HR
+  EMPLOYEE
+}
+
+enum AuditEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  TOKEN_REFRESH
+  TOKEN_REUSE_DETECTED
+
+  EMPLOYEE_CREATED
+  EMPLOYEE_UPDATED
+  EMPLOYEE_DEACTIVATED
+  EMPLOYEE_REACTIVATED
+
+  ATTENDANCE_PUNCH_IN
+  ATTENDANCE_PUNCH_OUT
+  ATTENDANCE_CREATED
+  ATTENDANCE_UPDATED
+  ATTENDANCE_DELETED
+
+  LEAVE_REQUESTED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  LEAVE_CANCELLED
+  LEAVE_BALANCE_ADJUSTED
+  LEAVE_TYPE_CREATED
+  LEAVE_TYPE_UPDATED
+
+  SALARY_CREATED
+  SALARY_UPDATED
+  SALARY_STATUS_CHANGED
+  SALARY_PAID
+
+  DEPARTMENT_CREATED
+  DEPARTMENT_UPDATED
+  DESIGNATION_CREATED
+  DESIGNATION_UPDATED
+
+  SHIFT_CREATED
+  SHIFT_UPDATED
+  EMPLOYEE_SHIFT_ASSIGNED
+
+  HOLIDAY_CREATED
+  HOLIDAY_UPDATED
+  HOLIDAY_DELETED
+
+  SETTINGS_UPDATED
+  USER_ROLE_CHANGED
+  REPORT_EXPORTED
+
+  ANNOUNCEMENT_CREATED
+  ANNOUNCEMENT_UPDATED
+  ANNOUNCEMENT_DELETED
+  SALARY_ADVANCE_RECORDED
+  SALARY_ADVANCE_DELETED
+  LEGACY_DATA_IMPORTED
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LEAVE
+  HOLIDAY
+  WEEKLY_OFF
+}
+
+enum AttendanceSource {
+  MANUAL_PUNCH
+  ADMIN_ENTRY
+  ADMIN_ADJUSTMENT
+  SYSTEM_JOB
+  BIOMETRIC
+  LEGACY_IMPORT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveDayPart {
+  FULL_DAY
+  FIRST_HALF
+  SECOND_HALF
+}
+
+enum SalaryStatus {
+  PENDING
+  PROCESSING
+  PAID
+  HOLD
+}
+
+enum SalaryComponentType {
+  EARNING
+  DEDUCTION
+}
+
+enum NotificationType {
+  LEAVE_SUBMITTED
+  LEAVE_REQUESTED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  LEAVE_CANCELLED
+  SALARY_PAID
+  SALARY_GENERATED
+  ATTENDANCE_ADJUSTED
+  ATTENDANCE_EVENT
+  ANNOUNCEMENT_PUBLISHED
+}
+
+enum PayType {
+  SALARIED
+  HOURLY
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Phase 2 — unchanged except for the new `employee` back-relation)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  email        String?  @unique
+  passwordHash String
+  name         String
+  role         Role     @default(EMPLOYEE)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  employee      Employee?
+
+  @@index([role])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  familyId    String
+  replacedBy  String?
+  revokedAt   DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  createdByIp String?
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id         String         @id @default(uuid())
+  eventType  AuditEventType
+  userId     String?
+  user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email      String?
+  ipAddress  String?
+  metadata   Json?          @db.Json
+  // Domain-change fields (Phase 3+) — nullable so existing auth-event rows
+  // (which don't use them) remain valid.
+  entityType String?
+  entityId   String?
+  oldValue   Json?          @db.Json
+  newValue   Json?          @db.Json
+  reason     String?        @db.Text
+  createdAt  DateTime       @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Company settings (singleton)
+// ---------------------------------------------------------------------------
+
+model CompanySettings {
+  id                   String   @id @default(uuid())
+  companyName          String   @default("My Company")
+  timezone             String   @default("Asia/Kolkata")
+  currencyCode         String   @default("INR")
+  weekStartsOn         Int      @default(1)
+  // Comma-separated day numbers (0=Sun … 6=Sat), e.g. "0" or "0,6".
+  // Stored as a plain string because MySQL has no native array type.
+  // The SettingsService parses this to number[] before returning it to callers.
+  weeklyOffDays        String   @default("0")
+  defaultShiftId       String?
+  fiscalYearStartMonth Int      @default(4)
+  // Comma-separated list of allowed public IPs for punch-in/out (office WiFi).
+  // Empty string = restriction disabled (allow all). Example: "203.0.113.1,203.0.113.2"
+  allowedIps           String   @default("")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("company_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Organization
+// ---------------------------------------------------------------------------
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String?  @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employees Employee[]
+  holidays  Holiday[]
+
+  @@map("departments")
+}
+
+model Designation {
+  id          String   @id @default(uuid())
+  title       String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employees Employee[]
+
+  @@map("designations")
+}
+
+model Shift {
+  id                    String   @id @default(uuid())
+  name                  String   @unique
+  // Wall-clock "HH:mm" local time — a shift start is a rule, not an instant.
+  // If endTime <= startTime the shift is treated as crossing midnight.
+  startTime             String
+  endTime               String
+  gracePeriodMinutes    Int      @default(15)
+  breakDurationMinutes  Int      @default(60)
+  workingHours          Decimal  @default(8.00) @db.Decimal(4, 2)
+  halfDayThresholdHours Decimal  @default(4.00) @db.Decimal(4, 2)
+  overtimeAfterMinutes  Int      @default(0)
+  isOvertimeEnabled     Boolean  @default(true)
+  isActive              Boolean  @default(true)
+  legacySourceId        Int?     @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  employeeShifts EmployeeShift[]
+
+  @@map("app_shifts")
+}
+
+// ---------------------------------------------------------------------------
+// Employees
+// ---------------------------------------------------------------------------
+
+model Employee {
+  id              String         @id @default(uuid())
+  employeeCode    String         @unique
+  userId          String?        @unique
+  user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  firstName       String
+  lastName        String
+  email           String         @unique
+  phone           String?
+  dateOfBirth     DateTime?      @db.Date
+  joiningDate     DateTime       @db.Date
+  departmentId    String?
+  department      Department?    @relation(fields: [departmentId], references: [id])
+  designationId   String?
+  designation     Designation?   @relation(fields: [designationId], references: [id])
+  // Current contractual base salary; snapshotted into SalaryRecord.basicSalary
+  // at generation time so past payslips never silently change.
+  baseSalary      Decimal        @default(0) @db.Decimal(12, 2)
+  // HOURLY employees are paid workedHours x hourlyRate + commission each
+  // month instead of a fixed baseSalary. hourlyRate here is only the current
+  // default used to seed generation — the rate actually applied each month is
+  // snapshotted onto SalaryRecord.hourRate, since legacy data shows this rate
+  // was routinely renegotiated month to month.
+  payType         PayType        @default(SALARIED)
+  hourlyRate      Decimal        @default(0) @db.Decimal(10, 2)
+  status          EmployeeStatus @default(ACTIVE)
+  profilePhotoUrl String?
+  // Set only for employees created by the legacy-system migration script;
+  // null for every natively-created employee. Doubles as the idempotency key
+  // that makes re-running the migration safe.
+  legacySourceId  Int?           @unique
+
+  address                  String?  @db.Text
+  addressLine1             String?
+  addressLine2             String?
+  city                     String?
+  state                    String?
+  postalCode               String?
+  country                  String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  alternatePhone           String?
+  targetSalary             Decimal? @db.Decimal(10, 2)
+  monthlyIncrement         Decimal? @db.Decimal(10, 2)
+  incrementInterval        Int      @default(1)
+  incrementEffectiveFrom   DateTime? @db.Date
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deactivatedAt DateTime?
+
+  employeeShifts        EmployeeShift[]
+  attendance            Attendance[]
+  leaveRequests         LeaveRequest[]
+  leaveBalances         LeaveBalance[]
+  salaryRecords         SalaryRecord[]
+  salaryAdvances        SalaryAdvance[]
+  salaryHistory         SalaryHistory[]
+  legacySalarySnapshots LegacySalarySnapshot[]
+  notifications         Notification[]
+
+  @@index([status])
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([lastName, firstName])
+  @@map("app_employees")
+}
+
+model EmployeeShift {
+  id            String    @id @default(uuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftId       String
+  shift         Shift     @relation(fields: [shiftId], references: [id])
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([employeeId, effectiveFrom])
+  @@map("app_employee_shifts")
+}
+
+// ---------------------------------------------------------------------------
+// Attendance
+// ---------------------------------------------------------------------------
+
+model Attendance {
+  id                String           @id @default(uuid())
+  employeeId        String
+  employee          Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceDate    DateTime         @db.Date
+  punchInAt         DateTime?
+  punchOutAt        DateTime?
+  // Additional punch sessions for multi-punch days (break + return).
+  // Array of {punchInAt: ISO string, punchOutAt: ISO string | null}
+  // The primary pair is stored in punchInAt/punchOutAt above.
+  punchPairs        Json?
+  shiftId           String?
+  status            AttendanceStatus @default(ABSENT)
+  workedMinutes     Int              @default(0)
+  lateMinutes       Int              @default(0)
+  earlyLeaveMinutes Int              @default(0)
+  overtimeMinutes   Int              @default(0)
+  source            AttendanceSource @default(MANUAL_PUNCH)
+  leaveRequestId    String?
+  holidayId         String?
+  notes             String?          @db.Text
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  adjustments AttendanceAdjustment[]
+
+  @@unique([employeeId, attendanceDate])
+  @@index([attendanceDate])
+  @@index([employeeId, attendanceDate])
+  @@index([status])
+  @@map("app_attendance")
+}
+
+model AttendanceAdjustment {
+  id               String     @id @default(uuid())
+  attendanceId     String
+  attendance       Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  adjustedByUserId String
+  reason           String     @db.Text
+  oldValue         Json       @db.Json
+  newValue         Json       @db.Json
+  createdAt        DateTime   @default(now())
+
+  @@index([attendanceId])
+  @@map("app_attendance_adjustments")
+}
+
+// ---------------------------------------------------------------------------
+// Leave
+// ---------------------------------------------------------------------------
+
+model LeaveType {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  code              String   @unique
+  defaultAnnualDays Decimal  @default(0) @db.Decimal(5, 2)
+  isPaid            Boolean  @default(true)
+  requiresApproval  Boolean  @default(true)
+  countsAsPresent   Boolean  @default(true)
+  allowHalfDay      Boolean  @default(true)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  leaveRequests LeaveRequest[]
+  leaveBalances LeaveBalance[]
+
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id                 String    @id @default(uuid())
+  employeeId         String
+  employee           Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId        String
+  leaveType          LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year               Int
+  entitledDays       Decimal   @default(0) @db.Decimal(5, 2)
+  usedDays           Decimal   @default(0) @db.Decimal(5, 2)
+  carriedForwardDays Decimal   @default(0) @db.Decimal(5, 2)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([employeeId, year])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id               String       @id @default(uuid())
+  employeeId       String
+  employee         Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId      String
+  leaveType        LeaveType    @relation(fields: [leaveTypeId], references: [id])
+  startDate        DateTime     @db.Date
+  endDate          DateTime     @db.Date
+  dayPart          LeaveDayPart @default(FULL_DAY)
+  totalDays        Decimal      @db.Decimal(5, 2)
+  reason           String       @db.Text
+  status           LeaveStatus  @default(PENDING)
+  attachmentUrl    String?
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewRemarks    String?      @db.Text
+  cancelledAt      DateTime?
+  legacySourceId   Int?         @unique
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([employeeId, status])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("app_leave_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Holidays
+// ---------------------------------------------------------------------------
+
+model Holiday {
+  id           String      @id @default(uuid())
+  name         String
+  date         DateTime    @db.Date
+  description  String?
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  isRecurring  Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([date, departmentId])
+  @@index([date])
+  @@map("app_holidays")
+}
+
+// ---------------------------------------------------------------------------
+// Salary
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Salary History — tracks every salary change for an employee over time.
+// When generating salary for any month, the service picks the latest entry
+// with effectiveFrom <= that month's end, then projects auto-increments on top.
+// This mirrors the legacy salary_history table logic exactly.
+// ---------------------------------------------------------------------------
+
+model SalaryHistory {
+  id            String   @id @default(uuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  /// The salary amount effective from this date onwards
+  amount        Decimal  @db.Decimal(12, 2)
+  /// First day (month start) from which this salary takes effect
+  effectiveFrom DateTime @db.Date
+  /// Free-text note, e.g. "Joining salary", "Increment", "Manual adjustment"
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([employeeId, effectiveFrom])
+  @@map("app_salary_history")
+}
+
+model SalaryRecord {
+  id                String       @id @default(uuid())
+  employeeId        String
+  employee          Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month             DateTime     @db.Date
+  basicSalary       Decimal      @db.Decimal(12, 2)
+  totalAllowances   Decimal      @default(0) @db.Decimal(12, 2)
+  totalDeductions   Decimal      @default(0) @db.Decimal(12, 2)
+  overtimeAmount    Decimal      @default(0) @db.Decimal(12, 2)
+  bonusAmount       Decimal      @default(0) @db.Decimal(12, 2)
+  netSalary         Decimal      @default(0) @db.Decimal(12, 2)
+  workingDays       Int          @default(0)
+  presentDays       Decimal      @default(0) @db.Decimal(5, 2)
+  absentDays        Decimal      @default(0) @db.Decimal(5, 2)
+  leaveDays         Decimal      @default(0) @db.Decimal(5, 2)
+  overtimeMinutes   Int          @default(0)
+  status            SalaryStatus @default(PENDING)
+  paymentDate       DateTime?    @db.Date
+  paymentReference  String?
+  remarks           String?
+  generatedByUserId String?
+
+  // --- Hourly pay mode (payType HOURLY) — all null/zero for SALARIED records ---
+  payType          PayType  @default(SALARIED)
+  hourRate         Decimal? @db.Decimal(10, 2)
+  workedHours      Decimal? @db.Decimal(8, 2)
+  expectedHours    Decimal? @db.Decimal(8, 2)
+  commissionAmount Decimal  @default(0) @db.Decimal(12, 2)
+  advanceDeducted  Decimal  @default(0) @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  components SalaryComponent[]
+  advances   SalaryAdvance[]
+
+  @@unique([employeeId, month])
+  @@index([month, status])
+  @@index([status])
+  @@map("salary_records")
+}
+
+model SalaryAdvance {
+  id               String        @id @default(uuid())
+  employeeId       String
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  amount           Decimal       @db.Decimal(12, 2)
+  advanceDate      DateTime      @db.Date
+  notes            String?
+  // Set once this advance has been claimed by a generated salary record.
+  salaryRecordId   String?
+  salaryRecord     SalaryRecord? @relation(fields: [salaryRecordId], references: [id], onDelete: SetNull)
+  recordedByUserId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([employeeId, salaryRecordId])
+  @@index([advanceDate])
+  @@map("salary_advances")
+}
+
+// Read-only import of the legacy BMA system's monthly salary calculations.
+// Deliberately NOT merged into SalaryRecord: the source `final_salary` values
+// do not reconcile against any computable formula (advances were settled by
+// hand each month), so these figures must be preserved verbatim rather than
+// re-derived — doing so would silently misstate what people were actually
+// paid historically.
+model LegacySalarySnapshot {
+  id             String    @id @default(uuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month          DateTime  @db.Date
+  totalHours     Decimal   @db.Decimal(10, 2)
+  expectedHours  Decimal   @db.Decimal(10, 2)
+  hourRate       Decimal   @db.Decimal(10, 2)
+  commission     Decimal   @db.Decimal(12, 2)
+  advanceAmount  Decimal   @db.Decimal(12, 2)
+  finalSalary    Decimal   @db.Decimal(12, 2)
+  legacyStatus   String
+  remarks        String?
+  paidAt         DateTime?
+  legacySourceId Int       @unique
+  createdAt      DateTime  @default(now())
+
+  @@unique([employeeId, month])
+  @@index([month])
+  @@map("legacy_salary_snapshots")
+}
+
+model SalaryComponent {
+  id               String              @id @default(uuid())
+  salaryRecordId   String
+  salaryRecord     SalaryRecord        @relation(fields: [salaryRecordId], references: [id], onDelete: Cascade)
+  name             String
+  type             SalaryComponentType
+  amount           Decimal             @db.Decimal(12, 2)
+  isAutoCalculated Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+
+  @@index([salaryRecordId])
+  @@map("salary_components")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id         String           @id @default(uuid())
+  employeeId String
+  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  body       String           @db.Text
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([employeeId, readAt])
+  @@index([employeeId, createdAt])
+  @@map("app_notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Announcements
+// ---------------------------------------------------------------------------
+
+model Announcement {
+  id              String    @id @default(uuid())
+  message         String    @db.Text
+  isActive        Boolean   @default(true)
+  publishedAt     DateTime?
+  expiresAt       DateTime?
+  createdByUserId String?
+  legacySourceId  Int?      @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([isActive, publishedAt])
+  @@map("app_announcements")
+}
+
+// ===========================================================================
+// LEGACY TABLES — read-only mirror of the old attensystem database.
+// These are managed outside Prisma (created by migration SQL directly).
+//
+// Rule: Every column whose MySQL type is not natively supported by Prisma
+// (TIME, ENUM) must use Unsupported("...") so that Prisma Migrate never
+// generates an ALTER TABLE for those columns.
+// ===========================================================================
+
+/// @ignore
+model LegacyAdminNotification {
+  id              Int                              @id @default(autoincrement())
+  attendanceLogId Int                              @map("attendance_log_id")
+  employeeId      Int                              @map("employee_id")
+  punchType       Unsupported("enum('in','out')")  @map("punch_type")
+  punchTime       Unsupported("time")              @map("punch_time")
+  punchDate       DateTime                         @db.Date @map("punch_date")
+  createdAt       DateTime                         @default(now()) @map("created_at")
+  isSeen          Boolean                          @default(false) @map("is_seen")
+
+  @@ignore
+  @@map("admin_notifications")
+}
+
+/// @ignore
+model LegacyAdminUser {
+  id       Int    @id @default(autoincrement())
+  username String
+  password String
+
+  @@ignore
+  @@map("admin_users")
+}
+
+/// @ignore
+model LegacyAnnouncement {
+  id        Int      @id @default(autoincrement())
+  message   String   @db.Text
+  status    Boolean? @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@ignore
+  @@map("announcements")
+}
+
+/// @ignore
+model LegacyAttendance {
+  id               Int                     @id @default(autoincrement())
+  employeeId       Int                     @map("employee_id")
+  date             DateTime                @db.Date
+  dayOfWeek        String?                 @map("day_of_week")
+  entryTime        Unsupported("time")?    @map("entry_time")
+  exitTime         Unsupported("time")?    @map("exit_time")
+  totalHours       Unsupported("time")?    @map("total_hours")
+  note             String?
+  locationLat      String?                 @map("location_lat")
+  locationLong     String?                 @map("location_long")
+  status           String?
+  attendanceStatus String?                 @default("present") @map("attendance_status")
+
+  @@ignore
+  @@map("attendance")
+}
+
+/// @ignore
+model LegacyAttendanceLog {
+  id         Int                              @id @default(autoincrement())
+  employeeId Int                              @map("employee_id")
+  date       DateTime                         @db.Date
+  day        String
+  punchType  Unsupported("enum('in','out')")  @map("punch_type")
+  time       Unsupported("time")
+  createdAt  DateTime                         @map("created_at")
+  totalHours Unsupported("time")              @map("total_hours")
+
+  @@ignore
+  @@map("attendance_log")
+}
+
+/// @ignore
+model LegacyDocument {
+  id         Int      @id @default(autoincrement())
+  employeeId Int?     @map("employee_id")
+  title      String?
+  filePath   String?  @map("file_path")
+  type       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@ignore
+  @@map("documents")
+}
+
+/// @ignore
+model LegacyEmployee {
+  id                     Int                                      @id @default(autoincrement())
+  fullName               String                                   @map("full_name")
+  mobileNumber           String?                                  @map("mobile_number")
+  alternateNumber        String?                                  @map("alternate_number")
+  username               String?
+  shiftId                Int?                                     @map("shift_id")
+  email                  String?                                  @unique
+  profileImage           String?                                  @map("profile_image")
+  address                String?                                  @db.Text
+  monthlySalary          Decimal                                  @default(0.00) @map("monthly_salary")
+  targetSalary           Decimal?                                 @map("target_salary")
+  monthlyIncrement       Decimal?                                 @map("monthly_increment")
+  incrementInterval      Int?                                     @default(1) @map("increment_interval")
+  incrementEffectiveFrom DateTime?                                @db.Date @map("increment_effective_from")
+  lastIncrementDate      DateTime?                                @db.Date @map("last_increment_date")
+  password               String?
+  status                 Unsupported("enum('active','inactive')") @default(dbgenerated("'active'"))
+  createdAt              DateTime                                 @default(now()) @map("created_at")
+  dob                    DateTime?                                @db.Date
+  joiningDate            DateTime?                                @db.Date @map("joining_date")
+
+  @@ignore
+  @@map("employees")
+}
+
+/// @ignore
+model LegacyFaceDescriptor {
+  id         Int      @id @default(autoincrement())
+  employeeId Int      @unique @map("employee_id")
+  descriptor String   @db.Text
+  photoData  String?  @db.LongText @map("photo_data")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@ignore
+  @@map("face_descriptors")
+}
+
+/// @ignore
+model LegacyHoliday {
+  id     Int      @id @default(autoincrement())
+  date   DateTime @unique @db.Date
+  reason String?
+
+  @@ignore
+  @@map("holidays")
+}
+
+/// @ignore
+model LegacyLeaveRequest {
+  id           Int                                            @id @default(autoincrement())
+  employeeId   Int                                            @map("employee_id")
+  fromDate     DateTime                                       @db.Date @map("from_date")
+  fromTime     Unsupported("time")?                           @map("from_time")
+  toDate       DateTime                                       @db.Date @map("to_date")
+  toTime       Unsupported("time")?                           @map("to_time")
+  reason       String                                         @db.Text
+  status       Unsupported("enum('Pending','Approved','Rejected')")? @default(dbgenerated("'Pending'"))
+  createdAt    DateTime                                       @default(now()) @map("created_at")
+  isEdited     Boolean?                                       @default(false) @map("is_edited")
+  lastEditedAt DateTime?                                      @map("last_edited_at")
+
+  @@ignore
+  @@map("leave_requests")
+}
+
+/// @ignore
+model LegacyNotification {
+  id        Int      @id @default(autoincrement())
+  message   String
+  type      String
+  status    String?  @default("unread")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@ignore
+  @@map("notifications")
+}
+
+/// @ignore
+model LegacySalaryDetail {
+  id                   Int      @id @default(autoincrement())
+  employeeId           Int      @map("employee_id")
+  monthYear            String   @map("month_year")
+  totalHours           Decimal? @default(0.00) @map("total_hours")
+  expectedHours        Decimal? @default(0.00) @map("expected_hours")
+  hourRate             Decimal? @default(0.00) @map("hour_rate")
+  commission           Decimal? @default(0.00)
+  advanceAmount        Decimal? @default(0.00) @map("advance_amount")
+  remarks              String?  @db.Text
+  status               String   @default("pending")
+  excludeSundayHoliday Boolean? @default(false) @map("exclude_sunday_holiday")
+  finalSalary          Decimal? @default(0.00) @map("final_salary")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime? @map("updated_at")
+  paidAt               DateTime? @map("paid_at")
+  notificationSeen     Boolean? @default(false) @map("notification_seen")
+
+  @@ignore
+  @@map("salary_details")
+}
+
+/// @ignore
+model LegacySalaryHistory {
+  id            Int      @id @default(autoincrement())
+  employeeId    Int      @map("employee_id")
+  amount        Decimal
+  effectiveFrom DateTime @db.Date @map("effective_from")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@ignore
+  @@map("salary_history")
+}
+
+/// @ignore
+model LegacySalaryIncrementLog {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int      @map("employee_id")
+  oldSalary       Decimal  @map("old_salary")
+  newSalary       Decimal  @map("new_salary")
+  incrementAmount Decimal  @map("increment_amount")
+  targetSalary    Decimal  @map("target_salary")
+  appliedDate     DateTime @db.Date @map("applied_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@ignore
+  @@map("salary_increment_log")
+}
+
+/// @ignore
+model LegacySettings {
+  id             Int      @id @default(autoincrement())
+  companyName    String?  @default("Admin Panel") @map("company_name")
+  companyLogo    String?  @map("company_logo")
+  companyFavicon String?  @map("company_favicon")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  recoveryEmail  String?  @map("recovery_email")
+
+  @@ignore
+  @@map("settings")
+}
+
+/// @ignore
+model LegacyShift {
+  id        Int                  @id @default(autoincrement())
+  shiftName String               @unique @map("shift_name")
+  startTime Unsupported("time")? @map("start_time")
+  endTime   Unsupported("time")? @map("end_time")
+
+  @@ignore
+  @@map("shifts")
+}
+
+/// @ignore
+model LegacySmtpSettings {
+  id           Int      @id @default(autoincrement())
+  smtpHost     String   @map("smtp_host")
+  smtpPort     Int      @map("smtp_port")
+  smtpUsername String   @map("smtp_username")
+  smtpPassword String   @map("smtp_password")
+  fromName     String   @map("from_name")
+  fromEmail    String   @map("from_email")
+  adminEmail   String   @map("admin_email")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@ignore
+  @@map("smtp_settings")
+}

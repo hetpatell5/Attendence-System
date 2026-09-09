@@ -17,6 +17,7 @@ import { SalaryModule } from './salary/salary.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ReportsModule } from './reports/reports.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
     AuditModule,
     AuthModule,
     SettingsModule,
+    EmailModule,
     DepartmentsModule,
     DesignationsModule,
     ShiftsModule,

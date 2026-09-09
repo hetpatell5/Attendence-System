@@ -2,10 +2,9 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationsApi } from '@/lib/api';
 import { useAuthStore } from '@/state/auth-store';
+import { getApiBaseUrl } from '@/lib/api-client';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-
-/** Show a native Windows notification via Electron, or fall back to browser Notification API */
+/** Show a native Windows notification toast in bottom-right corner via Electron */
 function showNativeNotification(title: string, body: string): void {
   const electronApi = (window as any).electronApi;
   if (electronApi?.notify?.show) {
@@ -34,9 +33,9 @@ async function getToken(): Promise<string | null> {
 /**
  * useRealtimeNotifications
  *
- * - Connects to `/notifications/stream` SSE endpoint with Bearer token in query param
- * - Shows native OS notification toast for every new push event
- * - Polls unread count every 30 seconds as a safety net
+ * - Listens for LIVE SSE events to show native Windows bottom-right toasts in real-time
+ * - Never replays or loops old historical notifications
+ * - Polling keeps badge count in sync silently
  */
 export function useRealtimeNotifications(): { unreadCount: number } {
   const user = useAuthStore((s) => s.user);
@@ -44,16 +43,19 @@ export function useRealtimeNotifications(): { unreadCount: number } {
   const eventSourceRef = useRef<EventSource | null>(null);
   const shownRef = useRef<Set<string>>(new Set());
 
+  // Silent polling for badge count only
   const { data: unreadData } = useQuery({
     queryKey: ['notifications', 'unread-count'],
     queryFn: notificationsApi.unreadCount,
-    refetchInterval: 30_000,
+    refetchInterval: 5_000,
     enabled: !!user,
   });
 
+  // Handle incoming live push event from backend
   const handleEvent = useCallback((raw: string) => {
     try {
       const data = JSON.parse(raw) as {
+        id?: string;
         title?: string;
         body?: string;
         entityId?: string;
@@ -61,8 +63,9 @@ export function useRealtimeNotifications(): { unreadCount: number } {
       };
       if (!data.title) return;
 
-      const key = data.entityId ? `${data.type}:${data.entityId}` : `${data.title}:${Date.now()}`;
+      const key = data.id || `${data.type}:${data.title}:${data.body}`;
 
+      // Prevent duplicate toast for the exact same event
       if (!shownRef.current.has(key)) {
         shownRef.current.add(key);
         if (shownRef.current.size > 200) {
@@ -70,7 +73,10 @@ export function useRealtimeNotifications(): { unreadCount: number } {
           shownRef.current.delete(first);
         }
 
+        // Show single native Windows toast banner in bottom right
         showNativeNotification(data.title, data.body ?? '');
+
+        // Invalidate notification queries to refresh bell icon and list
         void queryClient.invalidateQueries({ queryKey: ['notifications'] });
       }
     } catch {
@@ -78,6 +84,12 @@ export function useRealtimeNotifications(): { unreadCount: number } {
     }
   }, [queryClient]);
 
+  // Reset shown tracker on user change / login
+  useEffect(() => {
+    shownRef.current.clear();
+  }, [user?.id]);
+
+  // SSE Realtime push connection
   useEffect(() => {
     if (!user) return;
     requestNotificationPermission();
@@ -89,27 +101,31 @@ export function useRealtimeNotifications(): { unreadCount: number } {
       const token = await getToken();
       if (cancelled) return;
 
+      const baseUrl = getApiBaseUrl();
       const url = token
-        ? `${API_URL}/notifications/stream?token=${encodeURIComponent(token)}`
-        : `${API_URL}/notifications/stream`;
+        ? `${baseUrl}/notifications/stream?token=${encodeURIComponent(token)}`
+        : `${baseUrl}/notifications/stream`;
 
       try {
         es = new EventSource(url);
         eventSourceRef.current = es;
 
-        const onMsg = (e: MessageEvent) => handleEvent(typeof e.data === 'string' ? e.data : JSON.stringify(e.data));
+        const onMsg = (e: MessageEvent) => {
+          handleEvent(typeof e.data === 'string' ? e.data : JSON.stringify(e.data));
+        };
+
+        es.onmessage = onMsg;
         es.addEventListener('notification', onMsg);
         es.addEventListener('message', onMsg);
 
         es.onerror = () => {
           es?.close();
-          // Reconnect after 10 seconds on error
           if (!cancelled) {
-            setTimeout(() => { if (!cancelled) void connect(); }, 10_000);
+            setTimeout(() => { if (!cancelled) void connect(); }, 5_000);
           }
         };
       } catch {
-        // EventSource not available — polling only
+        // EventSource not available
       }
     };
 

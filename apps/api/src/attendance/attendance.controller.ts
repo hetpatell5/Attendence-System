@@ -4,6 +4,7 @@ import { AttendanceService } from './attendance.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { AdjustAttendanceDto } from './dto/adjust-attendance.dto';
 import { ListAttendanceQueryDto } from './dto/list-attendance-query.dto';
+import { CreateAttendanceRequestDto } from './dto/create-attendance-request.dto';
 import type { Paginated } from '../common/dto/pagination.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -64,6 +65,61 @@ export class AttendanceController {
     @Req() req: RequestWithUser,
   ): Promise<Attendance> {
     return this.attendanceService.createManual(dto, user.sub, req.ip);
+  }
+
+  // -------------------------------------------------------------------------
+  // Attendance Correction Requests (Employee submits, Admin reviews)
+  // -------------------------------------------------------------------------
+
+  @Post('requests')
+  createRequest(
+    @CurrentUser() user: RequestWithUser['user'],
+    @Body() dto: CreateAttendanceRequestDto,
+  ) {
+    return this.attendanceService.createRequestForUser(user.sub, dto);
+  }
+
+  @Get('requests/mine')
+  listMineRequests(
+    @CurrentUser() user: RequestWithUser['user'],
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.attendanceService.listMyRequestsForUser(user.sub, from, to);
+  }
+
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Get('requests/pending')
+  listPendingRequests() {
+    return this.attendanceService.listPendingRequests();
+  }
+
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Post('requests/bulk-approve')
+  bulkApproveRequests(
+    @Body('requestIds') requestIds: string[] | undefined,
+    @CurrentUser() user: RequestWithUser['user'],
+  ) {
+    return this.attendanceService.bulkApproveRequests(requestIds, user.sub);
+  }
+
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Post('requests/:id/approve')
+  approveRequest(
+    @Param('id') id: string,
+    @CurrentUser() user: RequestWithUser['user'],
+  ) {
+    return this.attendanceService.approveRequest(id, user.sub);
+  }
+
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Post('requests/:id/reject')
+  rejectRequest(
+    @Param('id') id: string,
+    @Body('remarks') remarks: string | undefined,
+    @CurrentUser() user: RequestWithUser['user'],
+  ) {
+    return this.attendanceService.rejectRequest(id, user.sub, remarks);
   }
 
   @Roles('SUPER_ADMIN', 'ADMIN', 'HR')

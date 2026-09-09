@@ -23,10 +23,8 @@ export async function runAttendance(ctx: MigrationContext): Promise<PhaseResult>
 
     const combineTime = (time: string | null): Date | undefined => {
       if (!time) return undefined;
-      const [h, m, s] = time.split(':').map(Number);
-      const result2 = new Date(attendanceDate);
-      result2.setUTCHours(h ?? 0, m ?? 0, s ?? 0, 0);
-      return result2;
+      const datePart = attendanceDate.toISOString().slice(0, 10);
+      return new Date(`${datePart}T${time}+05:30`);
     };
 
     const existing = await ctx.prisma.attendance.findUnique({

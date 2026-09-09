@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Announcement, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { serverNow } from '../common/time.util';
 import type { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import type { UpdateAnnouncementDto } from './dto/update-announcement.dto';
@@ -12,6 +13,7 @@ export class AnnouncementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   list(query: ListAnnouncementsQueryDto): Promise<Announcement[]> {
@@ -61,6 +63,18 @@ export class AnnouncementsService {
       newValue: JSON.parse(JSON.stringify(announcement)),
       ipAddress: ip,
     });
+
+    // Push live toast to ALL logged-in employees via SSE broadcast
+    const preview =
+      dto.message.length > 80 ? dto.message.slice(0, 77) + '…' : dto.message;
+    void this.notificationsService
+      .broadcastAnnouncementToEmployees({
+        title: '📢 New Announcement',
+        body: preview,
+        entityType: 'Announcement',
+        entityId: announcement.id,
+      })
+      .catch(() => {});
 
     return announcement;
   }

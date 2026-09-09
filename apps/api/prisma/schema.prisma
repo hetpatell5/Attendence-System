@@ -109,6 +109,13 @@ enum AttendanceSource {
   LEGACY_IMPORT
 }
 
+enum AttendanceRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum LeaveStatus {
   PENDING
   APPROVED
@@ -224,6 +231,9 @@ model AuditLog {
 model CompanySettings {
   id                   String   @id @default(uuid())
   companyName          String   @default("My Company")
+  companyLogo          String?  @db.Text
+  companyFavicon       String?  @db.Text
+  companyAddress       String?  @db.Text
   timezone             String   @default("Asia/Kolkata")
   currencyCode         String   @default("INR")
   weekStartsOn         Int      @default(1)
@@ -236,6 +246,20 @@ model CompanySettings {
   // Comma-separated list of allowed public IPs for punch-in/out (office WiFi).
   // Empty string = restriction disabled (allow all). Example: "203.0.113.1,203.0.113.2"
   allowedIps           String   @default("")
+
+  // SMTP Configuration
+  smtpHost             String?
+  smtpPort             Int?     @default(587)
+  smtpUsername         String?
+  smtpPassword         String?
+  fromName             String?
+  fromEmail            String?
+  adminEmail           String?
+
+  // Custom Templates (HTML + CSS)
+  mailFormat           String?  @db.Text
+  salarySlipFormat     String?  @db.Text
+
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -355,6 +379,7 @@ model Employee {
 
   employeeShifts        EmployeeShift[]
   attendance            Attendance[]
+  attendanceRequests    AttendanceRequest[]
   leaveRequests         LeaveRequest[]
   leaveBalances         LeaveBalance[]
   salaryRecords         SalaryRecord[]
@@ -434,6 +459,31 @@ model AttendanceAdjustment {
 
   @@index([attendanceId])
   @@map("app_attendance_adjustments")
+}
+
+model AttendanceRequest {
+  id               String                  @id @default(uuid())
+  employeeId       String
+  employee         Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceDate   DateTime                @db.Date
+  punchInAt        DateTime?
+  punchOutAt       DateTime?
+  punchPairs       Json?
+  originalPunchIn  DateTime?
+  originalPunchOut DateTime?
+  originalPairs    Json?
+  reason           String?                 @db.Text
+  status           AttendanceRequestStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewRemarks    String?                 @db.Text
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([employeeId, status])
+  @@index([status])
+  @@index([attendanceDate])
+  @@map("app_attendance_requests")
 }
 
 // ---------------------------------------------------------------------------

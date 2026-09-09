@@ -40,6 +40,56 @@ export const attendanceApi = {
   listAdjustments: (id: string) => request<unknown[]>(`/attendance/${id}/adjustments`),
 };
 
+export interface AttendanceRequestItem {
+  id: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    employeeCode: string;
+    profilePhotoUrl?: string | null;
+    department?: { id: string; name: string } | null;
+    designation?: { id: string; title: string } | null;
+  };
+  attendanceDate: string;
+  punchInAt?: string | null;
+  punchOutAt?: string | null;
+  punchPairs?: Array<{ punchInAt: string; punchOutAt?: string | null }> | null;
+  originalPunchIn?: string | null;
+  originalPunchOut?: string | null;
+  originalPairs?: Array<{ punchInAt: string; punchOutAt?: string | null }> | null;
+  reason?: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  reviewedByUserId?: string | null;
+  reviewedAt?: string | null;
+  reviewRemarks?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const attendanceRequestsApi = {
+  create: (body: {
+    attendanceDate: string;
+    punchInAt?: string | null;
+    punchOutAt?: string | null;
+    punchPairs?: Array<{ punchInAt: string; punchOutAt?: string | null }>;
+    reason?: string;
+  }) =>
+    request<AttendanceRequestItem>('/attendance/requests', { method: 'POST', body }),
+  mine: (from?: string, to?: string) =>
+    request<AttendanceRequestItem[]>(`/attendance/requests/mine?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}`),
+  listPending: () => request<AttendanceRequestItem[]>('/attendance/requests/pending'),
+  approve: (id: string) => request<AttendanceRequestItem>(`/attendance/requests/${id}/approve`, { method: 'POST' }),
+  bulkApprove: (requestIds?: string[]) =>
+    request<{ count: number; items: AttendanceRequestItem[] }>('/attendance/requests/bulk-approve', {
+      method: 'POST',
+      body: { requestIds },
+    }),
+  reject: (id: string, remarks?: string) =>
+    request<AttendanceRequestItem>(`/attendance/requests/${id}/reject`, { method: 'POST', body: { remarks } }),
+};
+
 export const employeesApi = {
   list: (params: Record<string, string>) =>
     request<Paginated<Employee>>(`/employees?${new URLSearchParams(params)}`),
@@ -119,9 +169,25 @@ export const salaryApi = {
   update: (id: string, body: unknown) => request<SalaryRecord>(`/salary/${id}`, { method: 'PATCH', body }),
   updateStatus: (id: string, body: unknown) =>
     request<SalaryRecord>(`/salary/${id}/status`, { method: 'PATCH', body }),
+  summary: (month: string) =>
+    request<{
+      paidSum: number;
+      unpaidSum: number;
+      totalDueSum: number;
+      paidCount: number;
+      unpaidCount: number;
+      totalEmployeesCount: number;
+      percentagePaid: number;
+    }>(`/salary/summary?month=${encodeURIComponent(month)}`),
   /** Returns the historically-correct baseSalary for every active employee for the given month. */
   effectiveRates: (month: string) =>
     request<Record<string, number>>(`/salary/effective-rates?month=${encodeURIComponent(month)}`),
+  sendEmail: (id: string, body?: { recipientEmail?: string }) =>
+    request<{ success: boolean; message: string }>(`/salary/${id}/send-email`, { method: 'POST', body }),
+  sendCustomSlip: (body: unknown) =>
+    request<{ success: boolean; message: string }>('/salary/send-custom-slip', { method: 'POST', body }),
+  downloadCustomSlipPdf: (body: unknown) =>
+    request<{ success: boolean; base64: string; filename: string }>('/salary/download-custom-slip-pdf', { method: 'POST', body }),
 };
 
 
@@ -147,6 +213,10 @@ export const dashboardApi = {
 export const settingsApi = {
   get: () => request<CompanySettings>('/settings'),
   update: (body: unknown) => request<CompanySettings>('/settings', { method: 'PATCH', body }),
+  testSmtp: (body: { recipientEmail: string; config?: unknown }) =>
+    request<{ success: boolean; message: string }>('/settings/smtp/test', { method: 'POST', body }),
+  previewSalarySlip: (body: { template?: string }) =>
+    request<{ html: string }>('/settings/salary-slip/preview', { method: 'POST', body }),
   importLegacySql: (sql: string) =>
     request<{ successCount: number; errorCount: number; errors: string[] }>(
       '/settings/import-legacy-sql',

@@ -9,13 +9,121 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Building2, Shield, Settings, Info, Mail, Upload, Download,
   Database, ArrowRightLeft, Lock, User, Eye, EyeOff, CheckCircle2,
-  AlertTriangle, X,
+  AlertTriangle, X, Image as ImageIcon, FileCode, RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import defaultCompanyLogo from '@/assets/logo.png';
 
-type Tab = 'company' | 'security' | 'smtp' | 'import-export' | 'sql' | 'migration' | 'system';
+type Tab = 'company' | 'security' | 'smtp' | 'templates' | 'import-export' | 'sql' | 'migration' | 'system';
+
+// ── Default Templates (1:1 Legacy System) ──────────────────────────────────
+const DEFAULT_EMAIL_TEMPLATE = `<p>Hello {{employee_name}},</p>
+<p>Please find attached your salary slip for the month of {{month_name}}.</p>
+<p>Regards,<br>{{company_name}}</p>`;
+
+const DEFAULT_SALARY_SLIP_TEMPLATE = `<div style="max-width:650px;margin:16px auto;background:#fff;border-radius:15px;box-shadow:0 4px 24px rgba(184, 212, 239, 0.25);border:1.5px solid #e6eaf4;font-family:Segoe UI,Arial,sans-serif;padding:0;overflow:hidden;">
+  <div style="text-align:center;padding:16px 20px 8px 20px;">
+    {{#if company_logo}}
+      <img src="{{company_logo}}" width="320" style="max-height:80px;object-fit:contain;border-radius:8px;display:block;margin:0 auto 10px auto;">
+    {{/if}}
+    <div style="font-size:21px;font-weight:700;color:#1968a7;letter-spacing:1px;margin-top:4px;">{{company_name}}</div>
+    <div style="font-size:12px;color:#757a8a;margin-top:3px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.4;">{{company_address}}</div>
+  </div>
+  <div style="margin-top:14px;text-align:center;font-size:18px;color:#2e415a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Salary Slip</div>
+  
+  <table style="width:88%;margin:16px auto 6px auto;font-size:13px;border-collapse:collapse;">
+    <tr>
+      <td style="padding:3px 6px;color:#4a5568;width:20%;"><b>Pay Period:</b></td>
+      <td style="padding:3px 6px;color:#1a202c;width:30%;">{{pay_period}}</td>
+      <td style="padding:3px 6px;color:#4a5568;width:20%;"><b>Pay Date:</b></td>
+      <td style="padding:3px 6px;color:#1a202c;width:30%;">{{pay_date}}</td>
+    </tr>
+    <tr>
+      <td style="padding:3px 6px;color:#4a5568;"><b>Employee Name:</b></td>
+      <td style="padding:3px 6px;color:#1a202c;font-weight:600;">{{employee_name}}</td>
+      <td style="padding:3px 6px;color:#4a5568;"><b>Employee ID:</b></td>
+      <td style="padding:3px 6px;color:#1a202c;">{{employee_id}}</td>
+    </tr>
+    <tr>
+      <td style="padding:3px 6px;color:#4a5568;"><b>Shift:</b></td>
+      <td style="padding:3px 6px;color:#1a202c;">{{shift_name}} ({{shift_time}})</td>
+      <td style="padding:3px 6px;color:#4a5568;"><b>Status:</b></td>
+      <td style="padding:3px 6px;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600;font-size:11px;">{{payment_status}}</span></td>
+    </tr>
+  </table>
+
+  <table style="width:90%;margin:14px auto 0 auto;border-collapse:collapse;font-size:13px;">
+    <tr style="background:#e9f4fb;">
+      <th colspan="2" style="padding:8px 8px;color:#1563ac;font-weight:600;text-align:left;border-radius:6px 0 0 0;">Earnings</th>
+      <th colspan="2" style="padding:8px 8px;color:#d67412;font-weight:600;text-align:left;border-radius:0 6px 0 0;">Attendance & Hours</th>
+    </tr>
+    <tr style="background:#f7fafc;">
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Monthly Salary</td>
+      <td style="padding:7px 8px;font-weight:700;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{monthly_salary}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Total Days in Month</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{total_days}}</td>
+    </tr>
+    <tr>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Salary Per Day</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{per_day_salary}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Salary Per Hour</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{per_hour_salary}}</td>
+    </tr>
+    <tr style="background:#f7fafc;">
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Basic Salary</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{basic_salary}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Total Working Days</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{working_days}}</td>
+    </tr>
+    <tr>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Sunday & Holiday Pay</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{sunday_holiday_pay}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Mon-Sat Present Days</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{present_days}}</td>
+    </tr>
+    <tr style="background:#f7fafc;">
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Overtime Payout</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{overtime_pay}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Overtime Hours</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{overtime_hours}}</td>
+    </tr>
+    <tr>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Commission / Extra</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{commission}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Total Hours Worked</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{total_hours_worked}}</td>
+    </tr>
+    <tr style="background:#f7fafc;">
+      <td style="padding:7px 8px;color:#c93030;font-weight:600;border-bottom:1px solid #edf2f7;">Advance Deducted</td>
+      <td style="padding:7px 8px;color:#c93030;font-weight:700;border-bottom:1px solid #edf2f7;">- ₹ {{advance_deducted}}</td>
+      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Expected Hours</td>
+      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{expected_hours}}</td>
+    </tr>
+    <tr style="background:#d8f0e8;">
+      <td style="padding:10px 8px;font-weight:700;color:#217f44;font-size:14px;border-radius:0 0 0 6px;">Net Salary</td>
+      <td style="padding:10px 8px;font-weight:700;color:#217f44;font-size:15px;">₹ {{net_salary}} /-</td>
+      <td colspan="2" style="padding:10px 8px;text-align:right;color:#217f44;font-size:12px;font-weight:600;border-radius:0 6px 0 0;">All amounts in INR</td>
+    </tr>
+  </table>
+
+  <table style="width:90%;margin:12px auto 16px auto;font-size:12.5px;border-collapse:collapse;">
+    <tr>
+      <td style="width:40%;padding:4px 6px;color:#4a5568;"><b>Payment Status:</b> <span style="color:#059669;font-weight:600;">{{payment_status}}</span></td>
+      <td style="width:60%;padding:4px 6px;color:#4a5568;"><b>Paid On:</b> {{paid_on}}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding:4px 6px;color:#4a5568;"><b>Remarks:</b> <span style="color:#2d3748;">{{remarks}}</span></td>
+    </tr>
+  </table>
+</div>`;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,7 +159,7 @@ function useToast() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const show = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 4500);
   };
   return {
     toast,
@@ -63,6 +171,8 @@ function useToast() {
 
 // ── SMTP Section ──────────────────────────────────────────────────────────────
 function SmtpSection() {
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const { toast, showSuccess, showError, clear } = useToast();
 
   const PRESETS = [
@@ -77,7 +187,7 @@ function SmtpSection() {
     smtpPort: '587',
     smtpUsername: '',
     smtpPassword: '',
-    fromName: 'Attendance System',
+    fromName: 'BMAP EDUSERVICES',
     fromEmail: '',
     adminEmail: '',
   });
@@ -86,43 +196,66 @@ function SmtpSection() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
+  useEffect(() => {
+    if (settings) {
+      setSmtpForm({
+        smtpHost: (settings as any).smtpHost || 'smtp.gmail.com',
+        smtpPort: String((settings as any).smtpPort || 587),
+        smtpUsername: (settings as any).smtpUsername || '',
+        smtpPassword: (settings as any).smtpPassword || '',
+        fromName: (settings as any).fromName || settings.companyName || 'BMAP EDUSERVICES',
+        fromEmail: (settings as any).fromEmail || (settings as any).smtpUsername || '',
+        adminEmail: (settings as any).adminEmail || (settings as any).smtpUsername || '',
+      });
+    }
+  }, [settings]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Store SMTP in company settings (stored as JSON in a settings field or via IPC)
-      // For Electron app: call Electron IPC or store in local settings JSON
-      const data = JSON.stringify(smtpForm);
-      localStorage.setItem('smtp_settings', data);
-      showSuccess('SMTP settings saved successfully.');
-    } catch {
-      showError('Failed to save SMTP settings.');
+      await settingsApi.update({
+        smtpHost: smtpForm.smtpHost,
+        smtpPort: Number(smtpForm.smtpPort) || 587,
+        smtpUsername: smtpForm.smtpUsername,
+        smtpPassword: smtpForm.smtpPassword,
+        fromName: smtpForm.fromName,
+        fromEmail: smtpForm.fromEmail,
+        adminEmail: smtpForm.adminEmail,
+      });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showSuccess('SMTP settings saved successfully in database.');
+    } catch (err: any) {
+      showError(err?.message || 'Failed to save SMTP settings.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleTest = async () => {
-    if (!testEmail) { showError('Enter a recipient email first.'); return; }
+    if (!testEmail || !testEmail.includes('@')) {
+      showError('Please enter a valid recipient email address.');
+      return;
+    }
     setTesting(true);
     try {
-      // In real Electron, this would call IPC to send a test mail via nodemailer
-      // For now simulate:
-      await new Promise(r => setTimeout(r, 1200));
-      showSuccess(`Test email sent to ${testEmail}`);
-    } catch {
-      showError('Failed to send test email. Check SMTP settings.');
+      const res = await settingsApi.testSmtp({
+        recipientEmail: testEmail,
+        config: {
+          smtpHost: smtpForm.smtpHost,
+          smtpPort: Number(smtpForm.smtpPort) || 587,
+          smtpUsername: smtpForm.smtpUsername,
+          smtpPassword: smtpForm.smtpPassword,
+          fromName: smtpForm.fromName,
+          fromEmail: smtpForm.fromEmail,
+        },
+      });
+      showSuccess(res.message || `Test email sent successfully to ${testEmail}!`);
+    } catch (err: any) {
+      showError(err?.message || 'Failed to send test email. Please verify SMTP host, port, username, and password.');
     } finally {
       setTesting(false);
     }
   };
-
-  // Load saved on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('smtp_settings');
-    if (saved) {
-      try { setSmtpForm(JSON.parse(saved)); } catch {}
-    }
-  }, []);
 
   return (
     <>
@@ -160,8 +293,8 @@ function SmtpSection() {
                       type={showPwd ? 'text' : 'password'}
                       value={smtpForm.smtpPassword}
                       onChange={e => setSmtpForm(p => ({ ...p, smtpPassword: e.target.value }))}
-                      placeholder="App password"
-                      className="pr-10"
+                      placeholder="16-character app password"
+                      className="pr-10 font-mono"
                     />
                     <button
                       type="button"
@@ -171,25 +304,25 @@ function SmtpSection() {
                       {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  <p className="text-xs text-slate-400">For Gmail: use App Password</p>
+                  <p className="text-xs text-slate-400">For Gmail: use 16-character App Password without spaces</p>
                 </div>
               </div>
               <hr className="border-slate-100" />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>From Name</Label>
-                  <Input value={smtpForm.fromName} onChange={e => setSmtpForm(p => ({ ...p, fromName: e.target.value }))} placeholder="Attendance System" />
+                  <Input value={smtpForm.fromName} onChange={e => setSmtpForm(p => ({ ...p, fromName: e.target.value }))} placeholder="BMAP EDUSERVICES" />
                   <p className="text-xs text-slate-400">Defaults to company name if empty</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>From Email</Label>
-                  <Input type="email" value={smtpForm.fromEmail} onChange={e => setSmtpForm(p => ({ ...p, fromEmail: e.target.value }))} placeholder="noreply@yourcompany.com" />
+                  <Input type="email" value={smtpForm.fromEmail} onChange={e => setSmtpForm(p => ({ ...p, fromEmail: e.target.value }))} placeholder="bookmyassignmentss@gmail.com" />
                   <p className="text-xs text-slate-400">Defaults to SMTP username if empty</p>
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Global Admin Email *</Label>
-                <Input type="email" value={smtpForm.adminEmail} onChange={e => setSmtpForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@yourcompany.com" />
+                <Input type="email" value={smtpForm.adminEmail} onChange={e => setSmtpForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="bookmyassignmentss@gmail.com" />
                 <p className="text-xs text-slate-400">System alerts and notifications will go here</p>
               </div>
               <Button onClick={handleSave} disabled={saving} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-8">
@@ -211,10 +344,10 @@ function SmtpSection() {
               <CardContent className="space-y-3">
                 <div className="space-y-1.5">
                   <Label>Recipient Email</Label>
-                  <Input type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="test@example.com" />
+                  <Input type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="test@gmail.com" />
                 </div>
                 <Button onClick={handleTest} disabled={testing} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-                  {testing ? 'Sending...' : '✉️ Send Test Message'}
+                  {testing ? 'Sending Test Email...' : '✉️ Send Test Message'}
                 </Button>
               </CardContent>
             </Card>
@@ -283,6 +416,211 @@ function SmtpSection() {
   );
 }
 
+// ── Templates Section ─────────────────────────────────────────────────────────
+function TemplatesSection() {
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  const { toast, showSuccess, showError, clear } = useToast();
+
+  const [mailFormat, setMailFormat] = useState('');
+  const [salarySlipFormat, setSalarySlipFormat] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      setMailFormat((settings as any).mailFormat || DEFAULT_EMAIL_TEMPLATE);
+      setSalarySlipFormat((settings as any).salarySlipFormat || DEFAULT_SALARY_SLIP_TEMPLATE);
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await settingsApi.update({
+        mailFormat,
+        salarySlipFormat,
+      });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showSuccess('Templates saved successfully!');
+    } catch (err: any) {
+      showError(err?.message || 'Failed to save templates.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreview = async (type: 'slip' | 'mail') => {
+    setLoadingPreview(true);
+    try {
+      const template = type === 'slip' ? salarySlipFormat : mailFormat;
+      const res = await settingsApi.previewSalarySlip({ template });
+      setPreviewHtml(res.html);
+      setPreviewOpen(true);
+    } catch (err: any) {
+      showError('Failed to generate preview: ' + err?.message);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const placeholders = [
+    '{{employee_name}}', '{{employee_id}}', '{{employee_email}}',
+    '{{month_name}}', '{{pay_period}}', '{{pay_date}}',
+    '{{company_name}}', '{{company_logo}}', '{{company_address}}',
+    '{{shift_name}}', '{{shift_time}}', '{{payment_status}}',
+    '{{monthly_salary}}', '{{total_days}}', '{{per_day_salary}}',
+    '{{per_hour_salary}}', '{{basic_salary}}', '{{working_days}}',
+    '{{sunday_holiday_pay}}', '{{present_days}}', '{{overtime_pay}}',
+    '{{overtime_hours}}', '{{commission}}', '{{total_hours_worked}}',
+    '{{advance_deducted}}', '{{expected_hours}}', '{{net_salary}}',
+    '{{paid_on}}', '{{remarks}}',
+  ];
+
+  return (
+    <>
+      {toast && <Toast type={toast.type} message={toast.message} onClose={clear} />}
+      <div className="space-y-6 max-w-5xl">
+        {/* Helper info bar */}
+        <Card className="bg-sky-50/70 border-sky-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-sky-900 flex items-center gap-2">
+              <FileCode size={16} className="text-sky-600" />
+              Dynamic HTML + CSS Templates
+            </CardTitle>
+            <CardDescription className="text-xs text-sky-800">
+              Customize the HTML structure and inline CSS styles for your salary emails and salary slips. Both templates support full HTML and CSS styling. You can embed the placeholders listed below directly into your template.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+              {placeholders.map((ph) => (
+                <span key={ph} className="text-[11px] font-mono bg-white text-sky-800 border border-sky-200 px-2 py-0.5 rounded shadow-2xs">
+                  {ph}
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 1. Email Format Editor */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Mail size={18} className="text-sky-600" /> Salary Slip Email Body Format (HTML + CSS)
+              </CardTitle>
+              <CardDescription className="text-xs">
+                This HTML is sent as the email message body when emailing an employee their monthly salary slip.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs rounded-lg gap-1"
+                onClick={() => setMailFormat(DEFAULT_EMAIL_TEMPLATE)}
+              >
+                <RotateCcw size={12} /> Reset to Default
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs rounded-lg gap-1 border-sky-300 text-sky-700 hover:bg-sky-50"
+                onClick={() => handlePreview('mail')}
+                disabled={loadingPreview}
+              >
+                <Eye size={12} /> Preview
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              value={mailFormat}
+              onChange={(e) => setMailFormat(e.target.value)}
+              rows={9}
+              className="font-mono text-xs leading-relaxed bg-slate-950 text-slate-100 border-slate-800 selection:bg-sky-700 selection:text-white rounded-xl"
+              placeholder="<div style='font-family: Arial...'>...</div>"
+            />
+          </CardContent>
+        </Card>
+
+        {/* 2. Salary Slip Format Editor */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileCode size={18} className="text-emerald-600" /> Salary Slip Document Format (Exact Old System Layout)
+              </CardTitle>
+              <CardDescription className="text-xs">
+                The full HTML + CSS layout matching the legacy salary slip format 1:1.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs rounded-lg gap-1"
+                onClick={() => setSalarySlipFormat(DEFAULT_SALARY_SLIP_TEMPLATE)}
+              >
+                <RotateCcw size={12} /> Reset to Default
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs rounded-lg gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                onClick={() => handlePreview('slip')}
+                disabled={loadingPreview}
+              >
+                <Eye size={12} /> Preview
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              value={salarySlipFormat}
+              onChange={(e) => setSalarySlipFormat(e.target.value)}
+              rows={16}
+              className="font-mono text-xs leading-relaxed bg-slate-950 text-slate-100 border-slate-800 selection:bg-emerald-700 selection:text-white rounded-xl"
+              placeholder="<div style='max-width:650px...'>...</div>"
+            />
+          </CardContent>
+        </Card>
+
+        {/* Save button */}
+        <div className="flex justify-end pt-2">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-8 shadow-sm"
+          >
+            {saving ? 'Saving Templates...' : '💾 Save Templates'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Preview Modal */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold flex items-center gap-2">
+              <Eye size={18} className="text-sky-600" /> Template Live Preview
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-4 rounded-xl border bg-slate-100/70 overflow-x-auto flex justify-center">
+            <div
+              className="w-full max-w-[700px] bg-white rounded-xl shadow-sm p-4"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ── Import/Export Section ─────────────────────────────────────────────────────
 function ImportExportSection() {
   const { toast, showSuccess, showError, clear } = useToast();
@@ -293,9 +631,7 @@ function ImportExportSection() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      // In Electron: trigger IPC to zip app directory
       showSuccess('Export initiated. The ZIP will download shortly.');
-      // Simulate delay
       await new Promise(r => setTimeout(r, 1000));
       showSuccess('Export complete. attendance_system_backup.zip downloaded.');
     } catch {
@@ -395,7 +731,6 @@ function SqlSection() {
   const handleExportSql = async () => {
     setExporting(true);
     try {
-      // Download via Electron files IPC (same mechanism as salary slip downloads)
       await (window as any).electronApi?.files?.download('/settings/export-sql', `attendance_backup_${new Date().toISOString().split('T')[0]}.sql`);
       showSuccess('SQL backup downloaded successfully.');
     } catch {
@@ -481,20 +816,19 @@ function SqlSection() {
             </CardDescription>
           </CardHeader>
           <CardContent className="mt-auto space-y-4">
-            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex gap-2 items-start text-xs text-amber-800">
-              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-              <span><strong>Warning:</strong> Large files may take several minutes. This may overwrite existing data.</span>
+            <div className="space-y-1.5">
+              <Label>Select SQL File</Label>
+              <input
+                ref={sqlFileRef}
+                type="file"
+                accept=".sql"
+                onChange={handleImportSql}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 cursor-pointer file:mr-3 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100"
+              />
             </div>
-            <input
-              ref={sqlFileRef}
-              type="file"
-              accept=".sql"
-              onChange={handleImportSql}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 cursor-pointer file:mr-3 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100"
-            />
             <Button
-              onClick={() => sqlFileRef.current?.click()}
               disabled={importing}
+              onClick={() => sqlFileRef.current?.click()}
               className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold"
             >
               {importing ? 'Importing...' : '⬆️ Upload & Import'}
@@ -531,7 +865,6 @@ function MigrationSection() {
     setResult(lines);
   };
 
-  /** Run migration only — no file upload needed (data already in legacy tables) */
   const handleRunMigrationOnly = async () => {
     if (!confirm('Run migration now? This will copy data from legacy tables into the new system. Already-imported records are skipped automatically.')) return;
     setMigrating(true);
@@ -548,7 +881,6 @@ function MigrationSection() {
     }
   };
 
-  /** Upload SQL file first, then run migration */
   const handleMigration = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -595,7 +927,6 @@ function MigrationSection() {
             </div>
           )}
 
-          {/* Option A: Run migration without uploading a file */}
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
             <p className="text-sm font-semibold text-green-800">✅ Option A — Data already imported? Just run migration:</p>
             <p className="text-xs text-green-700">
@@ -617,7 +948,6 @@ function MigrationSection() {
             <div className="flex-1 h-px bg-slate-200" />
           </div>
 
-          {/* Option B: Upload SQL + migrate in one step */}
           <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 space-y-3">
             <p className="text-sm font-semibold text-sky-800">📤 Option B — Upload new SQL file + migrate:</p>
             <p className="text-xs text-sky-700">
@@ -645,13 +975,13 @@ function MigrationSection() {
   );
 }
 
-
 // ── Main SettingsPage ─────────────────────────────────────────────────────────
 export function SettingsPage(): JSX.Element {
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'SUPER_ADMIN' || role === 'ADMIN';
   const queryClient = useQueryClient();
   const { toast, showSuccess, showError, clear } = useToast();
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [tab, setTab] = useState<Tab>('company');
 
@@ -659,6 +989,8 @@ export function SettingsPage(): JSX.Element {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const [companyForm, setCompanyForm] = useState({
     companyName: '',
+    companyLogo: '',
+    companyAddress: '',
     timezone: '',
     currencyCode: '',
     allowedIps: '',
@@ -668,6 +1000,8 @@ export function SettingsPage(): JSX.Element {
     if (settings) {
       setCompanyForm({
         companyName: settings.companyName || '',
+        companyLogo: (settings as any).companyLogo || '',
+        companyAddress: (settings as any).companyAddress || '',
         timezone: settings.timezone || '',
         currencyCode: settings.currencyCode || '',
         allowedIps: Array.isArray((settings as any).allowedIps) ? (settings as any).allowedIps.join(', ') : ((settings as any).allowedIps || ''),
@@ -675,10 +1009,37 @@ export function SettingsPage(): JSX.Element {
     }
   }, [settings]);
 
+  // Handle Logo Upload (read file as Data URL)
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showError('Please select a valid image file (PNG, JPG, JPEG, SVG, WebP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      showError('Image is too large. Please select an image under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setCompanyForm((prev) => ({ ...prev, companyLogo: dataUrl }));
+      showSuccess('Logo selected! Click "Save Company Settings" to apply.');
+    };
+    reader.onerror = () => showError('Failed to read image file.');
+    reader.readAsDataURL(file);
+  };
+
   const updateSettingsMutation = useMutation({
     mutationFn: () =>
       settingsApi.update({
         companyName: companyForm.companyName,
+        companyLogo: companyForm.companyLogo,
+        companyAddress: companyForm.companyAddress,
         timezone: companyForm.timezone,
         currencyCode: companyForm.currencyCode,
         allowedIps: companyForm.allowedIps
@@ -688,9 +1049,9 @@ export function SettingsPage(): JSX.Element {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      showSuccess('Company settings updated successfully!');
+      showSuccess('Company profile and logo updated successfully!');
     },
-    onError: () => showError('Failed to update settings.'),
+    onError: (err: any) => showError(err?.message || 'Failed to update settings.'),
   });
 
   // ── Admin Profile ──
@@ -757,11 +1118,14 @@ export function SettingsPage(): JSX.Element {
     { id: 'company', label: 'Company Profile', icon: <Building2 size={15} /> },
     { id: 'security', label: 'Security & WiFi', icon: <Shield size={15} /> },
     { id: 'smtp', label: 'SMTP Settings', icon: <Mail size={15} /> },
+    { id: 'templates', label: 'Salary & Email Templates', icon: <FileCode size={15} /> },
     { id: 'import-export', label: 'Import / Export', icon: <Upload size={15} /> },
     { id: 'sql', label: 'SQL Import / Export', icon: <Database size={15} /> },
     { id: 'migration', label: 'Data Migration', icon: <ArrowRightLeft size={15} /> },
     { id: 'system', label: 'System', icon: <Settings size={15} /> },
   ] as const;
+
+  const currentPreviewLogo = companyForm.companyLogo || defaultCompanyLogo;
 
   return (
     <div className="space-y-6 pb-16">
@@ -780,7 +1144,7 @@ export function SettingsPage(): JSX.Element {
             className={cn(
               'flex items-center gap-2 px-5 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap',
               tab === t.id
-                ? 'border-sky-500 text-sky-600 bg-sky-50/60'
+                ? 'border-sky-500 text-sky-600 bg-sky-50/60 font-semibold'
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50',
             )}
           >
@@ -792,13 +1156,68 @@ export function SettingsPage(): JSX.Element {
       {/* ── Company Profile ── */}
       {tab === 'company' && (
         <div className="max-w-3xl space-y-6">
-          {/* Company Settings card */}
+          {/* Logo & Company Settings card */}
           <Card>
             <CardHeader>
-              <CardTitle>Company Settings</CardTitle>
-              <CardDescription>Basic information about your organization</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <ImageIcon size={18} className="text-sky-500" /> Organization & Branding
+              </CardTitle>
+              <CardDescription>
+                Customize your company name, logo in top-left sidebar, address, and regional settings.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              {/* Dynamic Logo Upload section */}
+              <div className="space-y-2.5">
+                <Label className="font-semibold text-slate-700">Top-Left System Logo</Label>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl border border-border/70 bg-slate-50/70">
+                  <div className="h-16 w-48 rounded-lg border border-border/60 bg-white p-2 flex items-center justify-center shadow-xs overflow-hidden">
+                    <img
+                      src={currentPreviewLogo}
+                      alt="Logo Preview"
+                      className="max-h-12 max-w-full object-contain"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = defaultCompanyLogo;
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5 flex-1">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoFileChange}
+                      className="hidden"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => logoInputRef.current?.click()}
+                        className="text-xs rounded-lg gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50"
+                      >
+                        <Upload size={13} /> Upload New Logo
+                      </Button>
+                      {companyForm.companyLogo && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setCompanyForm((p) => ({ ...p, companyLogo: '' }))}
+                          className="text-xs text-rose-600 hover:bg-rose-50"
+                        >
+                          Reset to Default
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      PNG, JPG, SVG or WebP format. Updating logo instantly updates the sidebar and salary slips.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="companyName">Company Name</Label>
@@ -806,8 +1225,19 @@ export function SettingsPage(): JSX.Element {
                     id="companyName"
                     value={companyForm.companyName}
                     onChange={(e) => setCompanyForm({ ...companyForm, companyName: e.target.value })}
-                    placeholder="Acme Corp"
+                    placeholder="BMAP EDUSERVICES"
                   />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="companyAddress">Company Address</Label>
+                  <Textarea
+                    id="companyAddress"
+                    value={companyForm.companyAddress}
+                    onChange={(e) => setCompanyForm({ ...companyForm, companyAddress: e.target.value })}
+                    rows={2}
+                    placeholder="206 Sunrise Commercial Complex, Near Savjibhai Korat Bridge, Mota Varachha, Surat, Gujarat"
+                  />
+                  <p className="text-xs text-slate-400">Printed on the header of generated salary slips</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Timezone</Label>
@@ -831,9 +1261,9 @@ export function SettingsPage(): JSX.Element {
               <Button
                 onClick={() => updateSettingsMutation.mutate()}
                 disabled={updateSettingsMutation.isPending}
-                className="bg-sky-600 hover:bg-sky-700 text-white font-bold"
+                className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-6"
               >
-                {updateSettingsMutation.isPending ? 'Saving...' : 'Update Settings'}
+                {updateSettingsMutation.isPending ? 'Saving...' : 'Save Company Settings'}
               </Button>
             </CardContent>
           </Card>
@@ -999,6 +1429,9 @@ export function SettingsPage(): JSX.Element {
 
       {/* ── SMTP ── */}
       {tab === 'smtp' && <SmtpSection />}
+
+      {/* ── Templates (Salary Slip & Email Formats) ── */}
+      {tab === 'templates' && <TemplatesSection />}
 
       {/* ── Import/Export ── */}
       {tab === 'import-export' && <ImportExportSection />}

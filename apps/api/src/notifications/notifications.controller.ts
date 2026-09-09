@@ -76,13 +76,13 @@ export class NotificationsController {
         bus.forEmployee(adminVirtual),
       );
     } else {
-      // Employee receives only their own events
+      // Employee receives their own events AND org-wide broadcasts (e.g. announcements)
       const employee = await this.employeesService.findByUserId(user.sub);
       if (!employee) {
         // Return empty observable
         events$ = new Observable((sub) => sub.complete());
       } else {
-        events$ = bus.forEmployee(employee.id);
+        events$ = bus.forEmployeeWithBroadcast(employee.id);
       }
     }
 

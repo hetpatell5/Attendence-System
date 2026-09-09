@@ -9,6 +9,7 @@ import { serverNow, toCompanyDay } from '../common/time.util';
 
 export interface EmployeeDashboardPayload {
   today: Awaited<ReturnType<AttendanceService['getTodayForUser']>>;
+  punchState: Awaited<ReturnType<AttendanceService['getTodayPunchStateForUser']>>;
   monthSummary: Awaited<ReturnType<AttendanceService['monthlySummaryForUser']>>;
   latestSalary: Awaited<ReturnType<SalaryService['listForUser']>>[number] | null;
   leaveBalance: Awaited<ReturnType<LeaveService['balanceForUser']>>;
@@ -32,9 +33,10 @@ export class DashboardService {
     const today = toCompanyDay(serverNow(), settings.timezone);
     const monthKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-01`;
 
-    const [todayAttendance, monthSummary, salaries, leaveBalance, leaveRequests] =
+    const [todayAttendance, punchState, monthSummary, salaries, leaveBalance, leaveRequests] =
       await Promise.all([
         this.attendanceService.getTodayForUser(userId),
+        this.attendanceService.getTodayPunchStateForUser(userId),
         this.attendanceService.monthlySummaryForUser(userId, monthKey),
         this.salaryService.listForUser(userId),
         this.leaveService.balanceForUser(userId, today.getUTCFullYear()),
@@ -43,6 +45,7 @@ export class DashboardService {
 
     return {
       today: todayAttendance,
+      punchState,
       monthSummary,
       latestSalary: salaries[0] ?? null,
       leaveBalance,

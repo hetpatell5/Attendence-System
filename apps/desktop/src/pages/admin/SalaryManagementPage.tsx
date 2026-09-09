@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { salaryApi, employeesApi, attendanceApi, holidaysApi } from '@/lib/api';
+import { salaryApi, employeesApi, attendanceApi, holidaysApi, settingsApi } from '@/lib/api';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,9 +10,13 @@ import {
   FileText, 
   CheckCircle2, 
   XCircle, 
-  Printer
+  Printer,
+  Mail,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { useRef } from 'react';
+import defaultCompanyLogo from '@/assets/logo.jpeg';
 
 // Custom Searchable Select
 function SearchableEmployeeSelect({ options, value, onChange }: { options: any[], value: string, onChange: (v: string) => void }) {
@@ -111,8 +115,8 @@ export function SalaryManagementPage(): JSX.Element {
   const YEARS = Array.from({ length: 5 }, (_, i) => (currentYear - 2 + i).toString());
 
   // Filter States
-  const [selectedYear, setSelectedYear] = useState(currentYear.toString());
-  const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [selectedYear, setSelectedYear] = useState(searchParams.get('year') || currentYear.toString());
+  const [selectedMonth, setSelectedMonth] = useState(searchParams.get('month') || String(new Date().getMonth() + 1).padStart(2, '0'));
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>(searchParams.get('employeeId') || 'all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
@@ -131,6 +135,7 @@ export function SalaryManagementPage(): JSX.Element {
   // Slip Modal & Report Modal states
   const [slipModalTarget, setSlipModalTarget] = useState<any | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [downloadingEmpId, setDownloadingEmpId] = useState<string | null>(null);
 
   // Month date range
   const monthStart = `${selectedYear}-${selectedMonth}-01`;
@@ -186,10 +191,10 @@ export function SalaryManagementPage(): JSX.Element {
     staleTime: 60_000,
   });
 
-  // Populate local card edits whenever saved salaries change
+  // Populate local card edits whenever saved salaries or month changes
   useEffect(() => {
+    const edits: typeof cardEdits = {};
     if (savedSalaries?.items) {
-      const edits: typeof cardEdits = {};
       savedSalaries.items.forEach((item: any) => {
         edits[item.employeeId] = {
           commission: Number(item.commissionAmount || 0),
@@ -199,9 +204,9 @@ export function SalaryManagementPage(): JSX.Element {
           status: item.status === 'PAID' ? 'PAID' : 'PENDING',
         };
       });
-      setCardEdits(prev => ({ ...edits, ...prev }));
     }
-  }, [savedSalaries?.items]);
+    setCardEdits(edits);
+  }, [savedSalaries?.items, monthIso]);
 
   // Sundays in month
   const sundayDates = useMemo(() => {
@@ -247,8 +252,10 @@ export function SalaryManagementPage(): JSX.Element {
     };
 
     return employeesData.items
-      // Bug fix: only show employees who had joined by the end of this month
+      // Only show employees who had joined by the end of this month OR have a saved salary record for this month
       .filter(emp => {
+        const hasSaved = savedSalaries?.items?.some((s: any) => s.employeeId === emp.id);
+        if (hasSaved) return true;
         const joining = (emp as any).joiningDate;
         if (!joining) return true; // no joining date set — include them
         // Compare joining date to last day of selected month
@@ -303,24 +310,22 @@ export function SalaryManagementPage(): JSX.Element {
         const dStr = new Date(log.attendanceDate).toLocaleDateString('en-CA');
         let secs = 0;
 
-        if (log.punchInAt && log.punchOutAt) {
-          // Primary pair: direct IN→OUT diff
-          const diff = (new Date(log.punchOutAt).getTime() - new Date(log.punchInAt).getTime()) / 1000;
-          if (diff > 0) secs += diff;
-        } else if (log.workedMinutes) {
-          // Fallback: pre-computed value (used for leave/holiday records)
-          secs = log.workedMinutes * 60;
-        }
-
-        // Additional punch pairs (break + return sessions stored as JSON)
         const extraPairs = (log as any).punchPairs;
-        if (Array.isArray(extraPairs)) {
+        if (Array.isArray(extraPairs) && extraPairs.length > 0) {
+          // If punchPairs is present, it contains all pairs for the day
           for (const pair of extraPairs) {
             if (pair?.punchInAt && pair?.punchOutAt) {
               const pairDiff = (new Date(pair.punchOutAt).getTime() - new Date(pair.punchInAt).getTime()) / 1000;
               if (pairDiff > 0) secs += pairDiff;
             }
           }
+        } else if (log.punchInAt && log.punchOutAt) {
+          // Primary single pair fallback
+          const diff = (new Date(log.punchOutAt).getTime() - new Date(log.punchInAt).getTime()) / 1000;
+          if (diff > 0) secs += diff;
+        } else if (log.workedMinutes) {
+          // Fallback: pre-computed value
+          secs = log.workedMinutes * 60;
         }
 
         daySecondsMap.set(dStr, (daySecondsMap.get(dStr) || 0) + secs);
@@ -359,17 +364,19 @@ export function SalaryManagementPage(): JSX.Element {
 
       const paidSundays = getPaidCount(presentRegularDays, sundaysCount);
       const paidHolidays = getPaidCount(presentRegularDays, holidaysCount);
-      const totalPaidOffDays = paidSundays + paidHolidays;
+      // Saved DB record match
+      const savedRecord = savedSalaries?.items?.find((s: any) => s.employeeId === emp.id) as any;
 
       // User card edit values
       const currentEdit = cardEdits[emp.id] || {
-        commission: 0,
-        advance: 0,
-        remarks: '',
-        excludeSundayHoliday: false,
-        status: 'PENDING' as const,
+        commission: savedRecord ? Number(savedRecord.commissionAmount || 0) : 0,
+        advance: savedRecord ? Number(savedRecord.advanceDeducted || 0) : 0,
+        remarks: savedRecord?.remarks || '',
+        excludeSundayHoliday: Boolean(savedRecord?.excludeSundayHoliday),
+        status: (savedRecord?.status === 'PAID' ? 'PAID' : 'PENDING') as 'PAID' | 'PENDING',
       };
 
+      const totalPaidOffDays = paidSundays + paidHolidays;
       const sundayHolidayPay = currentEdit.excludeSundayHoliday ? 0 : Number((totalPaidOffDays * perDaySalaryExact).toFixed(2));
       // Basic salary: totalHours × hourRate — overtime hours are already included in totalHours,
       // so overtimePayout is NOT added separately (it would double-count).
@@ -380,9 +387,6 @@ export function SalaryManagementPage(): JSX.Element {
       
       const lastPending = 0; // Carry forward placeholder
       const totalWithPending = thisMonthNet + lastPending;
-
-      // Saved DB record match
-      const savedRecord = savedSalaries?.items?.find((s: any) => s.employeeId === emp.id);
 
       return {
         emp,
@@ -575,22 +579,134 @@ export function SalaryManagementPage(): JSX.Element {
     statusMutation.mutate({ targets: [card], newStatus: 'PAID' });
   };
 
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+    staleTime: 60_000,
+  });
+
+  const [sendingEmailEmpId, setSendingEmailEmpId] = useState<string | null>(null);
+
   const handleMarkPendingSingle = (card: (typeof filteredCards)[0]) => {
     statusMutation.mutate({ targets: [card], newStatus: 'PENDING' });
   };
 
-  const handleSendMail = (card: (typeof filteredCards)[0]) => {
+  const handleSendMail = async (card: (typeof filteredCards)[0]) => {
     if (!card.emp.email) {
-      alert(`Employee "${card.emp.firstName} ${card.emp.lastName}" does not have an email address configured.`);
+      alert(`Employee "${card.emp.firstName} ${card.emp.lastName}" does not have an email address configured in their profile.`);
       return;
     }
-    const savedSmtp = localStorage.getItem('smtp_settings');
-    const smtp = savedSmtp ? JSON.parse(savedSmtp) : null;
-    if (!smtp || !smtp.smtpHost) {
-      alert('SMTP settings are not configured. Please configure SMTP in Settings > SMTP Settings first.');
-      return;
+
+    const monthLabel = MONTHS.find(m => m.value === selectedMonth)?.label || 'Month';
+    const monthName = `${monthLabel} ${selectedYear}`;
+    const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
+
+    const payload = {
+      company_name: settings?.companyName || 'BMAP EDUSERVICES',
+      company_logo: (settings as any)?.companyLogo || '',
+      company_address: (settings as any)?.companyAddress || '',
+      employee_name: empFullName,
+      employee_id: card.emp.employeeCode || `EMP-${(card.emp as any).legacySourceId ?? card.emp.id.slice(0, 5)}`,
+      employee_email: card.emp.email,
+      month_name: monthName,
+      pay_period: `01 ${monthLabel} ${selectedYear} - ${card.totalDaysInMonth} ${monthLabel} ${selectedYear}`,
+      pay_date: new Date().toLocaleDateString('en-IN'),
+      shift_name: card.shiftName || 'Full Day Shift',
+      shift_time: card.shiftStartTime && card.shiftEndTime ? `${card.shiftStartTime} - ${card.shiftEndTime}` : 'Regular',
+      payment_status: card.status === 'PAID' ? 'Paid' : 'Pending',
+      monthly_salary: Number(card.monthlySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      total_days: String(card.totalDaysInMonth),
+      per_day_salary: Number(card.perDaySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      per_hour_salary: Number(card.hourRate).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      basic_salary: Number(card.basicSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      working_days: String(card.totalWorkingDays),
+      sunday_holiday_pay: Number(card.sundayHolidayPay).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      present_days: String(card.presentRegularDays),
+      overtime_pay: Number(card.overtimePayout).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      overtime_hours: String(card.overtimeHours),
+      commission: Number(card.commission).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      total_hours_worked: String(card.totalHours),
+      advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      expected_hours: String(card.expectedHours),
+      net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
+      paid_on: card.status === 'PAID' ? new Date().toLocaleString('en-IN') : 'Pending',
+      remarks: card.remarks || '',
+    };
+
+    setSendingEmailEmpId(card.emp.id);
+    try {
+      const res = await salaryApi.sendCustomSlip(payload);
+      alert(res.message || `Salary slip for ${monthName} successfully emailed to ${card.emp.email}!`);
+    } catch (err: any) {
+      alert(`Failed to send email: ${err?.message || 'Please verify your SMTP settings in Settings > SMTP Settings.'}`);
+    } finally {
+      setSendingEmailEmpId(null);
     }
-    alert(`Salary slip for ${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear} successfully sent to ${card.emp.email} (via ${smtp.fromEmail || smtp.smtpUsername || smtp.smtpHost}).`);
+  };
+
+  // Handle PDF Download (Exact 1:1 Legacy Slip)
+  const handleDownloadPdf = async (card: (typeof calculatedCards)[0]) => {
+    const monthLabel = MONTHS.find(m => m.value === selectedMonth)?.label || 'Month';
+    const monthName = `${monthLabel} ${selectedYear}`;
+    const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
+
+    const payload = {
+      company_name: settings?.companyName || 'BMAP Pvt Ltd',
+      company_logo: (settings as any)?.companyLogo || '',
+      company_address: (settings as any)?.companyAddress || '',
+      employee_name: empFullName,
+      employee_id: card.emp.employeeCode || `EMP-${(card.emp as any).legacySourceId ?? card.emp.id.slice(0, 5)}`,
+      employee_email: card.emp.email || '',
+      month_name: monthName,
+      pay_period: `${monthLabel} ${selectedYear}`,
+      pay_date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      shift_name: card.shiftName || 'Full Day',
+      shift_time: card.shiftStartTime && card.shiftEndTime ? `${card.shiftStartTime} - ${card.shiftEndTime}` : '09:00 - 19:30',
+      payment_status: card.status === 'PAID' ? 'Paid' : 'Pending',
+      monthly_salary: Number(card.monthlySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      total_days: String(card.totalDaysInMonth),
+      per_day_salary: Number(card.perDaySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      per_hour_salary: Number(card.hourRate).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      basic_salary: Number(card.basicSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      working_days: String(card.totalWorkingDays),
+      sunday_holiday_pay: Number(card.sundayHolidayPay).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      present_days: String(card.presentRegularDays),
+      overtime_pay: Number(card.overtimePayout).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      overtime_hours: String(card.overtimeHours),
+      commission: Number(card.commission).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      total_hours_worked: String(card.totalHours),
+      advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      expected_hours: String(card.expectedHours),
+      net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
+      paid_on: card.status === 'PAID' ? new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending',
+      remarks: card.remarks || '',
+    };
+
+    setDownloadingEmpId(card.emp.id);
+    try {
+      const res = await salaryApi.downloadCustomSlipPdf(payload);
+      if (!res?.base64) throw new Error('No PDF data received from server');
+
+      const byteCharacters = atob(res.base64);
+      const byteNumbers = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const blob = new Blob([byteNumbers], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeEmp = empFullName.replace(/[^A-Za-z0-9_\-]/g, '_');
+      a.download = res.filename || `Salary_Slip_${safeEmp}_${selectedYear}-${selectedMonth}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert(`Download failed: ${err?.message || 'Error downloading PDF'}`);
+    } finally {
+      setDownloadingEmpId(null);
+    }
   };
 
   // Handle Bulk Actions
@@ -936,18 +1052,45 @@ export function SalaryManagementPage(): JSX.Element {
 
                 <Button 
                   size="sm"
-                  onClick={() => setSlipModalTarget(card)}
-                  className="flex-1 min-w-[85px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 shadow-sm"
+                  disabled={downloadingEmpId === card.emp.id}
+                  onClick={() => handleDownloadPdf(card)}
+                  className="flex-1 min-w-[85px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 shadow-sm gap-1.5"
                 >
-                  Download
+                  {downloadingEmpId === card.emp.id ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" /> PDF...
+                    </>
+                  ) : (
+                    <>
+                      <Download size={13} /> PDF Slip
+                    </>
+                  )}
                 </Button>
 
                 <Button 
                   size="sm"
-                  onClick={() => handleSendMail(card)}
-                  className="flex-1 min-w-[85px] bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold h-9 shadow-sm"
+                  onClick={() => setSlipModalTarget(card)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold h-9 px-2.5 shadow-sm"
+                  title="Preview Slip Layout"
                 >
-                  Send Mail
+                  👁️
+                </Button>
+
+                <Button 
+                  size="sm"
+                  disabled={sendingEmailEmpId === card.emp.id}
+                  onClick={() => handleSendMail(card)}
+                  className="flex-1 min-w-[85px] bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold h-9 shadow-sm gap-1.5"
+                >
+                  {sendingEmailEmpId === card.emp.id ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" /> Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Mail size={13} /> Send Mail
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -961,16 +1104,28 @@ export function SalaryManagementPage(): JSX.Element {
         </div>
       )}
 
-      {/* 5. Salary Slip Modal */}
+      {/* 5. Salary Slip Preview Modal (1:1 Legacy Exact Replica) */}
       {slipModalTarget && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity" onClick={() => setSlipModalTarget(null)} />
-          <div className="relative z-10 bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="font-bold text-lg text-slate-800">Salary Slip Preview</h3>
+          <div className="relative z-10 bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b bg-slate-50 shrink-0">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                📄 <span>Salary Slip Document Preview</span>
+              </h3>
               <div className="flex gap-2">
-                <Button size="sm" onClick={() => window.print()} className="gap-1.5 bg-sky-500 hover:bg-sky-600 text-white">
-                  <Printer size={15} /> Print / PDF
+                <Button 
+                  size="sm" 
+                  onClick={() => handleDownloadPdf(slipModalTarget)} 
+                  className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                  disabled={downloadingEmpId === slipModalTarget.emp.id}
+                >
+                  {downloadingEmpId === slipModalTarget.emp.id ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Download size={15} />
+                  )}
+                  <span>Download Official PDF</span>
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSlipModalTarget(null)}>
                   ✕
@@ -978,72 +1133,122 @@ export function SalaryManagementPage(): JSX.Element {
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-4 font-sans text-sm">
-              <div className="text-center pb-3 border-b">
-                <div className="text-xl font-bold text-sky-800">Company Attendance & Payroll</div>
-                <div className="text-xs text-slate-500 mt-0.5">Salary Slip for {MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}</div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-lg border">
-                <div><strong>Employee Name:</strong> {slipModalTarget.emp.firstName} {slipModalTarget.emp.lastName}</div>
-                <div><strong>Employee Code:</strong> {slipModalTarget.emp.employeeCode || slipModalTarget.emp.id}</div>
-                <div><strong>Department:</strong> {slipModalTarget.emp.department?.name || 'General'}</div>
-                <div><strong>Status:</strong> <span className="text-emerald-600 font-bold">Paid</span></div>
-              </div>
-
-              <table className="w-full text-xs border-collapse border border-slate-200">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700">
-                    <th className="border p-2 text-left">Earnings</th>
-                    <th className="border p-2 text-right">Amount (₹)</th>
-                    <th className="border p-2 text-left">Attendance & Hours</th>
-                    <th className="border p-2 text-right">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border p-2">Monthly Salary</td>
-                    <td className="border p-2 text-right font-mono font-bold">{slipModalTarget.monthlySalary.toFixed(2)}</td>
-                    <td className="border p-2">Total Days in Month</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.totalDaysInMonth}</td>
-                  </tr>
-                  <tr>
-                    <td className="border p-2">Basic Salary</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.basicSalary.toFixed(2)}</td>
-                    <td className="border p-2">Total Working Days</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.totalWorkingDays}</td>
-                  </tr>
-                  <tr>
-                    <td className="border p-2">Sunday & Holiday Pay</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.sundayHolidayPay.toFixed(2)}</td>
-                    <td className="border p-2">Mon-Sat Present Days</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.presentRegularDays}</td>
-                  </tr>
-                  <tr>
-                    <td className="border p-2">Commission / Bonus</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.commission.toFixed(2)}</td>
-                    <td className="border p-2">Total Worked Hours</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.totalHours}</td>
-                  </tr>
-                  <tr>
-                    <td className="border p-2 text-red-600">Advance Deducted</td>
-                    <td className="border p-2 text-right font-mono text-red-600">- {slipModalTarget.advance.toFixed(2)}</td>
-                    <td className="border p-2">Expected Hours</td>
-                    <td className="border p-2 text-right font-mono">{slipModalTarget.expectedHours}</td>
-                  </tr>
-                  <tr className="bg-emerald-50 font-bold text-emerald-900 text-sm">
-                    <td className="border p-2.5">Net Salary</td>
-                    <td className="border p-2.5 text-right font-mono">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</td>
-                    <td className="border p-2.5" colSpan={2}></td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {slipModalTarget.remarks && (
-                <div className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded border">
-                  <strong>Remarks:</strong> {slipModalTarget.remarks}
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center items-start">
+              {/* 1:1 Exact Legacy Preview Card Matching AttenOld */}
+              <div className="bg-white max-w-[650px] w-full rounded-2xl p-6 sm:p-8 shadow-md border border-slate-200 font-sans text-sm mb-6">
+                <div className="text-center pb-2">
+                  <img
+                    src={(settings as any)?.companyLogo || defaultCompanyLogo}
+                    alt="Company Logo"
+                    className="max-h-[85px] max-w-[340px] mx-auto mb-2 object-contain rounded-lg border-2 border-[#dbe7f6] shadow-sm bg-[#f7fafc] p-1"
+                  />
+                  <div className="font-bold text-xl text-[#1968a7] tracking-wide">
+                    {settings?.companyName || 'BMAP Pvt Ltd'}
+                  </div>
+                  <div className="text-[11px] text-[#757a8a] max-w-md mx-auto mt-0.5 leading-snug">
+                    {(settings as any)?.companyAddress || '206 Sunrise Commercial Complex - Near, Savjibhai Korat Bridge, Lajamani chowk, Shanti Niketan Society, Mota Varachha, Surat, Gujarat 394105 • bookmyassignments.com'}
+                  </div>
                 </div>
-              )}
+
+                <div className="mt-4 text-center text-lg font-bold text-[#2e415a]">
+                  Salary Slip
+                </div>
+
+                <table className="w-[88%] mx-auto mt-4 text-[13px] border-collapse">
+                  <tbody>
+                    <tr>
+                      <td className="py-1 px-1.5 text-slate-600 w-1/4"><b>Pay Period:</b></td>
+                      <td className="py-1 px-1.5 text-slate-900 w-1/4">{MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}</td>
+                      <td className="py-1 px-1.5 text-slate-600 w-1/4"><b>Pay Date:</b></td>
+                      <td className="py-1 px-1.5 text-slate-900 w-1/4">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 px-1.5 text-slate-600"><b>Employee Name:</b></td>
+                      <td className="py-1 px-1.5 text-slate-900 font-semibold">{slipModalTarget.emp.firstName} {slipModalTarget.emp.lastName}</td>
+                      <td className="py-1 px-1.5 text-slate-600"><b>Employee ID:</b></td>
+                      <td className="py-1 px-1.5 text-slate-900">{slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 5)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1 px-1.5 text-slate-600"><b>Shift:</b></td>
+                      <td className="py-1 px-1.5 text-slate-900">{slipModalTarget.shiftName} ({slipModalTarget.shiftStartTime} - {slipModalTarget.shiftEndTime})</td>
+                      <td className="py-1 px-1.5 text-slate-600"><b>Status:</b></td>
+                      <td className="py-1 px-1.5">
+                        <span className={`font-bold ${slipModalTarget.status === 'PAID' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <table className="w-[92%] mx-auto mt-4 text-[13px] border-collapse">
+                  <thead>
+                    <tr className="bg-[#e9f4fb]">
+                      <th colSpan={2} className="py-2 px-2 text-left font-bold text-[#1563ac] rounded-tl-lg">Earnings</th>
+                      <th colSpan={2} className="py-2 px-2 text-left font-bold text-[#d67412] rounded-tr-lg">Attendance & Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="bg-[#f7fafc]">
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Monthly Salary</td>
+                      <td className="py-1.5 px-2 font-bold text-slate-900 border-b border-slate-100">₹ {slipModalTarget.monthlySalary.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Total Days in Month</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.totalDaysInMonth}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Salary Per Day</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.perDaySalary.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Salary Per Hour</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.hourRate.toFixed(2)}</td>
+                    </tr>
+                    <tr className="bg-[#f7fafc]">
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Basic Salary</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.basicSalary.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Total Working Days</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.totalWorkingDays}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Sunday & Holiday Pay</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.sundayHolidayPay.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Mon-Sat Present Days</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.presentRegularDays}</td>
+                    </tr>
+                    <tr className="bg-[#f7fafc]">
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Overtime Payout</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.overtimePayout.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Overtime Hours</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.overtimeHours}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Commission / Extra</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.commission.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Total Hours Worked</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.totalHours}</td>
+                    </tr>
+                    <tr className="bg-[#f7fafc]">
+                      <td className="py-1.5 px-2 text-red-600 font-semibold border-b border-slate-100">Advance Deducted</td>
+                      <td className="py-1.5 px-2 text-red-600 font-bold border-b border-slate-100">- ₹ {slipModalTarget.advance.toFixed(2)}</td>
+                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Expected Hours</td>
+                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.expectedHours}</td>
+                    </tr>
+                    <tr className="bg-[#d8f0e8]">
+                      <td className="py-2.5 px-2 font-bold text-[#217f44] text-sm rounded-bl-lg">Net Salary</td>
+                      <td className="py-2.5 px-2 font-bold text-[#217f44] text-sm">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</td>
+                      <td colSpan={2} className="py-2.5 px-2 text-right text-xs text-[#217f44] font-semibold rounded-br-lg">All amounts in INR</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="w-[92%] mx-auto mt-4 text-[12px] space-y-1 text-slate-600">
+                  <div className="flex justify-between">
+                    <div><b>Payment Status:</b> <span className={slipModalTarget.status === 'PAID' ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>{slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}</span></div>
+                    <div><b>Paid On:</b> {slipModalTarget.status === 'PAID' ? new Date().toLocaleString('en-IN') : 'Pending'}</div>
+                  </div>
+                  {slipModalTarget.remarks && (
+                    <div><b>Remarks:</b> <span className="text-slate-800">{slipModalTarget.remarks}</span></div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>,

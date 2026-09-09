@@ -134,11 +134,12 @@ export class LeaveService {
     });
 
     // Notify all admin users about the new leave request
-    const empName = (employee as any).user?.name ?? (employee as any).firstName ?? 'An employee';
+    const empName = [employee.firstName, employee.lastName].filter(Boolean).join(' ') || 'Employee';
     const startStr = startDate.toLocaleDateString('en-IN');
     const endStr = endDate.toLocaleDateString('en-IN');
     await this.notificationsService.notifyAdmins({
-      type: 'LEAVE_REQUESTED' as any,
+      employeeId: employee.id,
+      type: 'LEAVE_REQUESTED',
       title: `Leave Request: ${empName}`,
       body: `${empName} requested ${leaveType.name} from ${startStr} to ${endStr}. Reason: ${dto.reason}`,
       entityType: 'LeaveRequest',

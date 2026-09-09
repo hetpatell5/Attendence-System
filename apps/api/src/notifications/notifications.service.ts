@@ -29,7 +29,6 @@ export class NotificationsService {
     const notification = await client.notification.create({ data: input });
 
     // Push SSE event (non-blocking, outside transaction)
-    // We schedule it asynchronously so the transaction can commit first
     setImmediate(() => {
       this.eventBus.emit({
         employeeId: input.employeeId,
@@ -45,40 +44,89 @@ export class NotificationsService {
   }
 
   /**
-   * Creates notifications for all SUPER_ADMIN / ADMIN users.
-   * Used for leave requests and punch events that admin needs to see.
+   * Creates notifications for all SUPER_ADMIN / ADMIN / HR users and pushes live SSE event.
+   * Used for leave requests and punch in/out events.
    */
   async notifyAdmins(
-    input: Omit<CreateNotificationInput, 'employeeId'>,
+    input: Omit<CreateNotificationInput, 'employeeId'> & { employeeId?: string },
   ): Promise<void> {
-    // Find all admin users
-    const adminUsers = await this.prisma.user.findMany({
-      where: { role: { in: ['SUPER_ADMIN', 'ADMIN'] } },
-      select: { id: true },
-    });
-
-    for (const adminUser of adminUsers) {
-      const employee = await this.employeesService.findByUserId(adminUser.id);
-      if (employee) {
-        // Admin has an employee record — notify that employee record
-        await this.create({ ...input, employeeId: employee.id });
-      } else {
-        // Admin has no employee record — still push event via bus using userId as key
-        // We use a virtual "admin:userId" key pattern
-        this.eventBus.emit({
-          employeeId: `admin:${adminUser.id}`,
-          ...input,
+    if (input.employeeId) {
+      try {
+        await this.prisma.notification.create({
+          data: {
+            employeeId: input.employeeId,
+            type: input.type,
+            title: input.title,
+            body: input.body,
+            entityType: input.entityType,
+            entityId: input.entityId,
+          },
         });
+      } catch {
+        // ignore
       }
     }
+
+    // Always emit to the global event bus for active Admin SSE listeners
+    this.eventBus.emit({
+      employeeId: 'admin:global',
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      entityType: input.entityType,
+      entityId: input.entityId,
+    });
   }
 
+  /**
+   * Broadcasts an announcement event to ALL connected employee SSE streams.
+   * Does NOT create individual DB notification records (announcements are
+   * already stored in their own table). Just pushes the live toast.
+   */
+  async broadcastAnnouncementToEmployees(
+    input: Pick<CreateNotificationInput, 'title' | 'body' | 'entityType' | 'entityId'>,
+  ): Promise<void> {
+    this.eventBus.broadcastToAllEmployees({
+      type: 'ANNOUNCEMENT_PUBLISHED',
+      title: input.title,
+      body: input.body ?? '',
+      entityType: input.entityType,
+      entityId: input.entityId,
+    });
+  }
+
+
   async listForUser(userId: string, page = 1, pageSize = 25): Promise<Notification[]> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
     const employee = await this.employeesService.findByUserId(userId);
+
+    if (isAdmin) {
+      // Admins see all admin events + all system events
+      return this.prisma.notification.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      });
+    }
+
     if (!employee) return [];
-    
+
+    // Employees only see personal notification types (Leave approvals, Salary updates, Announcements, Adjustments)
     return this.prisma.notification.findMany({
-      where: { employeeId: employee.id },
+      where: {
+        employeeId: employee.id,
+        type: {
+          in: [
+            'LEAVE_APPROVED',
+            'LEAVE_REJECTED',
+            'SALARY_PAID',
+            'SALARY_GENERATED',
+            'ANNOUNCEMENT_PUBLISHED',
+            'ATTENDANCE_ADJUSTED',
+          ],
+        },
+      },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -86,18 +134,49 @@ export class NotificationsService {
   }
 
   async unreadCount(userId: string): Promise<number> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
     const employee = await this.employeesService.findByUserId(userId);
-    if (!employee) return 0;
 
+    if (isAdmin) {
+      return this.prisma.notification.count({
+        where: { readAt: null },
+      });
+    }
+
+    if (!employee) return 0;
     return this.prisma.notification.count({
-      where: { employeeId: employee.id, readAt: null },
+      where: {
+        employeeId: employee.id,
+        readAt: null,
+        type: {
+          in: [
+            'LEAVE_APPROVED',
+            'LEAVE_REJECTED',
+            'SALARY_PAID',
+            'SALARY_GENERATED',
+            'ANNOUNCEMENT_PUBLISHED',
+            'ATTENDANCE_ADJUSTED',
+          ],
+        },
+      },
     });
   }
 
   async markRead(id: string, userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
     const employee = await this.employeesService.findByUserId(userId);
-    if (!employee) return;
 
+    if (isAdmin) {
+      await this.prisma.notification.updateMany({
+        where: { id, readAt: null },
+        data: { readAt: new Date() },
+      });
+      return;
+    }
+
+    if (!employee) return;
     await this.prisma.notification.updateMany({
       where: { id, employeeId: employee.id, readAt: null },
       data: { readAt: new Date() },
@@ -105,9 +184,19 @@ export class NotificationsService {
   }
 
   async markAllRead(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
     const employee = await this.employeesService.findByUserId(userId);
-    if (!employee) return;
 
+    if (isAdmin) {
+      await this.prisma.notification.updateMany({
+        where: { readAt: null },
+        data: { readAt: new Date() },
+      });
+      return;
+    }
+
+    if (!employee) return;
     await this.prisma.notification.updateMany({
       where: { employeeId: employee.id, readAt: null },
       data: { readAt: new Date() },

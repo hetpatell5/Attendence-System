@@ -11,6 +11,10 @@ files:
   - dist-electron/**/*
 extraMetadata:
   main: dist-electron/main.js
+# Bundle the shutdown-gate C# source so main.ts can compile it in the packaged app
+extraResources:
+  - from: electron/shutdown-blocker.cs
+    to: shutdown-blocker.cs
 win:
   target: nsis
   artifactName: "${productName}-Setup-${version}.${ext}"
@@ -18,9 +22,13 @@ win:
   #                          without it electron-builder falls back to the default Electron icon.
 nsis:
   oneClick: false
-  perMachine: false
+  perMachine: true                  # installs to Program Files (best for shared workplace PCs)
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
+  createStartMenuShortcut: true
   shortcutName: Attendance
+  runAfterFinish: true              # auto-launch the app after install finishes
+
 # No update server exists yet — do not attempt to publish artifacts anywhere.
 publish: null
+

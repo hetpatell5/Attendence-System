@@ -18,6 +18,7 @@ import type { Paginated } from '../common/dto/pagination.dto';
 import type { CreateAttendanceDto } from './dto/create-attendance.dto';
 import type { AdjustAttendanceDto } from './dto/adjust-attendance.dto';
 import type { ListAttendanceQueryDto } from './dto/list-attendance-query.dto';
+import type { CreateAttendanceRequestDto } from './dto/create-attendance-request.dto';
 
 const PRISMA_UNIQUE_CONSTRAINT_ERROR = 'P2002';
 
@@ -75,13 +76,18 @@ export class AttendanceService {
 
   /** Returns today's punches for an employee, ordered by id ASC. */
   private async getTodayPunches(legacyEmployeeId: number, date: string): Promise<AttendanceLogRow[]> {
-    const rows = await this.prisma.$queryRaw<AttendanceLogRow[]>`
-      SELECT id, punch_type, time, date
+    const rows = await this.prisma.$queryRaw<any[]>`
+      SELECT id, punch_type, CAST(time AS CHAR) as time, CAST(date AS CHAR) as date
       FROM attendance_log
       WHERE employee_id = ${legacyEmployeeId} AND date = ${date}
       ORDER BY id ASC
     `;
-    return rows;
+    return rows.map((r) => ({
+      id: Number(r.id),
+      punch_type: String(r.punch_type || '').toLowerCase(),
+      time: String(r.time || '00:00:00'),
+      date: String(r.date || date),
+    }));
   }
 
   /**
@@ -97,10 +103,59 @@ export class AttendanceService {
     time: string,
     totalHours: string,
   ): Promise<void> {
+    const punchTypeVal = punchType.toLowerCase();
     await this.prisma.$executeRaw`
       INSERT INTO attendance_log (employee_id, date, day, punch_type, time, total_hours, created_at)
-      VALUES (${legacyEmployeeId}, ${date}, ${day}, ${punchType}, ${time}, ${totalHours}, NOW())
+      VALUES (${legacyEmployeeId}, ${date}, ${day}, ${punchTypeVal}, ${time}, ${totalHours}, NOW())
     `;
+  }
+
+  /**
+   * Replaces all punches in attendance_log for a specific employee and date with the given pairs.
+   * This ensures admin manual edits & deletions immediately reflect on the employee dashboard and vice versa.
+   */
+  private async rewritePunchLogForEmployeeAndDate(
+    legacyEmployeeId: number,
+    dateStr: string,
+    pairs: Array<{ punchInAt: Date; punchOutAt: Date | null }>,
+    timezone: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.$executeRaw`
+        DELETE FROM attendance_log
+        WHERE employee_id = ${legacyEmployeeId} AND date = ${dateStr}
+      `;
+
+      for (const pair of pairs) {
+        const inTimeStr = pair.punchInAt.toLocaleTimeString('en-IN', {
+          timeZone: timezone,
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+        const dayName = pair.punchInAt.toLocaleDateString('en-IN', {
+          timeZone: timezone,
+          weekday: 'long',
+        });
+
+        await this.insertPunchLog(legacyEmployeeId, dateStr, dayName, 'IN', inTimeStr, '00:00:00');
+
+        if (pair.punchOutAt) {
+          const outTimeStr = pair.punchOutAt.toLocaleTimeString('en-IN', {
+            timeZone: timezone,
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+          const duration = this.calcDuration(inTimeStr, outTimeStr);
+          await this.insertPunchLog(legacyEmployeeId, dateStr, dayName, 'OUT', outTimeStr, duration);
+        }
+      }
+    } catch {
+      // safe fallback if MySQL attendance_log is unreachable
+    }
   }
 
   /**
@@ -128,18 +183,22 @@ export class AttendanceService {
    * (accumulated across all IN/OUT pairs) and returns total worked minutes.
    */
   private async getTotalWorkedMinutes(legacyEmployeeId: number, date: string): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ total_hours: string }[]>`
-      SELECT total_hours FROM attendance_log
-      WHERE employee_id = ${legacyEmployeeId} AND date = ${date} AND UPPER(punch_type) = 'OUT'
-    `;
-    return rows.reduce((sum, r) => {
-      if (!r.total_hours) return sum;
-      const parts = r.total_hours.split(':').map(Number);
-      const h = parts[0] ?? 0;
-      const m = parts[1] ?? 0;
-      const s = parts[2] ?? 0;
-      return sum + h * 60 + m + Math.round(s / 60);
-    }, 0);
+    try {
+      const rows = await this.prisma.$queryRaw<{ total_hours: string }[]>`
+        SELECT total_hours FROM attendance_log
+        WHERE employee_id = ${legacyEmployeeId} AND date = ${date} AND LOWER(punch_type) = 'out'
+      `;
+      return rows.reduce((sum, r) => {
+        if (!r.total_hours) return sum;
+        const parts = r.total_hours.split(':').map(Number);
+        const h = parts[0] ?? 0;
+        const m = parts[1] ?? 0;
+        const s = parts[2] ?? 0;
+        return sum + h * 60 + m + Math.round(s / 60);
+      }, 0);
+    } catch {
+      return 0;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -203,7 +262,9 @@ export class AttendanceService {
     if (punchCount > 0) {
       const lastPunch = punchList[punchList.length - 1];
       if (lastPunch) {
-        const lastMinute = `${lastPunch.date} ${lastPunch.time.slice(0, 5)}`;
+        const lastDate = String(lastPunch.date || dateStr);
+        const lastTime = String(lastPunch.time || '');
+        const lastMinute = `${lastDate} ${lastTime.slice(0, 5)}`;
         const nowMinute = `${dateStr} ${timeStr.slice(0, 5)}`;
         if (lastMinute === nowMinute) {
           throw new ConflictException('⚠️ Please wait at least 1 minute before your next punch.');
@@ -218,31 +279,17 @@ export class AttendanceService {
       // safe fallback if legacy attendance_log table is unreachable
     }
 
-    // 7. Sync app_attendance — upsert with punchInAt (first IN of the day)
-    const appRecord = await this.prisma.attendance.upsert({
-      where: { employeeId_attendanceDate: { employeeId: employee.id, attendanceDate: today } },
-      create: {
-        employeeId: employee.id,
-        attendanceDate: today,
-        punchInAt: now,
-        status: 'PRESENT',
-        source: 'MANUAL_PUNCH',
-      },
-      update: {
-        // Only update punchInAt if this is the first IN for today
-        ...(punchCount === 0 ? { punchInAt: now } : {}),
-        status: 'PRESENT',
-        source: 'MANUAL_PUNCH',
-      },
-    });
+    // 7. Sync app_attendance with all today's punchPairs from attendance_log
+    const appRecord = await this.syncAttendanceRecordFromLog(employee.id, legacyId, today, settings.timezone);
 
     await this.auditService.log({ eventType: 'ATTENDANCE_PUNCH_IN', userId, ipAddress: ip });
 
     // Notify all admins about punch in
-    const empFullName = (employee as any).user?.name ?? (employee as any).firstName ?? 'Employee';
+    const empFullName = [employee.firstName, employee.lastName].filter(Boolean).join(' ') || 'Employee';
     const punchTimeStr = now.toLocaleTimeString('en-IN', { timeZone: settings.timezone, hour: '2-digit', minute: '2-digit', hour12: true });
     void this.notificationsService.notifyAdmins({
-      type: 'ATTENDANCE_EVENT' as any,
+      employeeId: employee.id,
+      type: 'ATTENDANCE_EVENT',
       title: `Punch In: ${empFullName}`,
       body: `${empFullName} punched in at ${punchTimeStr}`,
       entityType: 'Attendance',
@@ -309,7 +356,9 @@ export class AttendanceService {
     if (punchCount > 0) {
       const lastPunch = punchList[punchList.length - 1];
       if (lastPunch) {
-        const lastMinute = `${lastPunch.date} ${lastPunch.time.slice(0, 5)}`;
+        const lastDate = String(lastPunch.date || dateStr);
+        const lastTime = String(lastPunch.time || '');
+        const lastMinute = `${lastDate} ${lastTime.slice(0, 5)}`;
         const nowMinute = `${dateStr} ${timeStr.slice(0, 5)}`;
         if (lastMinute === nowMinute) {
           throw new ConflictException('⚠️ Please wait at least 1 minute before your next punch.');
@@ -318,8 +367,9 @@ export class AttendanceService {
     }
 
     // 6. Find the last IN punch and compute duration
-    const lastInPunch = [...punchList].reverse().find((p) => p.punch_type.toUpperCase() === 'IN');
-    const totalHours = lastInPunch ? this.calcDuration(lastInPunch.time, timeStr) : '00:00:00';
+    const lastInPunch = [...punchList].reverse().find((p) => String(p.punch_type).toUpperCase() === 'IN');
+    const lastInTime = lastInPunch ? String(lastInPunch.time || '00:00:00') : '00:00:00';
+    const totalHours = lastInPunch ? this.calcDuration(lastInTime, timeStr) : '00:00:00';
 
     // 7. Write to attendance_log
     try {
@@ -328,59 +378,22 @@ export class AttendanceService {
       // safe fallback
     }
 
-    // 8. Compute total worked minutes for today across all pairs and sync app_attendance
-    let workedMinutes = 0;
+    // 7. Sync app_attendance with all punch pairs and worked minutes from attendance_log
+    const updated = await this.syncAttendanceRecordFromLog(employee.id, legacyId, today, settings.timezone);
+    const workedMinutes = updated.workedMinutes || 0;
+
     try {
-      workedMinutes = await this.getTotalWorkedMinutes(legacyId, dateStr);
+      await this.auditService.log({ eventType: 'ATTENDANCE_PUNCH_OUT', userId, ipAddress: ip });
     } catch {
-      workedMinutes = 0;
+      // audit log failure should not block punch out
     }
-
-    const shift = await this.shiftsService.resolveShiftForEmployeeOn(employee.id, today);
-    const existing = await this.prisma.attendance.findUnique({
-      where: { employeeId_attendanceDate: { employeeId: employee.id, attendanceDate: today } },
-    });
-
-    let status: AttendanceStatus = 'PRESENT';
-    if (shift && existing?.punchInAt) {
-      try {
-        const metrics = this.calculationService.calculateMetrics({
-          attendanceDate: today,
-          punchInAt: existing.punchInAt,
-          punchOutAt: now,
-          shift,
-        });
-        status = metrics.status;
-      } catch {
-        // If calculation fails, keep PRESENT
-      }
-    }
-
-    const updated = await this.prisma.attendance.upsert({
-      where: { employeeId_attendanceDate: { employeeId: employee.id, attendanceDate: today } },
-      create: {
-        employeeId: employee.id,
-        attendanceDate: today,
-        punchOutAt: now,
-        workedMinutes,
-        status: 'PRESENT',
-        source: 'MANUAL_PUNCH',
-      },
-      update: {
-        punchOutAt: now,
-        workedMinutes,
-        status,
-        source: 'MANUAL_PUNCH',
-      },
-    });
-
-    await this.auditService.log({ eventType: 'ATTENDANCE_PUNCH_OUT', userId, ipAddress: ip });
 
     // Notify all admins about punch out
-    const empFullNameOut = (employee as any).user?.name ?? (employee as any).firstName ?? 'Employee';
+    const empFullNameOut = [employee.firstName, employee.lastName].filter(Boolean).join(' ') || 'Employee';
     const punchOutTimeStr = now.toLocaleTimeString('en-IN', { timeZone: settings.timezone, hour: '2-digit', minute: '2-digit', hour12: true });
     void this.notificationsService.notifyAdmins({
-      type: 'ATTENDANCE_EVENT' as any,
+      employeeId: employee.id,
+      type: 'ATTENDANCE_EVENT',
       title: `Punch Out: ${empFullNameOut}`,
       body: `${empFullNameOut} punched out at ${punchOutTimeStr} (${Math.floor(workedMinutes / 60)}h ${workedMinutes % 60}m worked today)`,
       entityType: 'Attendance',
@@ -388,6 +401,95 @@ export class AttendanceService {
     }).catch(() => {/* swallow errors */});
 
     return updated;
+  }
+
+  /**
+   * Reads raw punches from attendance_log and syncs punchPairs, punchInAt, punchOutAt, and workedMinutes
+   * into app_attendance. This ensures admin calendar & edit modals display all multi-punch sessions accurately.
+   */
+  async syncAttendanceRecordFromLog(
+    employeeId: string,
+    legacyId: number,
+    date: Date,
+    _timezone: string,
+  ): Promise<Attendance> {
+    const dateStr = date.toISOString().slice(0, 10);
+    let punches: AttendanceLogRow[] = [];
+    try {
+      punches = await this.getTodayPunches(legacyId, dateStr);
+    } catch {
+      punches = [];
+    }
+
+    if (punches.length === 0) {
+      return (await this.prisma.attendance.findUnique({
+        where: { employeeId_attendanceDate: { employeeId, attendanceDate: date } },
+      })) as Attendance;
+    }
+
+    const pairs: Array<{ punchInAt: string; punchOutAt?: string }> = [];
+    let currentInIso: string | null = null;
+    let workedMinutes = 0;
+
+    for (const p of punches) {
+      const type = String(p.punch_type).toUpperCase();
+      const pDateStr = String(p.date || dateStr).slice(0, 10);
+      const pTimeStr = String(p.time || '00:00:00');
+      const isoTime = new Date(`${pDateStr}T${pTimeStr}+05:30`).toISOString();
+
+      if (type === 'IN') {
+        if (currentInIso) {
+          pairs.push({ punchInAt: currentInIso });
+        }
+        currentInIso = isoTime;
+      } else if (type === 'OUT') {
+        if (currentInIso) {
+          pairs.push({ punchInAt: currentInIso, punchOutAt: isoTime });
+          const diff = Math.max(0, Math.floor((new Date(isoTime).getTime() - new Date(currentInIso).getTime()) / 60000));
+          workedMinutes += diff;
+          currentInIso = null;
+        } else {
+          pairs.push({ punchInAt: isoTime, punchOutAt: isoTime });
+        }
+      }
+    }
+
+    if (currentInIso) {
+      pairs.push({ punchInAt: currentInIso });
+      const now = serverNow();
+      const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(currentInIso).getTime()) / 60000));
+      workedMinutes += elapsed;
+    }
+
+    const firstInAt = pairs[0]?.punchInAt ? new Date(pairs[0].punchInAt) : null;
+    const lastPunch = punches[punches.length - 1];
+    const isClockedIn = lastPunch && String(lastPunch.punch_type).toUpperCase() === 'IN';
+    const lastPair = pairs.length > 0 ? pairs[pairs.length - 1] : undefined;
+    const lastOutAt = !isClockedIn && lastPair?.punchOutAt
+      ? new Date(lastPair.punchOutAt)
+      : null;
+
+    return this.prisma.attendance.upsert({
+      where: { employeeId_attendanceDate: { employeeId, attendanceDate: date } },
+      create: {
+        employeeId,
+        attendanceDate: date,
+        punchInAt: firstInAt,
+        punchOutAt: lastOutAt,
+        punchPairs: pairs as any,
+        workedMinutes,
+        status: 'PRESENT',
+        source: 'MANUAL_PUNCH',
+      },
+      update: {
+        punchInAt: firstInAt,
+        punchOutAt: lastOutAt,
+        punchPairs: pairs as any,
+        workedMinutes,
+        status: 'PRESENT',
+        source: 'MANUAL_PUNCH',
+      },
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -398,6 +500,13 @@ export class AttendanceService {
     const employee = await this.employeesService.requireEmployeeForUser(userId);
     const settings = await this.settingsService.getSettings();
     const today = toCompanyDay(serverNow(), settings.timezone);
+    if (employee.legacySourceId) {
+      try {
+        await this.syncAttendanceRecordFromLog(employee.id, employee.legacySourceId, today, settings.timezone);
+      } catch {
+        // ignore
+      }
+    }
     return this.prisma.attendance.findUnique({
       where: { employeeId_attendanceDate: { employeeId: employee.id, attendanceDate: today } },
     });
@@ -407,17 +516,100 @@ export class AttendanceService {
    * Returns today's punch log rows from attendance_log for the current user.
    * Used by the employee dashboard to show IN/OUT times for multi-punch days.
    */
-  async getTodayPunchLogForUser(userId: string): Promise<AttendanceLogRow[]> {
+  /**
+   * Returns today's complete punch state (punches, currentState, nextAction, firstClockIn, shift details)
+   * Matching legacy system logic 1:1.
+   */
+  async getTodayPunchStateForUser(userId: string) {
     const employee = await this.employeesService.requireEmployeeForUser(userId);
-    if (!employee.legacySourceId) return [];
     const settings = await this.settingsService.getSettings();
     const today = toCompanyDay(serverNow(), settings.timezone);
     const dateStr = today.toISOString().slice(0, 10);
-    try {
-      return await this.getTodayPunches(employee.legacySourceId, dateStr);
-    } catch {
-      return [];
+
+    let punches: AttendanceLogRow[] = [];
+    if (employee.legacySourceId) {
+      try {
+        punches = await this.getTodayPunches(employee.legacySourceId, dateStr);
+      } catch {
+        punches = [];
+      }
     }
+
+    if (punches.length === 0) {
+      const todayAtt = await this.prisma.attendance.findUnique({
+        where: { employeeId_attendanceDate: { employeeId: employee.id, attendanceDate: today } },
+      });
+      if (todayAtt?.punchPairs && Array.isArray(todayAtt.punchPairs)) {
+        let fakeId = 1;
+        for (const pair of todayAtt.punchPairs as any[]) {
+          if (pair.punchInAt) {
+            const inDate = new Date(pair.punchInAt);
+            const inTime = inDate.toLocaleTimeString('en-IN', { timeZone: settings.timezone, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            punches.push({ id: fakeId++, punch_type: 'in', time: inTime, date: dateStr });
+          }
+          if (pair.punchOutAt) {
+            const outDate = new Date(pair.punchOutAt);
+            const outTime = outDate.toLocaleTimeString('en-IN', { timeZone: settings.timezone, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            punches.push({ id: fakeId++, punch_type: 'out', time: outTime, date: dateStr });
+          }
+        }
+      }
+    }
+
+    const punchCount = punches.length;
+    const lastPunch = punchCount > 0 ? punches[punchCount - 1] : undefined;
+    const currentState: 'in' | 'out' =
+      lastPunch && String(lastPunch.punch_type).toLowerCase() === 'in' ? 'in' : 'out';
+    const nextAction: 'in' | 'out' = punchCount % 2 === 0 ? 'in' : 'out';
+
+    const firstInPunch = punches.find((p) => String(p.punch_type).toLowerCase() === 'in');
+    const firstClockIn = firstInPunch ? firstInPunch.time : null;
+
+    const shift = await this.shiftsService.resolveShiftForEmployeeOn(employee.id, today);
+
+    let shiftEndTimestamp: number | null = null;
+    let shiftStartTimestamp: number | null = null;
+    if (shift?.startTime && shift?.endTime) {
+      const [sh, sm] = shift.startTime.split(':').map(Number);
+      const [eh, em] = shift.endTime.split(':').map(Number);
+
+      const shiftStartDate = new Date(today);
+      shiftStartDate.setHours(sh || 0, sm || 0, 0, 0);
+      shiftStartTimestamp = shiftStartDate.getTime();
+
+      const shiftEndDate = new Date(today);
+      shiftEndDate.setHours(eh || 0, em || 0, 0, 0);
+      if ((eh || 0) < (sh || 0)) {
+        shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+      }
+      shiftEndTimestamp = shiftEndDate.getTime();
+    }
+
+    return {
+      punches,
+      punchCount,
+      currentState,
+      nextAction,
+      firstClockIn,
+      shift: shift
+        ? {
+            id: shift.id,
+            name: shift.name,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+          }
+        : null,
+      shiftStartTimestamp,
+      shiftEndTimestamp,
+    };
+  }
+
+  /**
+   * Returns today's punch log rows from attendance_log for the current user.
+   */
+  async getTodayPunchLogForUser(userId: string): Promise<AttendanceLogRow[]> {
+    const state = await this.getTodayPunchStateForUser(userId);
+    return state.punches;
   }
 
   async listForUser(userId: string, from?: string, to?: string): Promise<Attendance[]> {
@@ -425,7 +617,24 @@ export class AttendanceService {
     return this.listForEmployee(employee.id, from, to);
   }
 
-  listForEmployee(employeeId: string, from?: string, to?: string): Promise<Attendance[]> {
+  async listForEmployee(employeeId: string, from?: string, to?: string): Promise<Attendance[]> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, legacySourceId: true },
+    });
+    if (employee?.legacySourceId) {
+      const settings = await this.settingsService.getSettings();
+      const today = toCompanyDay(serverNow(), settings.timezone);
+      const todayStr = today.toISOString().slice(0, 10);
+      if (!from || !to || (from <= todayStr && to >= todayStr)) {
+        try {
+          await this.syncAttendanceRecordFromLog(employee.id, employee.legacySourceId, today, settings.timezone);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     return this.prisma.attendance.findMany({
       where: {
         employeeId,
@@ -543,6 +752,31 @@ export class AttendanceService {
       },
     });
 
+    // Sync to legacy MySQL attendance_log
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: dto.employeeId },
+      select: { id: true, legacySourceId: true },
+    });
+    if (employee?.legacySourceId) {
+      const settings = await this.settingsService.getSettings();
+      const dateStr = attendanceDate.toISOString().slice(0, 10);
+      const manualPairs =
+        dto.status === 'PRESENT' && dto.punchInAt
+          ? [
+              {
+                punchInAt: new Date(dto.punchInAt),
+                punchOutAt: dto.punchOutAt ? new Date(dto.punchOutAt) : null,
+              },
+            ]
+          : [];
+      await this.rewritePunchLogForEmployeeAndDate(
+        employee.legacySourceId,
+        dateStr,
+        manualPairs,
+        settings.timezone,
+      );
+    }
+
     await this.auditService.logChange({
       eventType: 'ATTENDANCE_CREATED',
       actorUserId,
@@ -602,12 +836,13 @@ export class AttendanceService {
       }, 0);
     }
 
-    // Primary pair (for punchInAt / punchOutAt columns)
+    // Primary pair & full pairs
     const primaryIn  = allPairs[0]?.punchInAt  ?? null;
-    const primaryOut = allPairs[0]?.punchOutAt ?? null;
+    const lastPair = allPairs.length > 0 ? allPairs[allPairs.length - 1] : undefined;
+    const primaryOut = lastPair?.punchOutAt ?? null;
 
-    // Extra pairs stored as JSON (everything after the first pair)
-    const extraPairs = allPairs.slice(1).map(p => ({
+    // Full pairs stored as JSON (all pairs from 0 to N)
+    const fullPairs = allPairs.map((p) => ({
       punchInAt:  p.punchInAt.toISOString(),
       punchOutAt: p.punchOutAt?.toISOString() ?? null,
     }));
@@ -619,7 +854,7 @@ export class AttendanceService {
           status:       dto.status,
           punchInAt:    primaryIn,
           punchOutAt:   primaryOut,
-          punchPairs:   extraPairs.length > 0 ? extraPairs : [],
+          punchPairs:   fullPairs,
           workedMinutes,
           source: 'ADMIN_ADJUSTMENT',
         },
@@ -637,6 +872,22 @@ export class AttendanceService {
 
       return result;
     });
+
+    // Sync to legacy MySQL attendance_log so user dashboard immediately reflects deletions/edits
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: before.employeeId },
+      select: { id: true, legacySourceId: true },
+    });
+    if (employee?.legacySourceId) {
+      const settings = await this.settingsService.getSettings();
+      const dateStr = before.attendanceDate.toISOString().slice(0, 10);
+      await this.rewritePunchLogForEmployeeAndDate(
+        employee.legacySourceId,
+        dateStr,
+        dto.status === 'PRESENT' ? allPairs : [],
+        settings.timezone,
+      );
+    }
 
     await this.auditService.logChange({
       eventType:   'ATTENDANCE_UPDATED',
@@ -707,6 +958,326 @@ export class AttendanceService {
         holidayId: refs.holidayId,
       },
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Attendance Correction Requests (Employee submits, Admin reviews)
+  // -------------------------------------------------------------------------
+
+  async createRequestForUser(userId: string, dto: CreateAttendanceRequestDto) {
+    const employee = await this.employeesService.requireEmployeeForUser(userId);
+    const targetDate = new Date(dto.attendanceDate);
+
+    // Existing attendance on this date (if any)
+    const existing = await this.prisma.attendance.findUnique({
+      where: {
+        employeeId_attendanceDate: {
+          employeeId: employee.id,
+          attendanceDate: targetDate,
+        },
+      },
+    });
+
+    // Check if a pending request already exists for this employee and date
+    const existingPending = await this.prisma.attendanceRequest.findFirst({
+      where: {
+        employeeId: employee.id,
+        attendanceDate: targetDate,
+        status: 'PENDING',
+      },
+    });
+
+    // Build punch pairs
+    let punchPairsData = dto.punchPairs;
+    if ((!punchPairsData || punchPairsData.length === 0) && (dto.punchInAt || dto.punchOutAt)) {
+      punchPairsData = [
+        {
+          punchInAt: dto.punchInAt || '',
+          punchOutAt: dto.punchOutAt ?? null,
+        },
+      ];
+    }
+
+    // Determine primary punch in & punch out
+    let punchInDate: Date | null = null;
+    let punchOutDate: Date | null = null;
+
+    if (punchPairsData && punchPairsData.length > 0) {
+      const validPairs = punchPairsData.filter((p) => p.punchInAt);
+      if (validPairs.length > 0) {
+        const firstPair = validPairs[0];
+        const lastPair = validPairs[validPairs.length - 1];
+        if (firstPair?.punchInAt) {
+          punchInDate = new Date(firstPair.punchInAt);
+        }
+        if (lastPair?.punchOutAt) {
+          punchOutDate = new Date(lastPair.punchOutAt);
+        }
+      }
+    } else {
+      punchInDate = dto.punchInAt ? new Date(dto.punchInAt) : null;
+      punchOutDate = dto.punchOutAt ? new Date(dto.punchOutAt) : null;
+    }
+
+    const originalPairsData =
+      (existing?.punchPairs as any) ??
+      (existing?.punchInAt
+        ? [
+            {
+              punchInAt: existing.punchInAt.toISOString(),
+              punchOutAt: existing.punchOutAt?.toISOString() ?? null,
+            },
+          ]
+        : null);
+
+    const empFullName = [employee.firstName, employee.lastName].filter(Boolean).join(' ') || 'Employee';
+    const dateLabel = targetDate.toISOString().slice(0, 10);
+
+    if (existingPending) {
+      const updated = await this.prisma.attendanceRequest.update({
+        where: { id: existingPending.id },
+        data: {
+          punchInAt: punchInDate,
+          punchOutAt: punchOutDate,
+          punchPairs: (punchPairsData as any) ?? existingPending.punchPairs,
+          originalPairs: originalPairsData ?? existingPending.originalPairs,
+          reason: dto.reason ?? existingPending.reason,
+        },
+      });
+
+      // Notify admins that employee updated their pending punch correction request
+      void this.notificationsService.notifyAdmins({
+        employeeId: employee.id,
+        type: 'ATTENDANCE_EVENT',
+        title: `Punch Correction Updated: ${empFullName}`,
+        body: `${empFullName} updated their punch correction request for ${dateLabel}.`,
+        entityType: 'AttendanceRequest',
+        entityId: updated.id,
+      }).catch(() => {});
+
+      return updated;
+    }
+
+    const created = await this.prisma.attendanceRequest.create({
+      data: {
+        employeeId: employee.id,
+        attendanceDate: targetDate,
+        punchInAt: punchInDate,
+        punchOutAt: punchOutDate,
+        punchPairs: (punchPairsData as any) ?? null,
+        originalPunchIn: existing?.punchInAt ?? null,
+        originalPunchOut: existing?.punchOutAt ?? null,
+        originalPairs: originalPairsData ?? null,
+        reason: dto.reason ?? null,
+        status: 'PENDING',
+      },
+    });
+
+    // Notify admins that employee submitted a new punch correction request
+    void this.notificationsService.notifyAdmins({
+      employeeId: employee.id,
+      type: 'ATTENDANCE_EVENT',
+      title: `Punch Correction Request: ${empFullName}`,
+      body: `${empFullName} requested a punch correction for ${dateLabel}.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+      entityType: 'AttendanceRequest',
+      entityId: created.id,
+    }).catch(() => {});
+
+    return created;
+  }
+
+  async listMyRequestsForUser(userId: string, from?: string, to?: string) {
+    const employee = await this.employeesService.requireEmployeeForUser(userId);
+    return this.prisma.attendanceRequest.findMany({
+      where: {
+        employeeId: employee.id,
+        ...(from || to
+          ? {
+              attendanceDate: {
+                gte: from ? new Date(from) : undefined,
+                lte: to ? new Date(to) : undefined,
+              },
+            }
+          : {}),
+      },
+      orderBy: { attendanceDate: 'desc' },
+    });
+  }
+
+  async listPendingRequests() {
+    return this.prisma.attendanceRequest.findMany({
+      where: { status: 'PENDING' },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeCode: true,
+            profilePhotoUrl: true,
+            department: { select: { id: true, name: true } },
+            designation: { select: { id: true, title: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async approveRequest(requestId: string, actorUserId: string) {
+    const req = await this.prisma.attendanceRequest.findUnique({
+      where: { id: requestId },
+      include: { employee: true },
+    });
+    if (!req) {
+      throw new NotFoundException('Attendance request not found');
+    }
+    if (req.status !== 'PENDING') {
+      return req;
+    }
+
+    // 1. Mark request approved
+    const updatedReq = await this.prisma.attendanceRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'APPROVED',
+        reviewedByUserId: actorUserId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    // 2. Automatically update or create attendance record in database
+    const targetDate = req.attendanceDate;
+    const existing = await this.prisma.attendance.findUnique({
+      where: {
+        employeeId_attendanceDate: {
+          employeeId: req.employeeId,
+          attendanceDate: targetDate,
+        },
+      },
+    });
+
+    let punchIn = req.punchInAt ?? existing?.punchInAt ?? null;
+    let punchOut = req.punchOutAt ?? existing?.punchOutAt ?? null;
+
+    if (punchIn && punchOut && punchOut < punchIn) {
+      // Cross-midnight shift safety: punch out is on the next calendar day
+      punchOut = new Date(punchOut.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    const rawPairs = (req.punchPairs as any[]) || [];
+    const formattedPairs = rawPairs.map((p) => {
+      let inIso = p.punchInAt;
+      let outIso = p.punchOutAt;
+      if (inIso && outIso && new Date(outIso) < new Date(inIso)) {
+        outIso = new Date(new Date(outIso).getTime() + 24 * 60 * 60 * 1000).toISOString();
+      }
+      return { punchInAt: inIso, punchOutAt: outIso ?? null };
+    });
+
+    if (existing) {
+      await this.adjust(
+        existing.id,
+        {
+          status: 'PRESENT',
+          punchPairs: formattedPairs.length > 0 ? formattedPairs : undefined,
+          punchInAt: punchIn ? punchIn.toISOString() : undefined,
+          punchOutAt: punchOut ? punchOut.toISOString() : undefined,
+          reason: req.reason || 'Approved punch correction request',
+        },
+        actorUserId,
+      );
+    } else {
+      const created = await this.prisma.attendance.create({
+        data: {
+          employeeId: req.employeeId,
+          attendanceDate: targetDate,
+          status: 'PRESENT',
+          punchInAt: punchIn,
+          punchOutAt: punchOut,
+          source: 'ADMIN_ADJUSTMENT',
+        },
+      });
+      await this.adjust(
+        created.id,
+        {
+          status: 'PRESENT',
+          punchPairs: formattedPairs.length > 0 ? formattedPairs : undefined,
+          punchInAt: punchIn ? punchIn.toISOString() : undefined,
+          punchOutAt: punchOut ? punchOut.toISOString() : undefined,
+          reason: req.reason || 'Approved punch correction request',
+        },
+        actorUserId,
+      );
+    }
+
+    // 3. Notify employee
+    await this.notificationsService
+      .create({
+        employeeId: req.employeeId,
+        type: 'ATTENDANCE_ADJUSTED',
+        title: 'Attendance Correction Approved',
+        body: `Your attendance punch correction for ${targetDate.toISOString().slice(0, 10)} has been approved.`,
+        entityType: 'Attendance',
+        entityId: req.id,
+      })
+      .catch(() => {});
+
+    return updatedReq;
+  }
+
+  async bulkApproveRequests(requestIds: string[] | undefined, actorUserId: string) {
+    let targetIds = requestIds;
+    if (!targetIds || targetIds.length === 0) {
+      const pending = await this.prisma.attendanceRequest.findMany({
+        where: { status: 'PENDING' },
+        select: { id: true },
+      });
+      targetIds = pending.map((p) => p.id);
+    }
+
+    const results = [];
+    for (const id of targetIds) {
+      try {
+        const approved = await this.approveRequest(id, actorUserId);
+        results.push(approved);
+      } catch {
+        // Continue processing remaining requests
+      }
+    }
+    return { count: results.length, items: results };
+  }
+
+  async rejectRequest(requestId: string, actorUserId: string, remarks?: string) {
+    const req = await this.prisma.attendanceRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!req) {
+      throw new NotFoundException('Attendance request not found');
+    }
+
+    const updated = await this.prisma.attendanceRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'REJECTED',
+        reviewedByUserId: actorUserId,
+        reviewedAt: new Date(),
+        reviewRemarks: remarks ?? 'Rejected by admin',
+      },
+    });
+
+    await this.notificationsService
+      .create({
+        employeeId: req.employeeId,
+        type: 'ATTENDANCE_ADJUSTED',
+        title: 'Attendance Request Rejected',
+        body: `Your attendance correction request for ${req.attendanceDate.toISOString().slice(0, 10)} was rejected.${remarks ? ` Reason: ${remarks}` : ''}`,
+        entityType: 'Attendance',
+        entityId: req.id,
+      })
+      .catch(() => {});
+
+    return updated;
   }
 
   private isUniqueConstraintError(error: unknown): boolean {

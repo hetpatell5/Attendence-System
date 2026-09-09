@@ -7,6 +7,18 @@ export class UpdateSettingsDto {
 
   @IsOptional()
   @IsString()
+  companyLogo?: string;
+
+  @IsOptional()
+  @IsString()
+  companyFavicon?: string;
+
+  @IsOptional()
+  @IsString()
+  companyAddress?: string;
+
+  @IsOptional()
+  @IsString()
   timezone?: string;
 
   @IsOptional()
@@ -40,4 +52,42 @@ export class UpdateSettingsDto {
   @IsArray()
   @IsIP(undefined, { each: true })
   allowedIps?: string[];
+
+  // SMTP Configuration
+  @IsOptional()
+  @IsString()
+  smtpHost?: string;
+
+  @IsOptional()
+  @IsInt()
+  smtpPort?: number;
+
+  @IsOptional()
+  @IsString()
+  smtpUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  smtpPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  fromName?: string;
+
+  @IsOptional()
+  @IsString()
+  fromEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  adminEmail?: string;
+
+  // Custom Templates (HTML + CSS)
+  @IsOptional()
+  @IsString()
+  mailFormat?: string;
+
+  @IsOptional()
+  @IsString()
+  salarySlipFormat?: string;
 }

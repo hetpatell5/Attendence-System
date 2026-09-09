@@ -2,8 +2,6 @@ import type { AuthTokens, AuthUser } from '@attendance/shared';
 import { clearSession, readSession, writeSession, type StoredSession } from './token-store';
 import { getApiUrl } from '../config';
 
-const API_URL = getApiUrl();
-
 export class AuthApiError extends Error {
   constructor(
     message: string,
@@ -23,7 +21,8 @@ function toStoredSession(tokens: AuthTokens): StoredSession {
 }
 
 async function postJson<T>(pathname: string, body: unknown, accessToken?: string): Promise<T> {
-  const response = await fetch(`${API_URL}${pathname}`, {
+  const apiUrl = getApiUrl();
+  const response = await fetch(`${apiUrl}${pathname}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -33,7 +32,14 @@ async function postJson<T>(pathname: string, body: unknown, accessToken?: string
   });
 
   if (!response.ok) {
-    throw new AuthApiError(`Request to ${pathname} failed`, response.status);
+    let errorMessage = `Request to ${pathname} failed`;
+    try {
+      const errBody = (await response.json()) as any;
+      if (errBody && errBody.message) {
+        errorMessage = Array.isArray(errBody.message) ? errBody.message.join(', ') : String(errBody.message);
+      }
+    } catch {}
+    throw new AuthApiError(errorMessage, response.status);
   }
 
   if (response.status === 204) {
@@ -69,11 +75,19 @@ async function refreshSession(session: StoredSession): Promise<StoredSession> {
 }
 
 async function fetchProfile(accessToken: string): Promise<AuthUser> {
-  const response = await fetch(`${API_URL}/auth/me`, {
+  const apiUrl = getApiUrl();
+  const response = await fetch(`${apiUrl}/auth/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) {
-    throw new AuthApiError('Failed to fetch profile', response.status);
+    let errorMessage = 'Failed to fetch profile';
+    try {
+      const errBody = (await response.json()) as any;
+      if (errBody && errBody.message) {
+        errorMessage = Array.isArray(errBody.message) ? errBody.message.join(', ') : String(errBody.message);
+      }
+    } catch {}
+    throw new AuthApiError(errorMessage, response.status);
   }
   return (await response.json()) as AuthUser;
 }
@@ -131,8 +145,9 @@ export async function apiRequest<T>(pathname: string, init: ApiRequestInit = {})
     throw new AuthApiError('Not authenticated', 401);
   }
 
-  const doFetch = async (accessToken: string): Promise<Response> =>
-    fetch(`${API_URL}${pathname}`, {
+  const doFetch = async (accessToken: string): Promise<Response> => {
+    const apiUrl = getApiUrl();
+    return fetch(`${apiUrl}${pathname}`, {
       method: init.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -140,6 +155,7 @@ export async function apiRequest<T>(pathname: string, init: ApiRequestInit = {})
       },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
     });
+  };
 
   let response = await doFetch(session.accessToken);
 
@@ -179,8 +195,10 @@ export async function downloadFile(
     throw new AuthApiError('Not authenticated', 401);
   }
 
-  const doFetch = async (accessToken: string): Promise<Response> =>
-    fetch(`${API_URL}${pathname}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const doFetch = async (accessToken: string): Promise<Response> => {
+    const apiUrl = getApiUrl();
+    return fetch(`${apiUrl}${pathname}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  };
 
   let response = await doFetch(session.accessToken);
   if (response.status === 401) {
@@ -188,7 +206,14 @@ export async function downloadFile(
     response = await doFetch(session.accessToken);
   }
   if (!response.ok) {
-    throw new AuthApiError(`Request to ${pathname} failed`, response.status);
+    let errorMessage = `Request to ${pathname} failed`;
+    try {
+      const errBody = (await response.json()) as any;
+      if (errBody && errBody.message) {
+        errorMessage = Array.isArray(errBody.message) ? errBody.message.join(', ') : String(errBody.message);
+      }
+    } catch {}
+    throw new AuthApiError(errorMessage, response.status);
   }
 
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';

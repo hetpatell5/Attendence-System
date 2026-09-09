@@ -7,6 +7,7 @@ export interface Attendance {
   attendanceDate: string;
   punchInAt: string | null;
   punchOutAt: string | null;
+  punchPairs?: Array<{ punchInAt: string; punchOutAt?: string | null }> | null;
   shiftId: string | null;
   status: AttendanceStatus;
   workedMinutes: number;

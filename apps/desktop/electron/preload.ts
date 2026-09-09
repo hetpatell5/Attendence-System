@@ -25,4 +25,28 @@ contextBridge.exposeInMainWorld('electronApi', {
     show: (title: string, body: string): Promise<void> =>
       ipcRenderer.invoke('notify:show', title, body),
   },
+  server: {
+    /** Get the active server URL. */
+    getUrl: (): Promise<string> => ipcRenderer.invoke('server:get-url'),
+    /** Set and persist a new server URL. */
+    setUrl: (url: string): Promise<string> => ipcRenderer.invoke('server:set-url', url),
+  },
+  shutdown: {
+    /**
+     * Renderer calls this whenever punch state changes (punch-in or punch-out).
+     * Main process writes the status to a file read by the shutdown-gate helper.
+     */
+    updatePunchStatus: (isPunchedIn: boolean): Promise<void> =>
+      ipcRenderer.invoke('shutdown:update-punch-status', isPunchedIn),
+    /**
+     * Register a callback that fires when the OS shutdown was blocked because
+     * the employee is still clocked in. Show the punch-out-first modal.
+     * Returns a cleanup function to remove the listener.
+     */
+    onPunchOutRequired: (callback: () => void): (() => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('shutdown:punch-out-required', handler);
+      return () => ipcRenderer.removeListener('shutdown:punch-out-required', handler);
+    },
+  },
 });

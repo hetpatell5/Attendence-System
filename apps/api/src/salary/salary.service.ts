@@ -92,6 +92,11 @@ export class SalaryService {
               },
             });
 
+            // Only sync legacy records that have actual salary data.
+            // Skip zero-value records to prevent stub entries that block proper generation.
+            const finalSalary = parseFloat(row.final_salary ?? '0');
+            if (finalSalary === 0) continue;
+
             if (!existing) {
               await this.prisma.salaryRecord.create({
                 data: {
@@ -455,6 +460,238 @@ export class SalaryService {
     return result;
   }
 
+  async getSummaryForMonth(monthIso: string): Promise<{
+    paidSum: number;
+    unpaidSum: number;
+    totalDueSum: number;
+    paidCount: number;
+    unpaidCount: number;
+    totalEmployeesCount: number;
+    percentagePaid: number;
+  }> {
+    const monthDate = startOfCompanyDay(new Date(monthIso));
+    monthDate.setUTCDate(1);
+    const year = monthDate.getUTCFullYear();
+    const monthIndex = monthDate.getUTCMonth();
+    const totalDaysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const monthStart = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+    const monthEnd = new Date(Date.UTC(year, monthIndex, totalDaysInMonth, 23, 59, 59, 999));
+    const mStr = String(monthIndex + 1).padStart(2, '0');
+    const monthStr = `${year}-${mStr}`;
+
+    // Auto-sync legacy salary records if needed
+    try {
+      const legacyDetails = await this.prisma.$queryRawUnsafe<any[]>(
+        'SELECT * FROM salary_details WHERE month_year = ?',
+        monthStr,
+      );
+      if (legacyDetails?.length) {
+        const legacyEmps = await this.prisma.employee.findMany({
+          where: { legacySourceId: { in: legacyDetails.map((d) => d.employee_id) } },
+        });
+        const empMap = new Map(legacyEmps.map((e) => [e.legacySourceId, e]));
+
+        for (const row of legacyDetails) {
+          const emp = empMap.get(row.employee_id);
+          if (!emp) continue;
+
+          const status = (row.status || '').toLowerCase() === 'paid' ? 'PAID' : 'PENDING';
+          const existing = await this.prisma.salaryRecord.findUnique({
+            where: {
+              employeeId_month: {
+                employeeId: emp.id,
+                month: monthDate,
+              },
+            },
+          });
+
+          // Only sync legacy records that have actual salary data.
+          const legacyFinalSalary = parseFloat(row.final_salary ?? '0');
+          if (legacyFinalSalary === 0) continue;
+
+          if (!existing) {
+            await this.prisma.salaryRecord.create({
+              data: {
+                employeeId: emp.id,
+                month: monthDate,
+                basicSalary: emp.baseSalary ?? 0,
+                totalAllowances: 0,
+                totalDeductions: 0,
+                netSalary: Number(row.final_salary || 0),
+                advanceDeducted: Number(row.advance_amount || 0),
+                commissionAmount: Number(row.commission_amount || 0),
+                remarks: row.advance_remarks || '',
+                status,
+              },
+            });
+          }
+        }
+      }
+    } catch {
+      // Ignore legacy sync failures
+    }
+
+    const [employees, attendances, holidays, savedRecords, effectiveRates] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { status: 'ACTIVE' },
+        include: {
+          employeeShifts: {
+            include: { shift: true },
+            orderBy: { effectiveFrom: 'desc' },
+            take: 1,
+          },
+        },
+      }),
+      this.prisma.attendance.findMany({
+        where: { attendanceDate: { gte: monthStart, lte: monthEnd } },
+      }),
+      this.prisma.holiday.findMany({
+        where: {
+          date: {
+            gte: new Date(Date.UTC(year, 0, 1)),
+            lte: new Date(Date.UTC(year, 11, 31)),
+          },
+        },
+      }),
+      this.prisma.salaryRecord.findMany({
+        where: { month: monthDate },
+      }),
+      this.getEffectiveRatesForMonth(monthIso),
+    ]);
+
+    const sundayDates: string[] = [];
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      const dt = new Date(year, monthIndex, d);
+      if (dt.getDay() === 0) {
+        sundayDates.push(`${year}-${mStr}-${String(d).padStart(2, '0')}`);
+      }
+    }
+
+    const uniqueHolidays = holidays.filter((h) => {
+      const dStr = h.date ? h.date.toISOString().slice(0, 10) : '';
+      return dStr && !sundayDates.includes(dStr) && dStr.startsWith(monthStr);
+    });
+
+    const getPaidCount = (presentDays: number, totalOff: number) => {
+      if (presentDays >= 18) return totalOff;
+      if (presentDays >= 12) return Math.min(2, totalOff);
+      if (presentDays >= 5) return Math.min(1, totalOff);
+      return 0;
+    };
+
+    const empAttMap = new Map<string, any[]>();
+    attendances.forEach((a) => {
+      if (!empAttMap.has(a.employeeId)) empAttMap.set(a.employeeId, []);
+      empAttMap.get(a.employeeId)!.push(a);
+    });
+
+    let paidSum = 0;
+    let unpaidSum = 0;
+    let totalDueSum = 0;
+    let paidCount = 0;
+    let unpaidCount = 0;
+    let totalEmployeesCount = 0;
+
+    for (const emp of employees) {
+      const saved = savedRecords.find((s) => s.employeeId === emp.id);
+      if (!saved && emp.joiningDate && new Date(emp.joiningDate).getTime() > monthEnd.getTime()) {
+        continue;
+      }
+      totalEmployeesCount++;
+
+      const monthlySalary = effectiveRates[emp.id] ?? Number(emp.baseSalary || 0);
+      let shiftHours = 10.5;
+      const latestShift = emp.employeeShifts?.[0]?.shift;
+      if (latestShift?.startTime && latestShift?.endTime) {
+        const [sh, sm] = latestShift.startTime.split(':').map(Number);
+        const [eh, em] = latestShift.endTime.split(':').map(Number);
+        const startMin = (sh ?? 0) * 60 + (sm ?? 0);
+        const endMin = (eh ?? 0) * 60 + (em ?? 0);
+        let diffMinutes = endMin - startMin;
+        if (diffMinutes <= 0) diffMinutes += 24 * 60;
+        shiftHours = diffMinutes / 60;
+      }
+
+      const perDaySalaryExact = totalDaysInMonth > 0 ? monthlySalary / totalDaysInMonth : 0;
+      const hourRateExact = shiftHours > 0 ? perDaySalaryExact / shiftHours : 0;
+
+      const empLogs = empAttMap.get(emp.id) || [];
+      const daySecondsMap = new Map<string, number>();
+      empLogs.forEach((log) => {
+        const dStr = log.attendanceDate.toISOString().slice(0, 10);
+        let secs = 0;
+
+        const extraPairs = (log as any).punchPairs;
+        if (Array.isArray(extraPairs) && extraPairs.length > 0) {
+          for (const pair of extraPairs) {
+            if (pair?.punchInAt && pair?.punchOutAt) {
+              const diff = (new Date(pair.punchOutAt).getTime() - new Date(pair.punchInAt).getTime()) / 1000;
+              if (diff > 0) secs += diff;
+            }
+          }
+        } else if (log.punchInAt && log.punchOutAt) {
+          const diff = (new Date(log.punchOutAt).getTime() - new Date(log.punchInAt).getTime()) / 1000;
+          if (diff > 0) secs += diff;
+        } else if (log.workedMinutes) {
+          secs = log.workedMinutes * 60;
+        }
+
+        daySecondsMap.set(dStr, (daySecondsMap.get(dStr) || 0) + secs);
+      });
+
+      let totalWorkedSeconds = 0;
+      let presentRegularDays = 0;
+      for (let d = 1; d <= totalDaysInMonth; d++) {
+        const dStr = `${year}-${mStr}-${String(d).padStart(2, '0')}`;
+        const dt = new Date(year, monthIndex, d);
+        const isSun = dt.getDay() === 0;
+        const isHol = holidays.some((h) => h.date && h.date.toISOString().slice(0, 10) === dStr);
+        const secs = daySecondsMap.get(dStr) || 0;
+        if (!isSun && !isHol && secs > 0) presentRegularDays++;
+        totalWorkedSeconds += secs;
+      }
+
+      const totalHoursExact = totalWorkedSeconds / 3600;
+      const paidSundays = getPaidCount(presentRegularDays, sundayDates.length);
+      const paidHolidays = getPaidCount(presentRegularDays, uniqueHolidays.length);
+      const sundayHolidayPay = (saved as any)?.excludeSundayHoliday
+        ? 0
+        : Number(((paidSundays + paidHolidays) * perDaySalaryExact).toFixed(2));
+      const basicSalary = Number((totalHoursExact * hourRateExact).toFixed(2));
+
+      const advance = saved ? Number(saved.advanceDeducted || 0) : 0;
+      const commission = saved ? Number(saved.commissionAmount || 0) : 0;
+      const status = saved && saved.status === 'PAID' ? 'PAID' : 'PENDING';
+      const thisMonthNet = Math.round(basicSalary + sundayHolidayPay + commission - advance);
+
+      if (status === 'PAID') {
+        paidSum += thisMonthNet;
+        paidCount++;
+      } else {
+        unpaidSum += thisMonthNet;
+        unpaidCount++;
+      }
+      totalDueSum += thisMonthNet;
+    }
+
+    const percentagePaid =
+      totalDueSum > 0
+        ? Math.round((paidSum / totalDueSum) * 100)
+        : totalEmployeesCount > 0
+        ? Math.round((paidCount / totalEmployeesCount) * 100)
+        : 0;
+
+    return {
+      paidSum,
+      unpaidSum,
+      totalDueSum,
+      paidCount,
+      unpaidCount,
+      totalEmployeesCount,
+      percentagePaid,
+    };
+  }
+
 
   async generateForMonth(
     dto: GenerateSalaryDto,
@@ -504,10 +741,17 @@ export class SalaryService {
         continue;
       }
 
-      const record =
-        employee.payType === 'HOURLY'
-          ? await this.generateHourlyRecord(employee, month, existing, actorUserId)
-          : await this.generateSalariedRecord(employee, month, existing, actorUserId);
+      // If payType is HOURLY but hourlyRate is 0 or null, the rate is derived
+      // from baseSalary (like the legacy system). Use the SALARIED generator
+      // which correctly computes: hourRate = (baseSalary / daysInMonth) / shiftHours.
+      const useHourlyPath =
+        employee.payType === 'HOURLY' &&
+        employee.hourlyRate !== null &&
+        employee.hourlyRate.toNumber() > 0;
+
+      const record = useHourlyPath
+        ? await this.generateHourlyRecord(employee, month, existing, actorUserId)
+        : await this.generateSalariedRecord(employee, month, existing, actorUserId);
 
       await this.auditService.logChange({
         eventType: 'SALARY_CREATED',

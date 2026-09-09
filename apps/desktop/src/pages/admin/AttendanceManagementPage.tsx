@@ -193,14 +193,27 @@ export function AttendanceManagementPage(): JSX.Element {
     mutationFn: async () => {
       const dateStr = editTarget.dateStr;
 
-      // Build punchPairs array from UI state — convert local HH:MM to UTC ISO strings
+      // Build punchPairs array from UI state — convert local HH:MM to local Date ISO strings
       const builtPairs = editStatus === 'PRESENT'
         ? punchPairs
             .filter(p => p.punchIn) // must have at least an in-time
-            .map(p => ({
-              punchInAt:  new Date(`${dateStr}T${p.punchIn}:00.000Z`).toISOString(),
-              punchOutAt: p.punchOut ? new Date(`${dateStr}T${p.punchOut}:00.000Z`).toISOString() : undefined,
-            }))
+            .map(p => {
+              const [inH, inM] = p.punchIn.split(':').map(Number);
+              const inDate = new Date(`${dateStr}T00:00:00`);
+              inDate.setHours(inH || 0, inM || 0, 0, 0);
+
+              let outDate: Date | undefined = undefined;
+              if (p.punchOut) {
+                const [outH, outM] = p.punchOut.split(':').map(Number);
+                outDate = new Date(`${dateStr}T00:00:00`);
+                outDate.setHours(outH || 0, outM || 0, 0, 0);
+              }
+
+              return {
+                punchInAt: inDate.toISOString(),
+                punchOutAt: outDate ? outDate.toISOString() : undefined,
+              };
+            })
         : [];
 
       if (editTarget?.record?.id) {
@@ -240,23 +253,24 @@ export function AttendanceManagementPage(): JSX.Element {
     const isRecordPresent = record?.status === 'PRESENT' || Boolean(record?.punchInAt || record?.punchOutAt);
     setEditStatus(isRecordPresent ? 'PRESENT' : 'ABSENT');
 
-    // Helper: DateTime → 'HH:MM' in UTC (matches how legacy data is stored)
+    // Helper: DateTime → 'HH:MM' in local timezone (Asia/Kolkata)
     const toHHMM = (iso: string | null | undefined): string => {
       if (!iso) return '';
-      return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+      const d = new Date(iso);
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
     };
 
-    // Build pairs from the record
+    // Build pairs from the record (prioritize punchPairs array if available)
     const pairs: { punchIn: string; punchOut: string }[] = [];
-    if (record?.punchInAt) {
-      pairs.push({ punchIn: toHHMM(record.punchInAt), punchOut: toHHMM(record.punchOutAt) });
-    }
-    // Load any extra pairs stored in punchPairs JSON
     const extras = record?.punchPairs;
-    if (Array.isArray(extras)) {
+    if (Array.isArray(extras) && extras.length > 0) {
       for (const ep of extras) {
         pairs.push({ punchIn: toHHMM(ep.punchInAt), punchOut: toHHMM(ep.punchOutAt) });
       }
+    } else if (record?.punchInAt) {
+      pairs.push({ punchIn: toHHMM(record.punchInAt), punchOut: toHHMM(record.punchOutAt) });
     }
     // Always show at least one row
     if (pairs.length === 0) pairs.push({ punchIn: '', punchOut: '' });
@@ -343,14 +357,13 @@ export function AttendanceManagementPage(): JSX.Element {
       const isPresent = record?.status === 'PRESENT' || hasPunches;
 
       const pairs: { in: string | null; out: string | null }[] = [];
-      if (record?.punchInAt) {
-        pairs.push({ in: record.punchInAt, out: record.punchOutAt || null });
-      }
       const extras = (record as any)?.punchPairs;
-      if (Array.isArray(extras)) {
+      if (Array.isArray(extras) && extras.length > 0) {
         for (const ep of extras) {
           pairs.push({ in: ep.punchInAt, out: ep.punchOutAt || null });
         }
+      } else if (record?.punchInAt) {
+        pairs.push({ in: record.punchInAt, out: record.punchOutAt || null });
       }
 
       const renderPairs = (borderColor: string, incompleteColor: string) => (
@@ -684,14 +697,14 @@ export function AttendanceManagementPage(): JSX.Element {
                       </div>
                     ))}
                   </div>
-                  {/* Add Entry button — max 3 entries */}
-                  {punchPairs.length < 3 && (
+                  {/* Add Entry button */}
+                  {punchPairs.length < 12 && (
                     <button
                       type="button"
                       onClick={() => setPunchPairs([...punchPairs, { punchIn: '', punchOut: '' }])}
                       className="w-full mt-1 flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-sky-300 text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-950/20 text-sm font-semibold transition-colors"
                     >
-                      <span className="text-base">⊕</span> Add Entry <span className="text-slate-400 font-normal">(Max 3)</span>
+                      <span className="text-base">⊕</span> Add Punch Entry
                     </button>
                   )}
                 </div>

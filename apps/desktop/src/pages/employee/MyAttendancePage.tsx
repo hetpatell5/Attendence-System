@@ -466,53 +466,7 @@ export function MyAttendancePage(): JSX.Element {
       header: 'Status', 
       render: (r) => <StatusBadge status={r.status} /> 
     },
-    {
-      key: 'dailySalary',
-      header: 'Daily Earnings',
-      render: (r) => {
-        const dObj = new Date(r.attendanceDate);
-        const isSun = dObj.getDay() === 0;
-        const dStr = dObj.toLocaleDateString('en-CA');
-        const isHol = holidaysList.some((h: any) => h.date?.slice(0, 10) === dStr) || r.status === 'HOLIDAY';
 
-        if (isSun) {
-          if (rateMetrics.paidSundays > 0) {
-            return (
-              <span className="text-purple-600 dark:text-purple-400 font-semibold text-xs bg-purple-500/10 px-2 py-1 rounded-md">
-                ₹{rateMetrics.perDaySalary} (Sunday Pay)
-              </span>
-            );
-          }
-          return <span className="text-muted-foreground text-xs">Sunday Off</span>;
-        }
-
-        if (isHol) {
-          if (rateMetrics.paidHolidays > 0) {
-            return (
-              <span className="text-purple-600 dark:text-purple-400 font-semibold text-xs bg-purple-500/10 px-2 py-1 rounded-md">
-                ₹{rateMetrics.perDaySalary} (Holiday Pay)
-              </span>
-            );
-          }
-          return <span className="text-muted-foreground text-xs">Holiday</span>;
-        }
-
-        if (r.workedMinutes > 0) {
-          const earned = Math.round((r.workedMinutes / 60) * rateMetrics.hourRate);
-          return (
-            <span className="font-bold text-emerald-600 dark:text-emerald-400">
-              ₹{earned.toLocaleString()}
-            </span>
-          );
-        }
-
-        if (r.status === 'LEAVE') {
-          return <span className="text-blue-600 font-medium text-xs">Approved Leave</span>;
-        }
-
-        return <span className="text-muted-foreground text-xs">₹0</span>;
-      }
-    },
     {
       key: 'action',
       header: 'Correction',
@@ -665,10 +619,7 @@ export function MyAttendancePage(): JSX.Element {
       <Card className="border border-border/70 shadow-sm rounded-2xl bg-card overflow-hidden">
         <CardHeader className="p-4 sm:px-6 sm:py-4 border-b border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-base font-bold text-foreground">Attendance & Daily Earnings Log</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Hourly Rate: ₹{rateMetrics.hourRate}/hr • Per Day Salary: ₹{rateMetrics.perDaySalary}/day
-            </p>
+            <CardTitle className="text-base font-bold text-foreground">Attendance & Daily Log</CardTitle>
           </div>
 
           <div className="flex items-center flex-wrap gap-2.5">
@@ -791,6 +742,9 @@ export function MyAttendancePage(): JSX.Element {
                       HOLIDAY
                     </span>
                   );
+                  if (rateMetrics.paidHolidays > 0) {
+                    // Holiday Pay (removed amount display)
+                  }
                   centerContent = (
                     <div className="py-1 text-center">
                       <span className="text-xs font-semibold text-amber-900 dark:text-amber-200 line-clamp-1">
@@ -798,24 +752,6 @@ export function MyAttendancePage(): JSX.Element {
                       </span>
                     </div>
                   );
-                  if (rateMetrics.paidHolidays > 0) {
-                    dailySalaryBadge = (
-                      <div className="flex items-center justify-between text-xs px-0.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">
-                        <span className="font-bold text-purple-600 dark:text-purple-400">
-                          ₹{rateMetrics.perDaySalary}
-                        </span>
-                        <span className="text-[9px] font-semibold text-purple-600 dark:text-purple-400">
-                          Holiday Pay
-                        </span>
-                      </div>
-                    );
-                  } else {
-                    dailySalaryBadge = (
-                      <div className="text-center text-[10px] text-muted-foreground">
-                        Unpaid Holiday
-                      </div>
-                    );
-                  }
                 } else if (isSunday) {
                   cardBorderClass = 'border-slate-200 dark:border-zinc-800 bg-slate-50/30 dark:bg-zinc-900/20 hover:border-slate-300';
                   statusBadge = (
@@ -824,22 +760,7 @@ export function MyAttendancePage(): JSX.Element {
                     </span>
                   );
                   if (rateMetrics.paidSundays > 0) {
-                    dailySalaryBadge = (
-                      <div className="flex items-center justify-between text-xs px-0.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">
-                        <span className="font-bold text-purple-600 dark:text-purple-400">
-                          ₹{rateMetrics.perDaySalary}
-                        </span>
-                        <span className="text-[9px] font-semibold text-purple-600 dark:text-purple-400">
-                          Sunday Pay
-                        </span>
-                      </div>
-                    );
-                  } else {
-                    dailySalaryBadge = (
-                      <div className="text-center text-[11px] font-medium text-muted-foreground">
-                        Week Off
-                      </div>
-                    );
+                    // Sunday Pay (removed amount display)
                   }
                 } else if (row?.status === 'LEAVE') {
                   cardBorderClass = 'border-blue-300/80 dark:border-blue-700/60 bg-blue-50/20 dark:bg-blue-950/10 hover:border-blue-400';
@@ -862,12 +783,8 @@ export function MyAttendancePage(): JSX.Element {
                     </span>
                   );
                   if (cellWorkedMins > 0) {
-                    const earned = Math.round((cellWorkedMins / 60) * rateMetrics.hourRate);
                     dailySalaryBadge = (
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-amber-600 dark:text-amber-400">
-                          ₹{earned.toLocaleString()}
-                        </span>
                         <span className="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-medium">
                           {formatDuration(cellWorkedMins)}
                         </span>
@@ -900,12 +817,8 @@ export function MyAttendancePage(): JSX.Element {
                       Present
                     </span>
                   );
-                  const earned = Math.round((cellWorkedMins / 60) * rateMetrics.hourRate);
                   dailySalaryBadge = (
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                        ₹{earned.toLocaleString()}
-                      </span>
                       <span className="text-[10px] text-muted-foreground font-medium">
                         {formatDuration(cellWorkedMins)}
                       </span>
@@ -931,9 +844,6 @@ export function MyAttendancePage(): JSX.Element {
                   );
                   dailySalaryBadge = (
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-rose-500 dark:text-rose-400">
-                        ₹0
-                      </span>
                       <span className="text-[10px] text-rose-500/80 dark:text-rose-400/80 font-medium">
                         Absent
                       </span>

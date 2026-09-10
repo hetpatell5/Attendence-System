@@ -23,6 +23,7 @@ async function seedAdmin(): Promise<void> {
     update: {},
     create: {
       email,
+      username: 'admin',
       passwordHash,
       name: 'System Administrator',
       role: 'SUPER_ADMIN',

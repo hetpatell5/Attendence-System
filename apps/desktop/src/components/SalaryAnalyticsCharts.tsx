@@ -407,7 +407,7 @@ export function SalaryAnalyticsCharts({
       </div>
 
       {/* Main Charts Viewport */}
-      {activeTab === 'trend' ? (
+      {activeTab === 'trend' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Chart 1: Smooth Area Line Chart (2 Cols) */}
           <Card className="lg:col-span-2 border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden flex flex-col justify-between">

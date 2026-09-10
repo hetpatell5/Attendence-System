@@ -15,6 +15,7 @@ export interface EmployeeDashboardPayload {
   leaveBalance: Awaited<ReturnType<LeaveService['balanceForUser']>>;
   pendingLeaveCount: number;
   recentLeaveRequests: Awaited<ReturnType<LeaveService['listForUser']>>;
+  weeklyActivity: { date: string; status: string; hours: number }[];
 }
 
 @Injectable()
@@ -43,6 +44,28 @@ export class DashboardService {
         this.leaveService.listForUser(userId),
       ]);
 
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+    
+    const weeklyActivityRows = await this.prisma.attendance.findMany({
+      where: {
+        employee: { userId },
+        attendanceDate: { gte: sevenDaysAgo, lte: today },
+      },
+      select: {
+        attendanceDate: true,
+        status: true,
+        workedMinutes: true,
+      },
+      orderBy: { attendanceDate: 'asc' },
+    });
+
+    const weeklyActivity = weeklyActivityRows.map(row => ({
+      date: row.attendanceDate.toISOString().slice(0, 10),
+      status: row.status,
+      hours: parseFloat((row.workedMinutes / 60).toFixed(2)),
+    }));
+
     return {
       today: todayAttendance,
       punchState,
@@ -51,6 +74,7 @@ export class DashboardService {
       leaveBalance,
       pendingLeaveCount: leaveRequests.filter((r) => r.status === 'PENDING').length,
       recentLeaveRequests: leaveRequests.slice(0, 5),
+      weeklyActivity,
     };
   }
 
@@ -58,21 +82,36 @@ export class DashboardService {
     const settings = await this.settingsService.getSettings();
     const today = toCompanyDay(serverNow(), settings.timezone);
 
+    const startOfMonth = new Date(today);
+    startOfMonth.setUTCDate(1);
+    startOfMonth.setUTCHours(0, 0, 0, 0);
+    const endOfMonth = new Date(startOfMonth);
+    endOfMonth.setUTCMonth(endOfMonth.getUTCMonth() + 1);
+
     const [
-      totalEmployees,
+      activeEmployees,
       todayAttendanceRows,
       pendingLeaveCount,
       pendingSalaryCount,
+      paidSalaryCount,
+      totalShifts,
+      holidaysThisMonth,
       recentLeaveRequests,
       recentAudit,
     ] = await Promise.all([
-      this.prisma.employee.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.employee.findMany({ where: { status: 'ACTIVE' }, include: { department: true, designation: true } }),
       this.prisma.attendance.findMany({
         where: { attendanceDate: today },
         include: { employee: true },
       }),
       this.prisma.leaveRequest.count({ where: { status: 'PENDING' } }),
       this.prisma.salaryRecord.count({ where: { status: 'PENDING' } }),
+      this.prisma.salaryRecord.count({ where: { status: 'PAID' } }),
+      this.prisma.shift.count({ where: { isActive: true } }),
+      this.prisma.holiday.findMany({
+        where: { date: { gte: startOfMonth, lt: endOfMonth } },
+        orderBy: { date: 'asc' }
+      }),
       this.prisma.leaveRequest.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
@@ -81,10 +120,23 @@ export class DashboardService {
       this.prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 10 }),
     ]);
 
-    const presentToday = todayAttendanceRows.filter((a) => a.status === 'PRESENT').length;
-    const absentToday = todayAttendanceRows.filter((a) => a.status === 'ABSENT').length;
-    const lateToday = todayAttendanceRows.filter((a) => a.lateMinutes > 0).length;
-    const onLeaveToday = todayAttendanceRows.filter((a) => a.status === 'LEAVE').length;
+    const totalEmployees = activeEmployees.length;
+
+    const presentList = todayAttendanceRows.filter((a) => a.status === 'PRESENT');
+    const onLeaveList = todayAttendanceRows.filter((a) => a.status === 'LEAVE');
+    const lateList = todayAttendanceRows.filter((a) => a.lateMinutes > 0);
+    const earlyList = todayAttendanceRows.filter((a) => a.earlyMinutes > 0);
+
+    // Absent list: active employees who are NOT present and NOT on leave today
+    const presentOrLeaveIds = new Set(todayAttendanceRows.filter(a => a.status === 'PRESENT' || a.status === 'LEAVE').map(a => a.employeeId));
+    const absentList = activeEmployees.filter(emp => !presentOrLeaveIds.has(emp.id));
+
+    // Birthdays this month
+    const currentMonth = today.getUTCMonth();
+    const birthdaysThisMonth = activeEmployees.filter(emp => {
+      if (!emp.dateOfBirth) return false;
+      return emp.dateOfBirth.getUTCMonth() === currentMonth;
+    });
 
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
@@ -110,13 +162,27 @@ export class DashboardService {
 
     return {
       totalEmployees,
-      presentToday,
-      absentToday,
-      lateToday,
-      onLeaveToday,
+      presentToday: presentList.length,
+      absentToday: absentList.length,
+      lateToday: lateList.length,
+      earlyToday: earlyList.length,
+      onLeaveToday: onLeaveList.length,
       pendingLeaveCount,
       pendingSalaryCount,
+      paidSalaryCount,
+      totalShifts,
+      holidaysThisMonthCount: holidaysThisMonth.length,
+      birthdaysThisMonthCount: birthdaysThisMonth.length,
+      
+      // Full lists for modals
+      presentList,
+      absentList,
+      lateList,
+      earlyList,
+      birthdaysThisMonth,
+      holidaysThisMonth,
       todayAttendance: todayAttendanceRows,
+      
       recentLeaveRequests,
       attendanceTrend: trend,
       departmentSummary: departmentSummary.map((d) => ({

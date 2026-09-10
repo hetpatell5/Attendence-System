@@ -360,18 +360,6 @@ export function SalaryAnalyticsCharts({
             <TrendingUp size={13} />
             <span>Monthly Trend & Mix</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('daily')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
-              activeTab === 'daily'
-                ? 'bg-background text-foreground shadow-xs font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <BarChart3 size={13} />
-            <span>Daily Velocity ({dailyBreakdown.length}d)</span>
-          </button>
         </div>
       </div>
 
@@ -730,116 +718,6 @@ export function SalaryAnalyticsCharts({
             </CardContent>
           </Card>
         </div>
-      ) : (
-        /* View 2: Day-by-Day Salary Velocity & Cumulative Progression */
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
-          <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-1.5">
-                  <BarChart3 size={16} className="text-primary" />
-                  <span>Day-by-Day Earnings Progression ({currentMetrics.totalDaysInMonth} Days)</span>
-                </CardTitle>
-                <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                  Bar heights indicate daily amount earned; green is present, purple is paid Sunday/Holiday.
-                </CardDescription>
-              </div>
-              <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Present
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-purple-500" /> Paid Off-Day
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-rose-400" /> Absent
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/30" /> Off / Future
-                </span>
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-4 sm:p-5">
-            {/* Daily Bar Grid */}
-            <div className="flex items-end gap-1 sm:gap-1.5 h-36 w-full pt-6 pb-2 px-1">
-              {dailyBreakdown.map((d, idx) => {
-                const heightPct = d.earned > 0 ? Math.max(8, (d.earned / maxDailyEarned) * 100) : 4;
-                const isHovered = hoveredDayIndex === idx;
-
-                let barColor = 'bg-muted/40';
-                if (d.type === 'present') barColor = 'bg-emerald-500 hover:bg-emerald-600';
-                else if (d.type === 'sunday' || d.type === 'holiday') barColor = 'bg-purple-500 hover:bg-purple-600';
-                else if (d.type === 'absent') barColor = 'bg-rose-400/60';
-
-                return (
-                  <div
-                    key={d.day}
-                    className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer"
-                    onMouseEnter={() => setHoveredDayIndex(idx)}
-                    onMouseLeave={() => setHoveredDayIndex(null)}
-                  >
-                    {/* Hover Floating Tooltip */}
-                    {isHovered && (
-                      <div className="absolute bottom-full mb-2 z-30 pointer-events-none p-2 rounded-xl bg-popover text-popover-foreground border border-border shadow-md text-center text-[10px] whitespace-nowrap -translate-x-1/2 left-1/2">
-                        <div className="font-bold">Day {d.day} ({d.weekday})</div>
-                        <div className="text-emerald-600 dark:text-emerald-400 font-black">
-                          {d.earned > 0 ? `₹${d.earned}` : d.type === 'absent' ? 'Absent (₹0)' : 'Off / Future'}
-                        </div>
-                        {d.hours > 0 && (
-                          <div className="text-muted-foreground text-[9px]">{d.hours} hrs worked</div>
-                        )}
-                        <div className="text-muted-foreground text-[9px] border-t border-border/50 pt-0.5 mt-0.5">
-                          Cumulative: ₹{d.cumulative.toLocaleString()}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Bar */}
-                    <div
-                      style={{ height: `${heightPct}%` }}
-                      className={`w-full rounded-t-md transition-all duration-200 ${barColor} ${
-                        isHovered ? 'ring-2 ring-primary/60 scale-y-[1.05]' : ''
-                      }`}
-                    />
-
-                    {/* Day Number */}
-                    <span className={`text-[9px] mt-1 font-mono ${isHovered ? 'font-bold text-foreground' : 'text-muted-foreground'}`}>
-                      {d.day}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Bottom Cumulative Progress Bar */}
-            <div className="mt-4 pt-3 border-t border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Current Cumulative Accrual:</span>
-                <span className="font-extrabold text-foreground text-sm">
-                  ₹{currentMetrics.estimatedNetPay.toLocaleString()}
-                </span>
-                <span className="text-muted-foreground text-[11px]">
-                  of ₹{currentMetrics.monthlySalary.toLocaleString()} base
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-32 bg-muted/50 h-2 rounded-full overflow-hidden border border-border/40">
-                  <div
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(100, Math.round((currentMetrics.estimatedNetPay / (currentMetrics.monthlySalary || 1)) * 100))}%`,
-                    }}
-                  />
-                </div>
-                <span className="font-bold text-foreground text-[11px]">
-                  {Math.min(100, Math.round((currentMetrics.estimatedNetPay / (currentMetrics.monthlySalary || 1)) * 100))}%
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       )}
     </div>
   );

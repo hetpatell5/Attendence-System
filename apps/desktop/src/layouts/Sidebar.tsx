@@ -58,7 +58,7 @@ export function Sidebar(): JSX.Element {
 
   return (
     <>
-      <aside className="flex h-full w-56 flex-col border-r bg-card/60 backdrop-blur-md p-4 select-none">
+      <aside className="flex h-full w-48 flex-col border-r bg-card/60 backdrop-blur-md p-4 select-none">
         {/* Top Company Logo Branding */}
         <div className="mb-6 px-2 pt-2 pb-4 flex items-center justify-start border-b border-border/40">
           <img

@@ -382,7 +382,7 @@ export function AdminDashboardPage(): JSX.Element {
                      {data.earlyList.map((a: any) => (
                         <div key={a.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-amber-500/5">
                           <div className="text-sm font-semibold">{a.employee.firstName} {a.employee.lastName}</div>
-                          <div className="text-xs font-medium text-amber-500">{a.earlyMinutes}m Early</div>
+                          <div className="text-xs font-medium text-amber-500">{a.earlyLeaveMinutes}m Early</div>
                         </div>
                      ))}
                    </div>

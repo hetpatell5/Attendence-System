@@ -125,7 +125,7 @@ export class DashboardService {
     const presentList = todayAttendanceRows.filter((a) => a.status === 'PRESENT');
     const onLeaveList = todayAttendanceRows.filter((a) => a.status === 'LEAVE');
     const lateList = todayAttendanceRows.filter((a) => a.lateMinutes > 0);
-    const earlyList = todayAttendanceRows.filter((a) => a.earlyMinutes > 0);
+    const earlyList = todayAttendanceRows.filter((a) => a.earlyLeaveMinutes > 0);
 
     // Absent list: active employees who are NOT present and NOT on leave today
     const presentOrLeaveIds = new Set(todayAttendanceRows.filter(a => a.status === 'PRESENT' || a.status === 'LEAVE').map(a => a.employeeId));

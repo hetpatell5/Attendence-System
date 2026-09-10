@@ -48,7 +48,7 @@ export function EmployeesPage(): JSX.Element {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [shiftFilter, setShiftFilter] = useState<string>('ALL');
   const [page, setPage] = useState(1);
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -407,6 +407,7 @@ export function EmployeesPage(): JSX.Element {
             </div>
           </div>
 
+          <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }}>
           <div className="p-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Left Column: Personal Information */}
@@ -642,6 +643,7 @@ export function EmployeesPage(): JSX.Element {
               </div>
             </div>
           </div>
+          </form>
 
           <div className="px-8 py-4 border-t bg-muted/30 flex items-center justify-between">
             <p className="text-xs text-muted-foreground">

@@ -143,10 +143,14 @@ export function SalaryManagementPage(): JSX.Element {
   const monthEnd = `${selectedYear}-${selectedMonth}-${String(totalDaysInMonth).padStart(2, '0')}`;
   const monthIso = `${selectedYear}-${selectedMonth}-01`;
 
-  // 1. Fetch Employees
+  // Previous month ISO (for last-month-pending carry-forward)
+  const prevMonthDate = new Date(parseInt(selectedYear), parseInt(selectedMonth) - 2, 1);
+  const prevMonthIso = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+
+  // 1. Fetch Active Employees only (exclude former/inactive employees)
   const { data: employeesData, isLoading: isEmployeesLoading } = useQuery({
-    queryKey: ['employees', 'all'],
-    queryFn: () => employeesApi.list({ pageSize: '1000' }),
+    queryKey: ['employees', 'all', 'ACTIVE'],
+    queryFn: () => employeesApi.list({ pageSize: '1000', status: 'ACTIVE' }),
   });
 
   // 2. Fetch Attendance for the month
@@ -183,6 +187,13 @@ export function SalaryManagementPage(): JSX.Element {
     queryFn: () => salaryApi.listAll({ month: monthIso, pageSize: '1000' }),
   });
 
+  // 4b. Fetch PREVIOUS month's saved salary records for carry-forward pending amount
+  const { data: prevMonthSalaries } = useQuery({
+    queryKey: ['salary', 'all', prevMonthIso],
+    queryFn: () => salaryApi.listAll({ month: prevMonthIso, pageSize: '1000' }),
+    staleTime: 60_000,
+  });
+
   // 5. Fetch historically-correct effective salary rates for the selected month
   // This returns { [employeeId]: correctSalaryForThatMonth } using salary_history table
   const { data: effectiveRates } = useQuery({
@@ -190,6 +201,18 @@ export function SalaryManagementPage(): JSX.Element {
     queryFn: () => salaryApi.effectiveRates(monthIso),
     staleTime: 60_000,
   });
+
+  // Build a map of employeeId -> last month's PENDING net salary (carry-forward)
+  const lastPendingMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (!prevMonthSalaries?.items) return map;
+    for (const record of prevMonthSalaries.items as any[]) {
+      if (record.status !== 'PAID') {
+        map[record.employeeId] = Math.round(Number(record.netSalary || 0));
+      }
+    }
+    return map;
+  }, [prevMonthSalaries?.items]);
 
   // Populate local card edits whenever saved salaries or month changes
   useEffect(() => {
@@ -385,7 +408,7 @@ export function SalaryManagementPage(): JSX.Element {
       const basicSalary  = Number((totalHoursExact * hourRateExact).toFixed(2));
       const thisMonthNet = Math.round(basicSalary + sundayHolidayPay + currentEdit.commission - currentEdit.advance);
       
-      const lastPending = 0; // Carry forward placeholder
+      const lastPending = lastPendingMap[emp.id] ?? 0;
       const totalWithPending = thisMonthNet + lastPending;
 
       return {
@@ -435,6 +458,7 @@ export function SalaryManagementPage(): JSX.Element {
     savedSalaries?.items,
     effectiveRates,
     monthEnd,
+    lastPendingMap,
   ]);
 
   // Filtered Cards

@@ -211,6 +211,9 @@ export function MyLeavesPage(): JSX.Element {
             <DialogTitle className="text-base font-semibold">Request Time Off</DialogTitle>
           </DialogHeader>
 
+          <form
+            onSubmit={(e) => { e.preventDefault(); if (canSubmit && !createMutation.isPending) createMutation.mutate(); }}
+          >
           <div className="space-y-5 py-1">
             {error && (
               <div className="bg-destructive/10 text-destructive text-xs p-3 rounded-md flex items-start gap-2 border border-destructive/20">
@@ -312,6 +315,7 @@ export function MyLeavesPage(): JSX.Element {
               />
             </div>
           </div>
+          </form>
 
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={() => setDialogOpen(false)}>

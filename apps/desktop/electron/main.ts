@@ -3,7 +3,7 @@ import { app, BrowserWindow, Menu, globalShortcut, Notification, ipcMain } from 
 import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { registerAuthIpcHandlers } from './auth/ipc-handlers';
 import { registerFilesIpcHandlers } from './files/ipc-handlers';
 
@@ -47,7 +47,7 @@ function findCscExe(): string | null {
   return candidates.find((p) => fs.existsSync(p)) ?? null;
 }
 
-function ensureBlockerExe(): string {
+function ensureBlockerExe(): Promise<string> {
   const userData = (() => { try { return app.getPath('userData'); } catch { return process.cwd(); } })();
 
   const srcPath = isDev
@@ -56,54 +56,70 @@ function ensureBlockerExe(): string {
 
   const exePath = path.join(userData, 'shutdown-blocker.exe');
 
-  try {
-    fs.mkdirSync(userData, { recursive: true });
+  return new Promise<string>((resolve) => {
+    try {
+      fs.mkdirSync(userData, { recursive: true });
 
-    const srcExists = fs.existsSync(srcPath);
-    const exeExists = fs.existsSync(exePath);
+      const srcExists = fs.existsSync(srcPath);
+      const exeExists = fs.existsSync(exePath);
 
-    if (!srcExists) {
-      console.error('[ShutdownGate] Source not found:', srcPath);
-      return '';
-    }
-
-    const srcMtime = fs.statSync(srcPath).mtimeMs;
-    const exeMtime = exeExists ? fs.statSync(exePath).mtimeMs : 0;
-
-    if (!exeExists || srcMtime > exeMtime) {
-      const cscExe = findCscExe();
-      if (!cscExe) {
-        console.error('[ShutdownGate] csc.exe not found — shutdown gate disabled.');
-        return '';
+      if (!srcExists) {
+        console.error('[ShutdownGate] Source not found:', srcPath);
+        return resolve('');
       }
 
-      console.log('[ShutdownGate] Compiling shutdown-blocker.exe …');
-      execFileSync(cscExe, [
-        '/nologo',
-        '/target:winexe',
-        '/r:System.Windows.Forms.dll',
-        '/r:System.Drawing.dll',
-        `/out:${exePath}`,
-        srcPath,
-      ], { windowsHide: true });
+      const srcMtime = fs.statSync(srcPath).mtimeMs;
+      const exeMtime = exeExists ? fs.statSync(exePath).mtimeMs : 0;
 
-      console.log('[ShutdownGate] Compilation succeeded.');
+      if (!exeExists || srcMtime > exeMtime) {
+        const cscExe = findCscExe();
+        if (!cscExe) {
+          console.error('[ShutdownGate] csc.exe not found — shutdown gate disabled.');
+          return resolve('');
+        }
+
+        console.log('[ShutdownGate] Compiling shutdown-blocker.exe …');
+        execFile(
+          cscExe,
+          [
+            '/nologo',
+            '/target:winexe',
+            '/r:System.Windows.Forms.dll',
+            '/r:System.Drawing.dll',
+            `/out:${exePath}`,
+            srcPath,
+          ],
+          { windowsHide: true },
+          (err) => {
+            if (err) {
+              console.error('[ShutdownGate] Compilation error:', err);
+              return resolve('');
+            }
+            console.log('[ShutdownGate] Compilation succeeded.');
+            resolve(exePath);
+          },
+        );
+      } else {
+        resolve(exePath);
+      }
+    } catch (err) {
+      console.error('[ShutdownGate] ensureBlockerExe error:', err);
+      resolve('');
     }
-  } catch (err) {
-    console.error('[ShutdownGate] ensureBlockerExe error:', err);
-    return '';
-  }
-
-  return exePath;
+  });
 }
 
 function startShutdownHelper(): void {
+  void _startShutdownHelperAsync();
+}
+
+async function _startShutdownHelperAsync(): Promise<void> {
   if (process.platform !== 'win32') return;
 
   const statusFile = getPunchStatusPath();
   if (!fs.existsSync(statusFile)) writePunchStatus(false);
 
-  const exePath = ensureBlockerExe();
+  const exePath = await ensureBlockerExe();
   if (!exePath) return;
 
   const ps = spawn(
@@ -243,6 +259,7 @@ function createMainWindow(): void {
     minHeight: 720,
     title: 'Attendance Management System',
     autoHideMenuBar: true,
+    show: false, // hold until ready-to-show so we can focus immediately
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -254,6 +271,12 @@ function createMainWindow(): void {
   mainWindow = win;
   win.setMenu(null);
   win.removeMenu();
+
+  // Show & focus once the renderer is fully painted — prevents the blank/frozen window on startup
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
 
   if (isDev) {
     const devUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';

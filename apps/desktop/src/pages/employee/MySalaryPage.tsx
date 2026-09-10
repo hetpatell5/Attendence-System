@@ -61,7 +61,7 @@ export function MySalaryPage(): JSX.Element {
     const monthlySalary = Number(employee?.baseSalary || 0);
     const totalDaysInMonth = lastDay;
 
-    let shiftHours = 9.0;
+    let shiftHours = 10.5; // Match admin engine default (09:00–19:30)
     let shiftName = 'Full Day';
     let shiftStart = '09:00';
     let shiftEnd = '19:30';
@@ -97,7 +97,17 @@ export function MySalaryPage(): JSX.Element {
     monthAttendance.forEach((log: any) => {
       const dStr = new Date(log.attendanceDate).toLocaleDateString('en-CA');
       let secs = 0;
-      if (log.punchInAt && log.punchOutAt) {
+
+      // Use punchPairs if present (multi-punch support — same as admin engine)
+      const extraPairs = log.punchPairs;
+      if (Array.isArray(extraPairs) && extraPairs.length > 0) {
+        for (const pair of extraPairs) {
+          if (pair?.punchInAt && pair?.punchOutAt) {
+            const pairDiff = (new Date(pair.punchOutAt).getTime() - new Date(pair.punchInAt).getTime()) / 1000;
+            if (pairDiff > 0) secs += pairDiff;
+          }
+        }
+      } else if (log.punchInAt && log.punchOutAt) {
         const diff = (new Date(log.punchOutAt).getTime() - new Date(log.punchInAt).getTime()) / 1000;
         if (diff > 0) secs += diff;
       } else if (log.workedMinutes) {

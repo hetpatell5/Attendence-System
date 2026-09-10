@@ -1,4 +1,4 @@
-# Windows packaging configuration (Phase 10).
+# Windows packaging configuration.
 appId: com.attendance.desktop
 productName: Attendance Management System
 asar: true
@@ -18,17 +18,22 @@ extraResources:
 win:
   target: nsis
   artifactName: "${productName}-Setup-${version}.${ext}"
-  # icon: build/icon.ico   # uncomment once a real 256x256 .ico is added at apps/desktop/build/icon.ico —
-  #                          without it electron-builder falls back to the default Electron icon.
+  # icon: build/icon.ico
 nsis:
   oneClick: false
-  perMachine: true                  # installs to Program Files (best for shared workplace PCs)
+  perMachine: true                  # installs to Program Files
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Attendance
-  runAfterFinish: true              # auto-launch the app after install finishes
+  runAfterFinish: true
 
-# No update server exists yet — do not attempt to publish artifacts anywhere.
-publish: null
-
+# Auto-update: publish to GitHub Releases on the hetpatell5/Attendence-System repo.
+# electron-updater reads latest.yml from the release assets to check for updates.
+# The repo is public, so no GH_TOKEN is needed for clients to CHECK for updates.
+# A GH_TOKEN is needed only when you RUN `pnpm package` to PUBLISH the release.
+publish:
+  provider: github
+  owner: hetpatell5
+  repo: Attendence-System
+  releaseType: release

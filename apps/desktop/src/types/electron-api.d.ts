@@ -1,5 +1,10 @@
 import type { AuthUser } from '@attendance/shared';
 
+export interface UpdateInfo {
+  version: string;
+  releaseNotes?: string;
+}
+
 export interface ElectronApi {
   platform: string;
   auth: {
@@ -15,10 +20,6 @@ export interface ElectronApi {
   notify: {
     show: (title: string, body: string) => Promise<void>;
   };
-  server: {
-    getUrl: () => Promise<string>;
-    setUrl: (url: string) => Promise<string>;
-  };
   shutdown: {
     /**
      * Notify the main process (and the shutdown-gate helper) of the current
@@ -30,6 +31,16 @@ export interface ElectronApi {
      * the employee is still clocked in. Returns a disposer function.
      */
     onPunchOutRequired: (callback: () => void) => () => void;
+  };
+  updater: {
+    /** Manually trigger an update check. */
+    checkNow: () => Promise<void>;
+    /** Quit and install the downloaded update immediately. */
+    installNow: () => Promise<void>;
+    /** Register a listener for when an update is available (not yet downloaded). */
+    onUpdateAvailable: (callback: (info: UpdateInfo) => void) => () => void;
+    /** Register a listener for when an update has been fully downloaded. */
+    onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => () => void;
   };
 }
 

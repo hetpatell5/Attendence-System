@@ -25,12 +25,6 @@ contextBridge.exposeInMainWorld('electronApi', {
     show: (title: string, body: string): Promise<void> =>
       ipcRenderer.invoke('notify:show', title, body),
   },
-  server: {
-    /** Get the active server URL. */
-    getUrl: (): Promise<string> => ipcRenderer.invoke('server:get-url'),
-    /** Set and persist a new server URL. */
-    setUrl: (url: string): Promise<string> => ipcRenderer.invoke('server:set-url', url),
-  },
   shutdown: {
     /**
      * Renderer calls this whenever punch state changes (punch-in or punch-out).
@@ -47,6 +41,24 @@ contextBridge.exposeInMainWorld('electronApi', {
       const handler = () => callback();
       ipcRenderer.on('shutdown:punch-out-required', handler);
       return () => ipcRenderer.removeListener('shutdown:punch-out-required', handler);
+    },
+  },
+  updater: {
+    /** Manually trigger an update check. */
+    checkNow: (): Promise<void> => ipcRenderer.invoke('updater:check-now'),
+    /** Quit and install the downloaded update immediately. */
+    installNow: (): Promise<void> => ipcRenderer.invoke('updater:install-now'),
+    /** Register a listener for when an update is available (downloading in background). */
+    onUpdateAvailable: (callback: (info: { version: string }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, info: { version: string }) => callback(info);
+      ipcRenderer.on('updater:update-available', handler);
+      return () => ipcRenderer.removeListener('updater:update-available', handler);
+    },
+    /** Register a listener for when an update has been fully downloaded and is ready. */
+    onUpdateDownloaded: (callback: (info: { version: string }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, info: { version: string }) => callback(info);
+      ipcRenderer.on('updater:update-downloaded', handler);
+      return () => ipcRenderer.removeListener('updater:update-downloaded', handler);
     },
   },
 });

@@ -1,20 +1,17 @@
 import 'dotenv/config';
 import { app, BrowserWindow, Menu, globalShortcut, Notification, ipcMain } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
 import { registerAuthIpcHandlers } from './auth/ipc-handlers';
 import { registerFilesIpcHandlers } from './files/ipc-handlers';
-import { getApiUrl, setApiUrl } from './config';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 
 // ---------------------------------------------------------------------------
 // Punch-Status file
-// Written exclusively by renderer IPC (punch-in / punch-out events).
-// Never cleared on app-quit — the helper checks Electron PID liveness to
-// ignore stale values if Electron exited without a real punch-out.
 // ---------------------------------------------------------------------------
 let _punchStatusPath = '';
 
@@ -40,30 +37,8 @@ function writePunchStatus(isPunchedIn: boolean): void {
 
 // ---------------------------------------------------------------------------
 // Shutdown-gate: compile-on-demand C# executable
-//
-// Why not PowerShell + Add-Type?
-//   PowerShell's Add-Type compiles C# at runtime — this takes 10-15 seconds on
-//   first run and 5-8 seconds on warm runs. If the user shuts down during that
-//   window, no helper is listening for WM_QUERYENDSESSION and the shutdown
-//   proceeds unblocked.
-//
-// Why a compiled .exe?
-//   `csc.exe` (ships with every Windows since Vista via .NET Framework) compiles
-//   our tiny 120-line program in ~1-2 seconds. The resulting .exe is cached in
-//   userData and starts in <100 ms on every subsequent launch.
-//
-// Lifecycle:
-//   - Spawned detached + unref'd so it survives Electron's own quit during an
-//     OS-initiated shutdown (Windows may start closing Electron before our helper
-//     has finished responding to WM_QUERYENDSESSION).
-//   - The helper holds a watchdog timer that checks the Electron PID every 3 s.
-//     When the PID is gone (normal app close), it exits itself — no orphan process.
-//   - Before blocking a shutdown, the helper re-checks the Electron PID.  If
-//     Electron has already exited, it treats any punch-status as stale and allows
-//     the shutdown.
 // ---------------------------------------------------------------------------
 
-/** Absolute path to csc.exe — null if not found (non-Windows or missing .NET). */
 function findCscExe(): string | null {
   const candidates = [
     path.join(process.env.WINDIR ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
@@ -72,15 +47,9 @@ function findCscExe(): string | null {
   return candidates.find((p) => fs.existsSync(p)) ?? null;
 }
 
-/**
- * Ensures the compiled shutdown-blocker.exe exists in userData.
- * Compiles from source using csc.exe if the exe is absent or source is newer.
- * Returns the exe path, or empty string if compilation is impossible.
- */
 function ensureBlockerExe(): string {
   const userData = (() => { try { return app.getPath('userData'); } catch { return process.cwd(); } })();
 
-  // Source lives next to this file in dev; beside the packaged resources in prod
   const srcPath = isDev
     ? path.join(__dirname, '..', 'electron', 'shutdown-blocker.cs')
     : path.join(process.resourcesPath, 'shutdown-blocker.cs');
@@ -98,7 +67,6 @@ function ensureBlockerExe(): string {
       return '';
     }
 
-    // Recompile if the exe is missing or the source is newer
     const srcMtime = fs.statSync(srcPath).mtimeMs;
     const exeMtime = exeExists ? fs.statSync(exePath).mtimeMs : 0;
 
@@ -112,7 +80,7 @@ function ensureBlockerExe(): string {
       console.log('[ShutdownGate] Compiling shutdown-blocker.exe …');
       execFileSync(cscExe, [
         '/nologo',
-        '/target:winexe',          // no console window
+        '/target:winexe',
         '/r:System.Windows.Forms.dll',
         '/r:System.Drawing.dll',
         `/out:${exePath}`,
@@ -132,7 +100,6 @@ function ensureBlockerExe(): string {
 function startShutdownHelper(): void {
   if (process.platform !== 'win32') return;
 
-  // Ensure the status file exists with a safe default
   const statusFile = getPunchStatusPath();
   if (!fs.existsSync(statusFile)) writePunchStatus(false);
 
@@ -144,17 +111,15 @@ function startShutdownHelper(): void {
     [
       '--status-file', statusFile,
       '--pid',         String(process.pid),
-      '--electron-exe', app.getPath('exe'),   // lets helper relaunch app if Electron was closed
+      '--electron-exe', app.getPath('exe'),
     ],
     {
-      // detached: survives independently during OS-initiated shutdown
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     },
   );
 
-  // unref() so Electron's event-loop does not wait for this child to exit
   ps.unref();
 
   ps.stdout?.on('data', (data: Buffer) => {
@@ -193,6 +158,75 @@ function startShutdownHelper(): void {
 function registerShutdownIpcHandlers(): void {
   ipcMain.handle('shutdown:update-punch-status', (_event, isPunchedIn: boolean) => {
     writePunchStatus(isPunchedIn);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Updater
+// ---------------------------------------------------------------------------
+function setupAutoUpdater(): void {
+  if (isDev) {
+    console.log('[AutoUpdater] Skipped in dev mode.');
+    return;
+  }
+
+  // Disable automatic download — we control when to install
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[AutoUpdater] Checking for update…');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[AutoUpdater] Update available: v${info.version}`);
+    // Notify the renderer so it can show the update banner
+    mainWindow?.webContents.send('updater:update-available', { version: info.version });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    console.log(`[AutoUpdater] Up to date (v${info.version}).`);
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    console.log(`[AutoUpdater] Downloading… ${progress.percent.toFixed(1)}%`);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[AutoUpdater] Update v${info.version} downloaded — will install on quit.`);
+    // Notify renderer so it can show "Restart to install" banner
+    mainWindow?.webContents.send('updater:update-downloaded', { version: info.version });
+    // Also show a native Windows notification
+    if (Notification.isSupported()) {
+      const n = new Notification({
+        title: 'Update Ready',
+        body: `Version ${info.version} has been downloaded. Restart the app to apply.`,
+        silent: false,
+      });
+      n.on('click', () => autoUpdater.quitAndInstall(false, true));
+      n.show();
+    }
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[AutoUpdater] Error:', err.message);
+  });
+
+  // Check for updates on startup, then every 4 hours
+  void autoUpdater.checkForUpdates();
+  setInterval(() => void autoUpdater.checkForUpdates(), 4 * 60 * 60 * 1000);
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Updater IPC handlers
+// ---------------------------------------------------------------------------
+function registerUpdaterIpcHandlers(): void {
+  ipcMain.handle('updater:check-now', async () => {
+    if (!isDev) await autoUpdater.checkForUpdates();
+  });
+
+  ipcMain.handle('updater:install-now', () => {
+    if (!isDev) autoUpdater.quitAndInstall(false, true);
   });
 }
 
@@ -255,18 +289,12 @@ function registerNotifyIpcHandler(): void {
   });
 }
 
-function registerServerConfigIpcHandlers(): void {
-  ipcMain.handle('server:get-url', () => getApiUrl());
-  ipcMain.handle('server:set-url', (_event, url: string) => setApiUrl(url));
-}
-
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.attendance.desktop');
-    // Auto-start on Windows login — only for the packaged/installed app
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: true, openAsHidden: false });
     }
@@ -275,10 +303,11 @@ app.whenReady().then(() => {
   registerAuthIpcHandlers();
   registerFilesIpcHandlers();
   registerNotifyIpcHandler();
-  registerServerConfigIpcHandlers();
   registerShutdownIpcHandlers();
+  registerUpdaterIpcHandlers();
   createMainWindow();
   startShutdownHelper();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -286,8 +315,6 @@ app.whenReady().then(() => {
 });
 
 // NOTE: punch-status is intentionally NOT cleared on app quit.
-// The helper checks Electron PID liveness to ignore stale status values.
-
 app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') app.quit();

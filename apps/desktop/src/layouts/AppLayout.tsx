@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { RequireAuth } from '@/routes/RequireAuth';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 
 /** Activates real-time SSE stream + native notification push for the entire app session. */
@@ -17,6 +18,7 @@ export function AppLayout(): JSX.Element {
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
+          <UpdateBanner />
           <Header />
           <main className="flex-1 overflow-y-auto bg-secondary/20 p-6">
             <Outlet />

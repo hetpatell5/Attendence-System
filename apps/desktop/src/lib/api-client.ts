@@ -1,38 +1,19 @@
-import type { HealthCheckResponse } from '@attendance/shared';
+/** Production API URL — the live CloudPanel domain. */
+export const PRODUCTION_API_URL = 'https://projectadmin.bookmyassignments.com';
 
-const DEFAULT_SERVER_URL = 'http://192.168.1.32:3000';
-
+/**
+ * Returns the API base URL.
+ * In packaged app: always the production domain (hardcoded).
+ * In dev (Vite): falls back to VITE_API_URL or localhost.
+ */
 export function getApiBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('atten_custom_server_url');
-    if (saved && saved.trim()) return saved.trim();
+  // In the packaged Electron app, import.meta.env.PROD is true.
+  // We hardcode the production URL so no env var or stored config is needed.
+  if (import.meta.env.PROD) {
+    return PRODUCTION_API_URL;
   }
-  return import.meta.env.VITE_API_URL ?? DEFAULT_SERVER_URL;
-}
-
-export async function setApiBaseUrl(rawUrl: string): Promise<string> {
-  let cleanUrl = rawUrl.trim().replace(/\/+$/, '');
-  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-    cleanUrl = `http://${cleanUrl}`;
-  }
-  if (!cleanUrl.includes(':', 7)) {
-    cleanUrl = `${cleanUrl}:3000`;
-  }
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('atten_custom_server_url', cleanUrl);
-  }
-
-  const electronApi = (window as any).electronApi;
-  if (electronApi?.server?.setUrl) {
-    try {
-      await electronApi.server.setUrl(cleanUrl);
-    } catch {
-      // ignore
-    }
-  }
-
-  return cleanUrl;
+  // Dev: respect the VITE_API_URL override (set in .env or .env.network)
+  return import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 }
 
 export class ApiError extends Error {
@@ -81,7 +62,7 @@ async function authenticatedRequest<T>(
     }
   }
 
-  // Web browser fallback
+  // Web browser fallback (dev only)
   const baseUrl = getApiBaseUrl();
   const saved = localStorage.getItem('atten_browser_session');
   let accessToken = '';
@@ -114,31 +95,6 @@ async function authenticatedRequest<T>(
 }
 
 export const apiClient = {
-  getHealth: (): Promise<HealthCheckResponse> => request<HealthCheckResponse>('/health'),
-  testUrl: async (testUrl: string): Promise<{ ok: boolean; status: string; latencyMs: number }> => {
-    let cleanUrl = testUrl.trim().replace(/\/+$/, '');
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = `http://${cleanUrl}`;
-    }
-    if (!cleanUrl.includes(':', 7)) {
-      cleanUrl = `${cleanUrl}:3000`;
-    }
-
-    const start = performance.now();
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${cleanUrl}/health`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      const latencyMs = Math.round(performance.now() - start);
-      if (res.ok) {
-        const json = await res.json();
-        return { ok: json.status === 'ok', status: 'Connected', latencyMs };
-      }
-      return { ok: false, status: `HTTP ${res.status}`, latencyMs };
-    } catch {
-      return { ok: false, status: 'Unreachable', latencyMs: 0 };
-    }
-  },
+  getHealth: (): Promise<{ status: string }> => request<{ status: string }>('/health'),
   authenticatedRequest,
 };

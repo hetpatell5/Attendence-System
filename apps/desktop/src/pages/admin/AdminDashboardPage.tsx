@@ -24,7 +24,6 @@ import {
   Percent,
   CheckCheck,
   Gift,
-  AlertTriangle,
   History,
 } from 'lucide-react';
 import {
@@ -41,27 +40,40 @@ interface StatTileProps {
   icon: React.ReactNode;
   colorClass: string;
   subtext?: string;
-  to: string;
+  to?: string;
+  onClick?: () => void;
 }
 
-function StatTile({ label, value, icon, colorClass, subtext, to }: StatTileProps): JSX.Element {
+function StatTile({ label, value, icon, colorClass, subtext, to, onClick }: StatTileProps): JSX.Element {
+  const content = (
+    <Card className="h-full border border-border/70 hover:border-primary/50 hover:shadow-md transition-all duration-200 bg-card hover:bg-muted/10 cursor-pointer overflow-hidden relative">
+      <CardContent className="p-4 flex items-center justify-between">
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
+          <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+          {subtext && <p className="text-[11px] text-muted-foreground">{subtext}</p>}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110 duration-200", colorClass)}>
+            {icon}
+          </div>
+          <ArrowUpRight size={14} className="text-muted-foreground/40 group-hover:text-primary transition-colors" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  if (onClick) {
+    return (
+      <div onClick={onClick} className="block group">
+        {content}
+      </div>
+    );
+  }
+
   return (
-    <Link to={to} className="block group">
-      <Card className="h-full border border-border/70 hover:border-primary/50 hover:shadow-md transition-all duration-200 bg-card hover:bg-muted/10 cursor-pointer overflow-hidden relative">
-        <CardContent className="p-4 flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
-            {subtext && <p className="text-[11px] text-muted-foreground">{subtext}</p>}
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110 duration-200", colorClass)}>
-              {icon}
-            </div>
-            <ArrowUpRight size={14} className="text-muted-foreground/40 group-hover:text-primary transition-colors" />
-          </div>
-        </CardContent>
-      </Card>
+    <Link to={to!} className="block group">
+      {content}
     </Link>
   );
 }
@@ -116,8 +128,8 @@ export function AdminDashboardPage(): JSX.Element {
   const navigate = useNavigate();
 
   const [todayStr, setTodayStr] = useState('');
-  const [activeModal, setActiveModal] = useState<'present' | 'absent' | 'birthdays' | 'salary' | 'late-early' | null>(null);
-  
+  const [activeModal, setActiveModal] = useState<'present' | 'absent' | 'late' | 'early' | 'birthdays' | 'paid' | 'unpaid' | null>(null);
+
   const now = useMemo(() => new Date(), []);
   const currentYear = now.getFullYear();
   const currentMonthNum = now.getMonth() + 1;
@@ -321,9 +333,10 @@ export function AdminDashboardPage(): JSX.Element {
             <DialogTitle className="text-base font-semibold text-foreground flex items-center gap-2">
               {activeModal === 'present' && <><CheckCircle2 className="text-emerald-500" size={18} /> Present Staff Today</>}
               {activeModal === 'absent' && <><XCircle className="text-rose-500" size={18} /> Absent Staff Today</>}
+              {activeModal === 'late' && <><Clock className="text-amber-500" size={18} /> Late Arrivals Today</>}
               {activeModal === 'birthdays' && <><Gift className="text-pink-500" size={18} /> Birthdays This Month</>}
-              {activeModal === 'salary' && <><IndianRupee className="text-amber-500" size={18} /> Salary Status</>}
-              {activeModal === 'late-early' && <><History className="text-amber-500" size={18} /> Late / Early Summary</>}
+              {activeModal === 'paid' && <><IndianRupee className="text-emerald-500" size={18} /> Paid Staff ({salaryMonthLabel.slice(0, 3)})</>}
+              {activeModal === 'unpaid' && <><IndianRupee className="text-amber-500" size={18} /> Unpaid Staff</>}
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0 pt-4 pb-2 space-y-2 pr-1">
@@ -343,6 +356,14 @@ export function AdminDashboardPage(): JSX.Element {
                 </div>
               )) : <div className="text-center text-sm text-muted-foreground py-6">No absent staff found.</div>
             )}
+            {activeModal === 'late' && (
+              data.lateList?.length > 0 ? data.lateList.map((a: any) => (
+                <div key={a.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
+                  <div className="text-sm font-semibold">{a.employee.firstName} {a.employee.lastName}</div>
+                  <div className="text-xs font-medium text-amber-500">{a.lateMinutes}m Late</div>
+                </div>
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No late arrivals today.</div>
+            )}
             {activeModal === 'birthdays' && (
               data.birthdaysThisMonth?.length > 0 ? data.birthdaysThisMonth.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
@@ -351,100 +372,84 @@ export function AdminDashboardPage(): JSX.Element {
                 </div>
               )) : <div className="text-center text-sm text-muted-foreground py-6">No birthdays this month.</div>
             )}
-            {activeModal === 'salary' && (
-              <div className="space-y-4">
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex justify-between items-center cursor-pointer hover:bg-emerald-500/15" onClick={() => navigate('/admin/salary')}>
-                  <span className="text-sm font-semibold text-emerald-600">Paid Staff</span>
-                  <Badge className="bg-emerald-600 text-white">{data.paidSalaryCount}</Badge>
+            {activeModal === 'paid' && (
+              data.paidList?.length > 0 ? data.paidList.map((emp: any) => (
+                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
+                  <div className="text-sm font-semibold">{emp.employee.firstName} {emp.employee.lastName}</div>
+                  <div className="text-xs font-bold text-emerald-500">₹{emp.netSalary?.toLocaleString()}</div>
                 </div>
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex justify-between items-center cursor-pointer hover:bg-amber-500/15" onClick={() => navigate('/admin/salary')}>
-                  <span className="text-sm font-semibold text-amber-600">Pending Salaries</span>
-                  <Badge className="bg-amber-500 text-white">{data.pendingSalaryCount}</Badge>
-                </div>
-              </div>
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No paid staff found.</div>
             )}
-            {activeModal === 'late-early' && (
-              <div className="space-y-4">
-                {data.lateList?.length > 0 ? (
-                   <div>
-                     <h4 className="text-xs font-bold uppercase text-rose-500 tracking-wider mb-2">Late Staff</h4>
-                     {data.lateList.map((a: any) => (
-                        <div key={a.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-rose-500/5">
-                          <div className="text-sm font-semibold">{a.employee.firstName} {a.employee.lastName}</div>
-                          <div className="text-xs font-medium text-rose-500">{a.lateMinutes}m Late</div>
-                        </div>
-                     ))}
-                   </div>
-                ) : null}
-                {data.earlyList?.length > 0 ? (
-                   <div>
-                     <h4 className="text-xs font-bold uppercase text-amber-500 tracking-wider mb-2 mt-4">Left Early</h4>
-                     {data.earlyList.map((a: any) => (
-                        <div key={a.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-amber-500/5">
-                          <div className="text-sm font-semibold">{a.employee.firstName} {a.employee.lastName}</div>
-                          <div className="text-xs font-medium text-amber-500">{a.earlyLeaveMinutes}m Early</div>
-                        </div>
-                     ))}
-                   </div>
-                ) : null}
-                {(!data.lateList?.length && !data.earlyList?.length) && (
-                   <div className="text-center text-sm text-muted-foreground py-6">No late or early departures today.</div>
-                )}
-              </div>
+            {activeModal === 'unpaid' && (
+              data.unpaidList?.length > 0 ? data.unpaidList.map((emp: any) => (
+                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
+                  <div className="text-sm font-semibold">{emp.employee.firstName} {emp.employee.lastName}</div>
+                  <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString()}</div>
+                </div>
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No unpaid staff found.</div>
             )}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* 6 Key Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        <div onClick={() => setActiveModal('present')} className="cursor-pointer bg-card rounded-[20px] p-5 flex flex-col justify-between gap-4 border border-border/60 shadow-sm hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all group">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20 w-max group-hover:scale-110 transition-transform"><CheckCircle2 size={18} /></div>
-          <div>
-            <div className="text-2xl font-black text-foreground">{data.presentToday}</div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Today Present</div>
-          </div>
-        </div>
-
-        <div onClick={() => setActiveModal('absent')} className="cursor-pointer bg-card rounded-[20px] p-5 flex flex-col justify-between gap-4 border border-border/60 shadow-sm hover:border-rose-500/30 hover:bg-rose-500/5 transition-all group">
-          <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500 dark:bg-rose-500/20 w-max group-hover:scale-110 transition-transform"><XCircle size={18} /></div>
-          <div>
-            <div className="text-2xl font-black text-foreground">{data.absentToday}</div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Today Absent</div>
-          </div>
-        </div>
-
-        <div onClick={() => setActiveModal('birthdays')} className="cursor-pointer bg-card rounded-[20px] p-5 flex flex-col justify-between gap-4 border border-border/60 shadow-sm hover:border-pink-500/30 hover:bg-pink-500/5 transition-all group">
-          <div className="p-2.5 rounded-xl bg-pink-500/10 text-pink-500 dark:bg-pink-500/20 w-max group-hover:scale-110 transition-transform"><Gift size={18} /></div>
-          <div>
-            <div className="text-2xl font-black text-foreground">{data.birthdaysThisMonthCount || 0}</div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Birthdays</div>
-          </div>
-        </div>
-
-        <Link to="/admin/leaves" className="bg-card rounded-[20px] p-5 flex flex-col justify-between gap-4 border border-border/60 shadow-sm hover:border-orange-500/30 hover:bg-orange-500/5 transition-all group">
-          <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-500 dark:bg-orange-500/20 w-max group-hover:scale-110 transition-transform"><CalendarClock size={18} /></div>
-          <div>
-            <div className="text-2xl font-black text-foreground">{data.pendingLeaveCount}</div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Pending Leaves</div>
-          </div>
-        </Link>
-
-        <div onClick={() => setActiveModal('salary')} className="cursor-pointer bg-card rounded-[20px] p-5 flex flex-col justify-between gap-4 border border-border/60 shadow-sm hover:border-indigo-500/30 hover:bg-indigo-500/5 transition-all group">
-          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 w-max group-hover:scale-110 transition-transform"><IndianRupee size={18} /></div>
-          <div>
-            <div className="text-2xl font-black text-foreground flex items-center gap-1.5"><span className="text-amber-500">{data.pendingSalaryCount || 0}</span><span className="text-xs text-muted-foreground font-medium uppercase mt-1">Pen</span> / <span className="text-emerald-500">{data.paidSalaryCount || 0}</span><span className="text-xs text-muted-foreground font-medium uppercase mt-1">Paid</span></div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Salary Status</div>
-          </div>
-        </div>
-
-        <div onClick={() => setActiveModal('late-early')} className="cursor-pointer bg-card rounded-[20px] p-5 flex flex-col justify-between gap-4 border border-border/60 shadow-sm hover:border-amber-500/30 hover:bg-amber-500/5 transition-all group">
-          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 dark:bg-amber-500/20 w-max group-hover:scale-110 transition-transform"><History size={18} /></div>
-          <div>
-            <div className="text-2xl font-black text-foreground flex items-center gap-1.5"><span className="text-rose-500">{data.lateToday || 0}</span><span className="text-xs text-muted-foreground font-medium uppercase mt-1">L</span> / <span className="text-amber-500">{data.earlyToday || 0}</span><span className="text-xs text-muted-foreground font-medium uppercase mt-1">E</span></div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Late / Early</div>
-          </div>
-        </div>
+      {/* 7 Key Stat Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5">
+        <StatTile
+          label="Total Staff"
+          value={data.totalEmployees}
+          subtext="Active members"
+          icon={<Users size={18} />}
+          colorClass="bg-blue-500/10 text-blue-500 dark:bg-blue-500/20"
+          to="/admin/employees"
+        />
+        <StatTile
+          label="Present"
+          value={data.presentToday}
+          subtext={`${attendanceRate}% turnout today`}
+          icon={<CheckCircle2 size={18} />}
+          colorClass="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400"
+          onClick={() => setActiveModal('present')}
+        />
+        <StatTile
+          label="Absent"
+          value={data.absentToday}
+          subtext="Unaccounted today"
+          icon={<XCircle size={18} />}
+          colorClass="bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400"
+          onClick={() => setActiveModal('absent')}
+        />
+        <StatTile
+          label="Late Arrival"
+          value={data.lateToday}
+          subtext="After shift start"
+          icon={<Clock size={18} />}
+          colorClass="bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
+          onClick={() => setActiveModal('late')}
+        />
+        <StatTile
+          label="On Leave"
+          value={data.onLeaveToday}
+          subtext="Approved leaves"
+          icon={<Plane size={18} />}
+          colorClass="bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400"
+          to="/admin/leaves"
+        />
+        <StatTile
+          label="Pending Leaves"
+          value={data.pendingLeaveCount}
+          subtext="Requires review"
+          icon={<CalendarClock size={18} />}
+          colorClass="bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400"
+          to="/admin/leaves"
+        />
+        <StatTile
+          label="Birthdays"
+          value={data.birthdaysThisMonthCount || 0}
+          subtext="This month"
+          icon={<Gift size={18} />}
+          colorClass="bg-pink-500/10 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400"
+          onClick={() => setActiveModal('birthdays')}
+        />
       </div>
 
       {/* Row 2: Attendance Trends (50%) & Salary/Payroll Overview (50%) */}
@@ -587,7 +592,7 @@ export function AdminDashboardPage(): JSX.Element {
             <div className="grid grid-cols-2 gap-3">
               {/* Paid Status Box */}
               <div
-                onClick={() => navigate(`/admin/salary?month=${salaryMonth}&year=${salaryYear}`)}
+                onClick={() => setActiveModal('paid')}
                 className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 cursor-pointer transition-colors"
               >
                 <div className="flex items-center justify-between">
@@ -614,7 +619,7 @@ export function AdminDashboardPage(): JSX.Element {
 
               {/* Unpaid / Pending Status Box */}
               <div
-                onClick={() => navigate(`/admin/salary?month=${salaryMonth}&year=${salaryYear}`)}
+                onClick={() => setActiveModal('unpaid')}
                 className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors"
               >
                 <div className="flex items-center justify-between">

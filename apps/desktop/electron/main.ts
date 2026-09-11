@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { app, BrowserWindow, Menu, globalShortcut, Notification, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, globalShortcut, Notification, ipcMain, Tray, nativeImage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -9,6 +9,7 @@ import { registerFilesIpcHandlers } from './files/ipc-handlers';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 
 // ---------------------------------------------------------------------------
 // Punch-Status file
@@ -271,6 +272,25 @@ function createMainWindow(): void {
     },
   });
 
+  // Intercept close button → hide to tray instead of quitting
+  // This keeps the SSE connection alive for background notifications.
+  win.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault();
+      win.hide();
+      // Notify user the first time they close
+      if (Notification.isSupported() && !(app as any)._trayClosed) {
+        (app as any)._trayClosed = true;
+        const n = new Notification({
+          title: 'Running in background',
+          body: 'Attendance app is still running. Check the system tray to reopen or quit.',
+          silent: true,
+        });
+        n.show();
+      }
+    }
+  });
+
   mainWindow = win;
   win.setMenu(null);
   win.removeMenu();
@@ -316,6 +336,67 @@ function registerNotifyIpcHandler(): void {
 }
 
 // ---------------------------------------------------------------------------
+// System Tray
+// ---------------------------------------------------------------------------
+function createTray(): void {
+  // Load the app logo for the tray icon
+  const iconPath = isDev
+    ? path.join(__dirname, '../public/logo.png')
+    : path.join(__dirname, '../dist/assets/logo-BY2RkVfM.png');
+
+  let icon: Electron.NativeImage;
+  try {
+    icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  } catch {
+    icon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(icon);
+  tray.setToolTip('Attendance Management System');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open',
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        } else {
+          createMainWindow();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        (app as any).isQuitting = true;
+        tray?.destroy();
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  // Left-click toggles window visibility
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.hide();
+      } else {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    } else {
+      createMainWindow();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
@@ -332,6 +413,7 @@ app.whenReady().then(() => {
   registerShutdownIpcHandlers();
   registerUpdaterIpcHandlers();
   createMainWindow();
+  createTray();
   startShutdownHelper();
   setupAutoUpdater();
 
@@ -341,7 +423,15 @@ app.whenReady().then(() => {
 });
 
 // NOTE: punch-status is intentionally NOT cleared on app quit.
+// When all windows are closed we do NOT quit — the tray keeps the process alive.
+// The only way to fully quit is via the tray context menu "Quit".
+(app as any).isQuitting = false;
+app.on('before-quit', () => {
+  (app as any).isQuitting = true;
+});
 app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
-  if (process.platform !== 'darwin') app.quit();
+  // On macOS it's conventional to keep app running until explicitly quit.
+  // On Windows/Linux: we keep running in the tray, so do NOT quit here.
+  if (process.platform === 'darwin') app.quit();
 });

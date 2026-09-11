@@ -275,7 +275,7 @@ function createMainWindow(): void {
   // Intercept close button → hide to tray instead of quitting
   // This keeps the SSE connection alive for background notifications.
   win.on('close', (event) => {
-    if (!app.isQuitting) {
+    if (!(app as any).isQuitting) {
       event.preventDefault();
       win.hide();
       // Notify user the first time they close

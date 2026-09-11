@@ -1,13 +1,15 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { NotificationEventBus } from '../notifications/notification-event-bus.service';
 import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
 
 @Module({
-  imports: [AuditModule, forwardRef(() => NotificationsModule)],
+  imports: [AuditModule],
   controllers: [EmployeesController],
-  providers: [EmployeesService],
+  // NotificationEventBus is a simple injectable with no deps on EmployeesModule,
+  // so we can provide it here directly without any circular dependency.
+  providers: [EmployeesService, NotificationEventBus],
   exports: [EmployeesService],
 })
 export class EmployeesModule {}

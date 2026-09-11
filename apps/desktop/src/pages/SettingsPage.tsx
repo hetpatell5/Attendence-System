@@ -169,6 +169,79 @@ function useToast() {
   };
 }
 
+// ── System Info Panel ─────────────────────────────────────────────────────────
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloaded' | 'up-to-date' | 'error';
+
+function SystemInfoPanel({ me }: { me: any }) {
+  const [version, setVersion] = useState<string>('...');
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateVersion, setUpdateVersion] = useState<string>('');
+  const api = (window as any).electronApi;
+
+  useEffect(() => {
+    // Read real version from Electron
+    api?.getVersion?.().then((v: string) => setVersion(v)).catch(() => setVersion('—'));
+
+    // Listen for update events
+    const offAvailable = api?.updater?.onUpdateAvailable?.((info: { version: string }) => {
+      setUpdateStatus('available');
+      setUpdateVersion(info.version);
+    });
+    const offDownloaded = api?.updater?.onUpdateDownloaded?.((info: { version: string }) => {
+      setUpdateStatus('downloaded');
+      setUpdateVersion(info.version);
+    });
+    return () => { offAvailable?.(); offDownloaded?.(); };
+  }, []);
+
+  const handleCheck = async () => {
+    setUpdateStatus('checking');
+    try {
+      await api?.updater?.checkNow?.();
+      // Give it 5s, if no event fires → up to date
+      setTimeout(() => setUpdateStatus((s) => s === 'checking' ? 'up-to-date' : s), 5000);
+    } catch { setUpdateStatus('error'); }
+  };
+
+  const handleInstall = () => api?.updater?.installNow?.();
+
+  const statusBadge = () => {
+    if (updateStatus === 'checking') return <span className="text-blue-500 font-medium animate-pulse">Checking…</span>;
+    if (updateStatus === 'available') return <span className="text-amber-500 font-medium">⬇ Downloading v{updateVersion}…</span>;
+    if (updateStatus === 'downloaded') return <span className="text-emerald-600 font-medium">✅ v{updateVersion} ready to install</span>;
+    if (updateStatus === 'up-to-date') return <span className="text-emerald-600 font-medium">✅ Up to date</span>;
+    if (updateStatus === 'error') return <span className="text-red-500 font-medium">⚠ Update check failed</span>;
+    return <span className="text-muted-foreground">—</span>;
+  };
+
+  return (
+    <div className="grid grid-cols-[150px_1fr] gap-y-3 gap-x-2 items-center">
+      <span className="text-muted-foreground">Version:</span>
+      <span className="font-mono font-semibold text-base">v{version}</span>
+
+      <span className="text-muted-foreground">Update Status:</span>
+      <div className="flex items-center gap-3">
+        {statusBadge()}
+        {updateStatus === 'downloaded' ? (
+          <Button size="sm" onClick={handleInstall} className="h-7 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
+            Restart &amp; Install
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={handleCheck} disabled={updateStatus === 'checking'} className="h-7 px-3 text-xs">
+            Check for Update
+          </Button>
+        )}
+      </div>
+
+      <span className="text-muted-foreground">Username:</span>
+      <span className="font-medium font-mono">{me?.username || me?.email || '—'}</span>
+
+      <span className="text-muted-foreground">Role:</span>
+      <span className="font-medium capitalize">{me?.role?.toLowerCase().replace('_', ' ') || '—'}</span>
+    </div>
+  );
+}
+
 // ── SMTP Section ──────────────────────────────────────────────────────────────
 function SmtpSection() {
   const queryClient = useQueryClient();
@@ -1456,18 +1529,10 @@ export function SettingsPage(): JSX.Element {
           <Card>
             <CardHeader>
               <CardTitle>Application Info</CardTitle>
+              <CardDescription>Current version and update status</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="grid grid-cols-[130px_1fr] gap-2">
-                <span className="text-muted-foreground">Version:</span>
-                <span className="font-medium">0.1.0</span>
-                <span className="text-muted-foreground">Environment:</span>
-                <span className="font-medium">Production</span>
-                <span className="text-muted-foreground">Admin Email:</span>
-                <span className="font-medium font-mono">{me?.email || '—'}</span>
-                <span className="text-muted-foreground">Role:</span>
-                <span className="font-medium">{me?.role || '—'}</span>
-              </div>
+            <CardContent className="space-y-4 text-sm">
+              <SystemInfoPanel me={me} />
             </CardContent>
           </Card>
         </div>

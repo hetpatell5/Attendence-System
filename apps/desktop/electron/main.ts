@@ -244,6 +244,9 @@ function registerUpdaterIpcHandlers(): void {
   ipcMain.handle('updater:install-now', () => {
     if (!isDev) autoUpdater.quitAndInstall(false, true);
   });
+
+  // Let renderer read the real app version from package.json
+  ipcMain.handle('app:get-version', () => app.getVersion());
 }
 
 // ---------------------------------------------------------------------------

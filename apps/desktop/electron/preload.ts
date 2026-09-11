@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('electronApi', {
     show: (title: string, body: string): Promise<void> =>
       ipcRenderer.invoke('notify:show', title, body),
   },
+  /** Get the real app version from Electron (reads package.json version). */
+  getVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
   shutdown: {
     /**
      * Renderer calls this whenever punch state changes (punch-in or punch-out).

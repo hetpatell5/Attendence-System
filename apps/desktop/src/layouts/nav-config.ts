@@ -26,7 +26,6 @@ export const EMPLOYEE_NAV: NavItem[] = [
   { to: '/me/salary', label: 'My Salary', roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'EMPLOYEE'], icon: Wallet },
   { to: '/me/leaves', label: 'My Leaves', roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'EMPLOYEE'], icon: CalendarDays },
   { to: '/me/profile', label: 'Profile', roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'EMPLOYEE'], icon: User },
-  { to: '/settings', label: 'Settings', roles: ['SUPER_ADMIN', 'ADMIN', 'HR', 'EMPLOYEE'], icon: Settings },
 ];
 
 export const ADMIN_NAV: NavItem[] = [

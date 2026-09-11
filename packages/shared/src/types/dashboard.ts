@@ -34,6 +34,7 @@ export interface EmployeeDashboardPayload {
   leaveBalance: LeaveBalance[];
   pendingLeaveCount: number;
   recentLeaveRequests: LeaveRequest[];
+  weeklyActivity?: { date: string; status: string; hours: number }[];
 }
 
 export interface AdminDashboardPayload {
@@ -41,12 +42,25 @@ export interface AdminDashboardPayload {
   presentToday: number;
   absentToday: number;
   lateToday: number;
+  earlyToday?: number;
   onLeaveToday: number;
   pendingLeaveCount: number;
   pendingSalaryCount: number;
+  paidSalaryCount?: number;
+  totalShifts?: number;
+  holidaysThisMonthCount?: number;
+  birthdaysThisMonthCount?: number;
   todayAttendance: unknown[];
   recentLeaveRequests: unknown[];
   attendanceTrend: { date: string; present: number; absent: number }[];
   departmentSummary: { departmentId: string; name: string; employeeCount: number }[];
   recentActivity: unknown[];
+  presentList?: any[];
+  absentList?: any[];
+  lateList?: any[];
+  earlyList?: any[];
+  birthdaysThisMonth?: any[];
+  holidaysThisMonth?: any[];
+  paidList?: any[];
+  unpaidList?: any[];
 }

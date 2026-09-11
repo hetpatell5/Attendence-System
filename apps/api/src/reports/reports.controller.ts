@@ -44,6 +44,20 @@ export class ReportsController {
     return this.reportsService[methodName](query);
   }
 
+  @Get('today-attendance')
+  async getTodayAttendance(@Query('date') date?: string) {
+    return this.reportsService.todayAttendance(date);
+  }
+
+  @Get('performance')
+  async getPerformance(
+    @Query('employeeId') employeeId?: string,
+    @Query('year') year?: string,
+  ) {
+    const parsedYear = year ? parseInt(year, 10) : undefined;
+    return this.reportsService.employeePerformance(employeeId, parsedYear);
+  }
+
   @Get(':reportType')
   async get(@Param('reportType') reportType: string, @Query() query: ReportQueryDto) {
     return this.runReport(reportType, query);

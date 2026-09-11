@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   Download, CalendarDays, 
-  Wallet, Eye, FileText, X, Loader2 
+  Eye, FileText, X, Loader2 
 } from 'lucide-react';
 import defaultCompanyLogo from '@/assets/logo.jpeg';
 import type { SalaryRecord } from '@attendance/shared';
@@ -407,10 +407,9 @@ export function MySalaryPage(): JSX.Element {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/50">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">My Salary</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Current month running salary estimate and finalized salary slips.
-          </p>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+            Salary Analytics & Visual Tracking
+          </h2>
         </div>
       </div>
 
@@ -424,6 +423,7 @@ export function MySalaryPage(): JSX.Element {
         holidaysList={holidaysList}
         currentYear={currentYear}
         currentMonthNum={currentMonthNum}
+        employee={employee}
       />
 
       {/* Finalized Salary History */}

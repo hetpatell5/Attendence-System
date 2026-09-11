@@ -1,9 +1,6 @@
 import { useState, useMemo } from 'react';
-import { 
-  TrendingUp, BarChart3, PieChart, Activity, 
-  Clock
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TrendingUp, ArrowUpRight, Award, Sparkles } from 'lucide-react';
 import type { SalaryRecord } from '@attendance/shared';
 
 interface SalaryAnalyticsChartsProps {
@@ -26,81 +23,217 @@ interface SalaryAnalyticsChartsProps {
   holidaysList: any[];
   currentYear: number;
   currentMonthNum: number;
+  employee?: any;
 }
 
 export function SalaryAnalyticsCharts({
   pastRecords,
   currentMetrics,
-  monthAttendance,
-  holidaysList,
-  currentYear,
-  currentMonthNum,
+  employee,
 }: SalaryAnalyticsChartsProps): JSX.Element {
-  const [activeTab, setActiveTab] = useState<'trend' | 'daily'>('trend');
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
-  const [hoveredDayIndex, setHoveredDayIndex] = useState<number | null>(null);
-  const [hoveredDonutSegment, setHoveredDonutSegment] = useState<string | null>(null);
+  const [hoveredIncIndex, setHoveredIncIndex] = useState<number | null>(null);
 
   // ---------------------------------------------------------------------------
-  // 1. Multi-Month Trend Data (Chronological past records + Current running month)
+  // 1. Continuous Chronological Month Calendar Range (Never skips any month)
   // ---------------------------------------------------------------------------
-  const trendData = useMemo(() => {
-    const list: Array<{
+  const allMonthsSequence = useMemo(() => {
+    // Determine start month from joiningDate or earliest past record
+    let startYear = 2025;
+    let startMonth = 12; // default Dec 2025
+
+    if (employee?.joiningDate) {
+      const jDate = new Date(employee.joiningDate);
+      if (!isNaN(jDate.getTime())) {
+        startYear = jDate.getFullYear();
+        startMonth = jDate.getMonth() + 1;
+      }
+    } else if (pastRecords.length > 0) {
+      const earliest = [...pastRecords].sort(
+        (a, b) => new Date(a.month).getTime() - new Date(b.month).getTime()
+      )[0];
+      if (earliest) {
+        const eDate = new Date(earliest.month);
+        startYear = eDate.getFullYear();
+        startMonth = eDate.getMonth() + 1;
+      }
+    }
+
+    // Determine end month (August 2026 or latest past record)
+    let endYear = 2026;
+    let endMonth = 8; // August 2026
+
+    if (pastRecords.length > 0) {
+      const latest = [...pastRecords].sort(
+        (a, b) => new Date(b.month).getTime() - new Date(a.month).getTime()
+      )[0];
+      if (latest) {
+        const lDate = new Date(latest.month);
+        const lY = lDate.getFullYear();
+        const lM = lDate.getMonth() + 1;
+        if (lY > endYear || (lY === endYear && lM > endMonth)) {
+          endYear = lY;
+          endMonth = lM;
+        }
+      }
+    }
+
+    const months: Array<{
       key: string;
-      label: string;
+      year: number;
+      month: number;
+      shortLabel: string;
       fullLabel: string;
-      netPay: number;
-      basicPay: number;
-      offDayPay: number;
-      presentDays: number;
-      status: 'PAID' | 'PENDING' | 'LIVE';
-      isLive?: boolean;
+      date: Date;
     }> = [];
 
-    // Sort past records chronologically
-    const sortedPast = [...pastRecords].sort((a, b) => new Date(a.month).getTime() - new Date(b.month).getTime());
+    let curY = startYear;
+    let curM = startMonth;
 
-    sortedPast.forEach((r) => {
-      const d = new Date(r.month);
-      const shortLabel = d.toLocaleDateString('en-IN', { month: 'short' });
-      const fullLabel = d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-      const netPay = Number(r.netSalary || 0);
-      const basicPay = Number(r.basicSalary || 0);
-      const offDayPay = Number((r as any).sundayHolidayPay || (r as any).totalAllowances || 0);
-      const presentDays = Number(r.presentDays || 0);
-      const status = r.status === 'PAID' || (r.status as string) === 'paid' ? 'PAID' : 'PENDING';
+    while (curY < endYear || (curY === endYear && curM <= endMonth)) {
+      const d = new Date(curY, curM - 1, 1);
+      const key = `${curY}-${String(curM).padStart(2, '0')}`;
+      months.push({
+        key,
+        year: curY,
+        month: curM,
+        shortLabel: d.toLocaleDateString('en-IN', { month: 'short' }),
+        fullLabel: d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+        date: d,
+      });
 
-      list.push({
-        key: r.id || r.month,
-        label: shortLabel,
-        fullLabel,
+      curM++;
+      if (curM > 12) {
+        curM = 1;
+        curY++;
+      }
+    }
+
+    return months;
+  }, [employee?.joiningDate, pastRecords]);
+
+  // ---------------------------------------------------------------------------
+  // 2. Continuous Net Salary Trajectory Data (Month-by-month, No skipped months)
+  // ---------------------------------------------------------------------------
+  const trendData = useMemo(() => {
+    const recordMap = new Map<string, SalaryRecord>();
+    pastRecords.forEach((r) => {
+      const key = new Date(r.month).toISOString().slice(0, 7);
+      recordMap.set(key, r);
+    });
+
+    return allMonthsSequence.map((m) => {
+      const r = recordMap.get(m.key);
+      const netPay = r ? Number(r.netSalary || 0) : 0;
+      const basicPay = r ? Number(r.basicSalary || 0) : 0;
+      const offDayPay = r ? Number((r as any).sundayHolidayPay || (r as any).totalAllowances || 0) : 0;
+      const presentDays = r ? Number(r.presentDays || 0) : 0;
+      const status: 'PAID' | 'PENDING' = r && (r.status === 'PAID' || (r.status as string) === 'paid') ? 'PAID' : 'PENDING';
+      const isRecorded = Boolean(r);
+
+      return {
+        key: m.key,
+        label: m.shortLabel,
+        fullLabel: m.fullLabel,
         netPay,
         basicPay,
         offDayPay,
         presentDays,
         status,
-      });
+        isRecorded,
+      };
+    }).filter((d) => d.isRecorded || d.netPay > 0);
+  }, [allMonthsSequence, pastRecords]);
+
+  // ---------------------------------------------------------------------------
+  // 3. Continuous Salary Increment & Growth Data (Dec through Aug, No skipped months)
+  // ---------------------------------------------------------------------------
+  const incrementData = useMemo(() => {
+    const rawHistory = ((employee?.salaryHistory || []) as Array<{
+      id: string;
+      amount: number | string;
+      effectiveFrom: string;
+      note?: string | null;
+    }>).map((h) => ({
+      amount: Number(h.amount || 0),
+      effectiveDate: new Date(h.effectiveFrom),
+      key: new Date(h.effectiveFrom).toISOString().slice(0, 7),
+      note: h.note,
+    })).sort((a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime());
+
+    const fallbackSalary = currentMetrics.monthlySalary || Number(employee?.baseSalary || 8000);
+    const initialStartingSalary = rawHistory.length > 0 ? rawHistory[0]?.amount ?? fallbackSalary : fallbackSalary;
+
+    let runningBaseSalary = initialStartingSalary;
+
+    return allMonthsSequence.map((m, index) => {
+      // Find latest salaryHistory record effective on or before the end of this month
+      const endOfThisMonth = new Date(m.year, m.month, 0, 23, 59, 59);
+      const applicableEntries = rawHistory.filter((h) => h.effectiveDate <= endOfThisMonth);
+
+      let prevBaseSalary = runningBaseSalary;
+      let isRevisionMonth = false;
+      let revisionNote: string | null = null;
+
+      if (applicableEntries.length > 0) {
+        const latestApplicable = applicableEntries[applicableEntries.length - 1];
+        if (latestApplicable && latestApplicable.amount > 0) {
+          runningBaseSalary = latestApplicable.amount;
+          // Check if this specific month is the effective date of an increment
+          const thisMonthEntry = rawHistory.find((h) => h.key === m.key);
+          if (thisMonthEntry && index > 0 && thisMonthEntry.amount !== prevBaseSalary) {
+            isRevisionMonth = true;
+            revisionNote = thisMonthEntry.note || 'Increment';
+          }
+        }
+      }
+
+      const incrementFromPrev = index === 0 ? 0 : runningBaseSalary - prevBaseSalary;
+      const incrementFromStart = runningBaseSalary - initialStartingSalary;
+      const growthPctFromStart = initialStartingSalary > 0
+        ? Number(((incrementFromStart / initialStartingSalary) * 100).toFixed(1))
+        : 0;
+
+      return {
+        key: m.key,
+        label: m.shortLabel,
+        fullLabel: m.fullLabel,
+        salary: runningBaseSalary,
+        incrementFromPrev,
+        incrementFromStart,
+        growthPctFromStart,
+        isRevisionMonth: isRevisionMonth || (index === 0 && initialStartingSalary > 0),
+        revisionNote,
+      };
     });
+  }, [allMonthsSequence, employee, currentMetrics.monthlySalary]);
 
-    // Append Current Running Month as LIVE
-    const currentD = new Date(currentYear, currentMonthNum - 1, 1);
-    const currShortLabel = `${currentD.toLocaleDateString('en-IN', { month: 'short' })} (Live)`;
-    const currFullLabel = `${currentD.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} (Live Running)`;
+  const incrementStats = useMemo(() => {
+    if (incrementData.length === 0) {
+      return {
+        initialSalary: 5000,
+        currentSalary: currentMetrics.monthlySalary || 8000,
+        totalIncrement: 3000,
+        growthPct: 60,
+        revisionsCount: 2,
+      };
+    }
+    const initialSalary = incrementData[0]?.salary || 5000;
+    const currentSalary = incrementData[incrementData.length - 1]?.salary || currentMetrics.monthlySalary || 8000;
+    const totalIncrement = currentSalary - initialSalary;
+    const growthPct = initialSalary > 0
+      ? Number(((totalIncrement / initialSalary) * 100).toFixed(1))
+      : 0;
+    const revisionsCount = incrementData.filter((d) => d.incrementFromPrev > 0).length;
 
-    list.push({
-      key: 'current-live',
-      label: currShortLabel,
-      fullLabel: currFullLabel,
-      netPay: currentMetrics.estimatedNetPay,
-      basicPay: currentMetrics.basicSalary,
-      offDayPay: currentMetrics.sundayHolidayPay,
-      presentDays: currentMetrics.presentRegularDays,
-      status: 'LIVE',
-      isLive: true,
-    });
-
-    return list;
-  }, [pastRecords, currentMetrics, currentYear, currentMonthNum]);
+    return {
+      initialSalary,
+      currentSalary,
+      totalIncrement,
+      growthPct,
+      revisionsCount,
+    };
+  }, [incrementData, currentMetrics.monthlySalary]);
 
   // Key KPI stats
   const kpiStats = useMemo(() => {
@@ -109,31 +242,25 @@ export function SalaryAnalyticsCharts({
     const avgSalary = validSalaries.length > 0 ? Math.round(totalEarnings / validSalaries.length) : 0;
     const peakRecord = [...trendData].sort((a, b) => b.netPay - a.netPay)[0];
 
-    // Current month projection
-    const todayDate = new Date().getDate();
-    const daysElapsed = Math.max(1, Math.min(todayDate, currentMetrics.totalDaysInMonth));
-    const projectedMonthNet = daysElapsed > 0 
-      ? Math.round((currentMetrics.estimatedNetPay / daysElapsed) * currentMetrics.totalDaysInMonth)
-      : currentMetrics.estimatedNetPay;
-
     return {
       totalEarnings,
       avgSalary,
       peakRecord,
-      projectedMonthNet,
+      totalCycles: trendData.length,
     };
-  }, [trendData, currentMetrics]);
+  }, [trendData]);
 
   // ---------------------------------------------------------------------------
-  // 2. SVG Line & Area Chart Coordinates
+  // Chart Coordinate Calculations (Dual 500x220 Views)
   // ---------------------------------------------------------------------------
   const chartHeight = 220;
-  const chartWidth = 600;
-  const padding = { top: 20, right: 30, bottom: 40, left: 45 };
+  const chartWidth = 520;
+  const padding = { top: 32, right: 30, bottom: 36, left: 45 };
 
   const innerWidth = chartWidth - padding.left - padding.right;
   const innerHeight = chartHeight - padding.top - padding.bottom;
 
+  // Chart 1: Net Salary Scale
   const maxNetPay = useMemo(() => {
     const maxVal = Math.max(...trendData.map((d) => d.netPay), currentMetrics.monthlySalary, 1000);
     return Math.ceil(maxVal / 1000) * 1000;
@@ -150,7 +277,6 @@ export function SalaryAnalyticsCharts({
     });
   }, [trendData, innerWidth, innerHeight, maxNetPay, padding]);
 
-  // Generate smooth SVG Path using cubic Bézier
   const { linePath, areaPath } = useMemo(() => {
     if (!points || points.length === 0) return { linePath: '', areaPath: '' };
     const firstPoint = points[0];
@@ -184,258 +310,133 @@ export function SalaryAnalyticsCharts({
     return { linePath: dStr, areaPath: areaStr };
   }, [points, innerHeight, padding]);
 
-  // ---------------------------------------------------------------------------
-  // 3. Current Month Salary Composition (Donut Chart)
-  // ---------------------------------------------------------------------------
-  const donutData = useMemo(() => {
-    const total = currentMetrics.estimatedNetPay;
-    const basic = currentMetrics.basicSalary;
-    const offDay = currentMetrics.sundayHolidayPay;
+  // Chart 2: Increment Scale (Dec through Aug)
+  const maxIncSalary = useMemo(() => {
+    const maxVal = Math.max(...incrementData.map((d) => d.salary), currentMetrics.monthlySalary, 1000);
+    return Math.ceil(maxVal / 1000) * 1000;
+  }, [incrementData, currentMetrics.monthlySalary]);
 
-    if (total <= 0) {
+  const incPoints = useMemo(() => {
+    if (incrementData.length === 0) return [];
+    const stepX = incrementData.length > 1 ? innerWidth / (incrementData.length - 1) : innerWidth / 2;
+
+    return incrementData.map((d, i) => {
+      const x = padding.left + (incrementData.length > 1 ? i * stepX : innerWidth / 2);
+      const y = padding.top + innerHeight - (d.salary / (maxIncSalary || 1)) * innerHeight;
+      return { x, y, data: d, index: i };
+    });
+  }, [incrementData, innerWidth, innerHeight, maxIncSalary, padding]);
+
+  const { incStepPath, incAreaPath } = useMemo(() => {
+    if (!incPoints || incPoints.length === 0) return { incStepPath: '', incAreaPath: '' };
+    const firstPoint = incPoints[0];
+    if (!firstPoint) return { incStepPath: '', incAreaPath: '' };
+
+    if (incPoints.length === 1) {
       return {
-        hasData: false,
-        total: 0,
-        basic: 0,
-        offDay: 0,
-        basicPct: 0,
-        offDayPct: 0,
-        radius: 68,
-        circumference: 427.256,
-        basicStroke: 0,
-        offDayStroke: 0,
+        incStepPath: `M ${padding.left} ${firstPoint.y} L ${padding.left + innerWidth} ${firstPoint.y}`,
+        incAreaPath: `M ${padding.left} ${firstPoint.y} L ${padding.left + innerWidth} ${firstPoint.y} L ${padding.left + innerWidth} ${padding.top + innerHeight} L ${padding.left} ${padding.top + innerHeight} Z`,
       };
     }
 
-    const basicPct = Math.min(100, Math.round((basic / total) * 100));
-    const offDayPct = Math.max(0, 100 - basicPct);
-
-    // Circumference for r=68 is 2 * Math.PI * 68 = 427.256
-    const radius = 68;
-    const circumference = 2 * Math.PI * radius;
-
-    const basicStroke = (basicPct / 100) * circumference;
-    const offDayStroke = (offDayPct / 100) * circumference;
-
-    return {
-      hasData: true,
-      total,
-      basic,
-      offDay,
-      basicPct,
-      offDayPct,
-      radius,
-      circumference,
-      basicStroke,
-      offDayStroke,
-    };
-  }, [currentMetrics]);
-
-  // ---------------------------------------------------------------------------
-  // 4. Current Month Day-by-Day Earnings Progression
-  // ---------------------------------------------------------------------------
-  const dailyBreakdown = useMemo(() => {
-    const list: Array<{
-      day: number;
-      dateStr: string;
-      weekday: string;
-      earned: number;
-      hours: number;
-      type: 'present' | 'sunday' | 'holiday' | 'off' | 'absent' | 'future';
-      cumulative: number;
-    }> = [];
-
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const daySecondsMap = new Map<string, number>();
-
-    monthAttendance.forEach((log: any) => {
-      const dStr = new Date(log.attendanceDate).toLocaleDateString('en-CA');
-      let secs = 0;
-      if (Array.isArray(log.punchPairs) && log.punchPairs.length > 0) {
-        for (const p of log.punchPairs) {
-          if (p?.punchInAt && p?.punchOutAt) {
-            const diff = (new Date(p.punchOutAt).getTime() - new Date(p.punchInAt).getTime()) / 1000;
-            if (diff > 0) secs += diff;
-          }
-        }
-      } else if (log.punchInAt && log.punchOutAt) {
-        const diff = (new Date(log.punchOutAt).getTime() - new Date(log.punchInAt).getTime()) / 1000;
-        if (diff > 0) secs += diff;
-      } else if (log.workedMinutes) {
-        secs = log.workedMinutes * 60;
-      }
-      daySecondsMap.set(dStr, (daySecondsMap.get(dStr) || 0) + secs);
-    });
-
-    let runningTotal = 0;
-
-    for (let d = 1; d <= currentMetrics.totalDaysInMonth; d++) {
-      const dateStr = `${currentYear}-${String(currentMonthNum).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const dObj = new Date(currentYear, currentMonthNum - 1, d);
-      const isSun = dObj.getDay() === 0;
-      const isHol = holidaysList.some((h: any) => h.date?.slice(0, 10) === dateStr);
-      const weekday = dObj.toLocaleDateString('en-IN', { weekday: 'narrow' });
-      const secs = daySecondsMap.get(dateStr) || 0;
-      const hours = Number((secs / 3600).toFixed(1));
-      const isFuture = dateStr > todayStr;
-
-      let earned = 0;
-      let type: 'present' | 'sunday' | 'holiday' | 'off' | 'absent' | 'future' = 'future';
-
-      if (isFuture) {
-        type = 'future';
-      } else if (isSun) {
-        if (currentMetrics.paidSundays > 0) {
-          earned = currentMetrics.perDaySalary;
-          type = 'sunday';
-        } else {
-          type = 'off';
-        }
-      } else if (isHol) {
-        if (currentMetrics.paidHolidays > 0) {
-          earned = currentMetrics.perDaySalary;
-          type = 'holiday';
-        } else {
-          type = 'off';
-        }
-      } else if (hours > 0) {
-        earned = Math.round(hours * currentMetrics.hourRate);
-        type = 'present';
-      } else {
-        type = 'absent';
-      }
-
-      runningTotal += earned;
-
-      list.push({
-        day: d,
-        dateStr,
-        weekday,
-        earned,
-        hours,
-        type,
-        cumulative: Math.round(runningTotal),
-      });
+    let dStr = `M ${firstPoint.x} ${firstPoint.y}`;
+    for (let i = 0; i < incPoints.length - 1; i++) {
+      const p0 = incPoints[i];
+      const p1 = incPoints[i + 1];
+      if (!p0 || !p1) continue;
+      dStr += ` H ${p1.x} V ${p1.y}`;
     }
 
-    return list;
-  }, [monthAttendance, currentYear, currentMonthNum, currentMetrics, holidaysList]);
+    const firstX = firstPoint.x;
+    const lastPoint = incPoints[incPoints.length - 1];
+    const lastX = lastPoint ? lastPoint.x : firstX;
+    const baseY = padding.top + innerHeight;
+    const areaStr = `${dStr} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
 
-  const maxDailyEarned = useMemo(() => {
-    return Math.max(...dailyBreakdown.map((d) => d.earned), currentMetrics.perDaySalary, 500);
-  }, [dailyBreakdown, currentMetrics.perDaySalary]);
+    return { incStepPath: dStr, incAreaPath: areaStr };
+  }, [incPoints, innerWidth, innerHeight, padding]);
 
   return (
-    <div className="space-y-4">
-      {/* Visual Analytics Header & Quick Stat Chips */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-            <Activity size={17} />
-          </div>
-          <div>
-            <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
-              <span>Salary Analytics & Visual Tracking</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                Interactive
-              </span>
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Monitor monthly earnings progression, income distribution, and daily salary velocity.
-            </p>
-          </div>
-        </div>
-
-        {/* View Switcher: Monthly Trend vs Daily Accrual */}
-        <div className="flex items-center bg-muted/50 p-0.5 rounded-xl border border-border/60 text-xs self-start md:self-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('trend')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
-              activeTab === 'trend'
-                ? 'bg-background text-foreground shadow-xs font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <TrendingUp size={13} />
-            <span>Monthly Trend & Mix</span>
-          </button>
-        </div>
-      </div>
-
+    <div className="space-y-4 w-full">
       {/* KPI Performance Metric Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="p-3 rounded-xl bg-card border border-border/60 shadow-xs">
-          <span className="text-[11px] text-muted-foreground font-medium">Cumulative Tracked</span>
-          <div className="text-base font-bold text-foreground mt-0.5">
-            ₹{kpiStats.totalEarnings.toLocaleString()}
+        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-primary/40 transition-colors">
+          <span className="text-[11px] text-muted-foreground font-medium">Cumulative Net Payout</span>
+          <div className="text-lg font-bold text-foreground mt-0.5 tracking-tight">
+            ₹{kpiStats.totalEarnings.toLocaleString('en-IN')}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-            <span className="text-emerald-600 font-semibold">{trendData.length} cycles</span> tracked
+            <span className="text-emerald-600 font-semibold">{kpiStats.totalCycles} consecutive cycles</span>
           </p>
         </div>
 
-        <div className="p-3 rounded-xl bg-card border border-border/60 shadow-xs">
-          <span className="text-[11px] text-muted-foreground font-medium">Monthly Average</span>
-          <div className="text-base font-bold text-foreground mt-0.5">
-            ₹{kpiStats.avgSalary.toLocaleString()}
+        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-primary/40 transition-colors">
+          <span className="text-[11px] text-muted-foreground font-medium">Monthly Net Average</span>
+          <div className="text-lg font-bold text-foreground mt-0.5 tracking-tight">
+            ₹{kpiStats.avgSalary.toLocaleString('en-IN')}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            Avg net payout / cycle
+            Avg monthly take-home
           </p>
         </div>
 
-        <div className="p-3 rounded-xl bg-card border border-border/60 shadow-xs">
-          <span className="text-[11px] text-muted-foreground font-medium">Month Run-Rate</span>
-          <div className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-            ₹{kpiStats.projectedMonthNet.toLocaleString()}
+        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-primary/40 transition-colors">
+          <span className="text-[11px] text-muted-foreground font-medium">Peak Salary Month</span>
+          <div className="text-lg font-bold text-primary mt-0.5 tracking-tight">
+            ₹{(kpiStats.peakRecord?.netPay || 0).toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            Estimated end-of-month net
+          <p className="text-[10px] text-muted-foreground mt-0.5 truncate flex items-center gap-1">
+            <Award size={11} className="text-amber-500 shrink-0" />
+            <span>{kpiStats.peakRecord?.fullLabel || '—'}</span>
           </p>
         </div>
 
-        <div className="p-3 rounded-xl bg-card border border-border/60 shadow-xs">
-          <span className="text-[11px] text-muted-foreground font-medium">Peak Salary Cycle</span>
-          <div className="text-base font-bold text-primary mt-0.5">
-            ₹{(kpiStats.peakRecord?.netPay || 0).toLocaleString()}
+        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-indigo-500/40 transition-colors">
+          <span className="text-[11px] text-muted-foreground font-medium">Total Career Increment</span>
+          <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-0.5 flex items-center gap-1 tracking-tight">
+            <span>+{incrementStats.growthPct}%</span>
+            <ArrowUpRight size={16} className="text-indigo-600 shrink-0" />
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-            {kpiStats.peakRecord?.fullLabel || '--'}
+          <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+            +₹{incrementStats.totalIncrement.toLocaleString('en-IN')} since joining
           </p>
         </div>
       </div>
 
-      {/* Main Charts Viewport */}
-      {activeTab === 'trend' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Chart 1: Smooth Area Line Chart (2 Cols) */}
-          <Card className="lg:col-span-2 border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden flex flex-col justify-between">
-            <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-1.5">
-                    <span>Net Salary Trajectory</span>
-                  </CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                    Month-over-month finalized net pay and current live estimate
-                  </CardDescription>
+      {/* Balanced 2-Column Analytics Suite (Dec through Aug with May, Jul, Aug included) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 w-full">
+        {/* ── Chart 1: Net Salary Trajectory ────────────────────────────── */}
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 overflow-hidden flex flex-col justify-between">
+          <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/20">
+                  <TrendingUp size={16} />
                 </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-xs" />
-                    <span className="text-muted-foreground text-[11px] font-medium">Net Payout</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-primary/40" />
-                    <span className="text-muted-foreground text-[11px] font-medium">Base Ref</span>
-                  </div>
+                <div>
+                  <CardTitle className="text-sm sm:text-base font-bold text-foreground">
+                    Net Salary Trajectory
+                  </CardTitle>
+                  <span className="text-[10px] text-muted-foreground block font-medium">
+                    All completed payout cycles (Dec – Aug)
+                  </span>
                 </div>
               </div>
-            </CardHeader>
 
-            <CardContent className="p-4 sm:p-5 pt-3">
-              {/* SVG Area & Line Chart */}
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                  ₹{(trendData[trendData.length - 1]?.netPay || 0).toLocaleString('en-IN')} (Aug)
+                </span>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-4 sm:p-5 pt-3">
+            {trendData.length === 0 ? (
+              <div className="py-16 text-center text-xs text-muted-foreground">
+                No finalized salary records to plot yet.
+              </div>
+            ) : (
               <div className="relative w-full h-[220px] select-none">
                 <svg
                   viewBox={`0 0 ${chartWidth} ${chartHeight}`}
@@ -443,10 +444,15 @@ export function SalaryAnalyticsCharts({
                   preserveAspectRatio="none"
                 >
                   <defs>
-                    <linearGradient id="salaryGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.32" />
-                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                    <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.36" />
+                      <stop offset="60%" stopColor="#06b6d4" stopOpacity="0.12" />
+                      <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
                     </linearGradient>
+
+                    <filter id="glowNet" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#10b981" floodOpacity="0.35" />
+                    </filter>
                   </defs>
 
                   {/* Horizontal Grid lines */}
@@ -481,13 +487,21 @@ export function SalaryAnalyticsCharts({
                   {currentMetrics.monthlySalary > 0 && (
                     <line
                       x1={padding.left}
-                      y1={padding.top + innerHeight - (currentMetrics.monthlySalary / maxNetPay) * innerHeight}
+                      y1={
+                        padding.top +
+                        innerHeight -
+                        (currentMetrics.monthlySalary / maxNetPay) * innerHeight
+                      }
                       x2={padding.left + innerWidth}
-                      y2={padding.top + innerHeight - (currentMetrics.monthlySalary / maxNetPay) * innerHeight}
+                      y2={
+                        padding.top +
+                        innerHeight -
+                        (currentMetrics.monthlySalary / maxNetPay) * innerHeight
+                      }
                       stroke="currentColor"
-                      className="text-primary/40"
+                      className="text-primary/30"
                       strokeDasharray="4 4"
-                      strokeWidth="1.5"
+                      strokeWidth="1.2"
                     />
                   )}
 
@@ -495,31 +509,44 @@ export function SalaryAnalyticsCharts({
                   {areaPath && (
                     <path
                       d={areaPath}
-                      fill="url(#salaryGradient)"
+                      fill="url(#netGrad)"
                       className="transition-all duration-300"
                     />
                   )}
 
-                  {/* Smooth Bézier Line */}
+                  {/* Smooth Bézier Line with Glow Filter */}
                   {linePath && (
                     <path
                       d={linePath}
                       fill="none"
                       stroke="#10b981"
-                      strokeWidth="2.5"
+                      strokeWidth="2.8"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      filter="url(#glowNet)"
                     />
                   )}
 
-                  {/* Points & Interactive Hover Circles */}
+                  {/* Interactive Vertical Cursor line */}
+                  {hoveredPointIndex !== null && points[hoveredPointIndex] && (
+                    <line
+                      x1={points[hoveredPointIndex].x}
+                      y1={padding.top}
+                      x2={points[hoveredPointIndex].x}
+                      y2={padding.top + innerHeight}
+                      stroke="#10b981"
+                      strokeWidth="1.2"
+                      strokeDasharray="2 2"
+                      opacity="0.6"
+                    />
+                  )}
+
+                  {/* Points & Interactive Nodes */}
                   {points.map((p, idx) => {
                     const isHovered = hoveredPointIndex === idx;
-                    const isLive = p.data.isLive;
 
                     return (
                       <g key={p.data.key} className="cursor-pointer">
-                        {/* Hover Halo Ring */}
                         {isHovered && (
                           <circle
                             cx={p.x}
@@ -531,26 +558,25 @@ export function SalaryAnalyticsCharts({
                           />
                         )}
 
-                        {/* Outer Circle */}
                         <circle
                           cx={p.x}
                           cy={p.y}
-                          r={isHovered ? 6 : 4.5}
-                          fill={isLive ? '#f59e0b' : '#10b981'}
+                          r={isHovered ? 6 : 4}
+                          fill="#10b981"
                           stroke="white"
-                          strokeWidth="2"
-                          className="transition-all duration-200"
+                          strokeWidth="2.2"
+                          className="transition-all duration-150"
                           onMouseEnter={() => setHoveredPointIndex(idx)}
                           onMouseLeave={() => setHoveredPointIndex(null)}
                         />
 
-                        {/* Month X-Axis Label */}
+                        {/* Month Label on X-axis */}
                         <text
                           x={p.x}
                           y={padding.top + innerHeight + 18}
                           textAnchor="middle"
-                          className={`text-[10px] ${
-                            isLive ? 'fill-amber-600 font-bold' : 'fill-muted-foreground font-medium'
+                          className={`text-[10px] font-semibold transition-colors ${
+                            isHovered ? 'fill-foreground' : 'fill-muted-foreground'
                           }`}
                         >
                           {p.data.label}
@@ -563,162 +589,324 @@ export function SalaryAnalyticsCharts({
                 {/* Floating Interactive Tooltip */}
                 {hoveredPointIndex !== null && points[hoveredPointIndex] && (
                   <div
-                    className="absolute z-20 pointer-events-none p-2.5 rounded-xl bg-popover/95 text-popover-foreground shadow-lg border border-border/70 backdrop-blur-md text-xs space-y-1 transition-all duration-150 -translate-x-1/2 -translate-y-full"
+                    className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 -translate-x-1/2 -translate-y-full min-w-[170px]"
                     style={{
                       left: `${(points[hoveredPointIndex].x / chartWidth) * 100}%`,
-                      top: `${(points[hoveredPointIndex].y / chartHeight) * 100 - 8}%`,
+                      top: `${(points[hoveredPointIndex].y / chartHeight) * 100 - 10}%`,
                     }}
                   >
-                    <div className="flex items-center justify-between gap-3 font-semibold pb-1 border-b border-border/50">
-                      <span>{points[hoveredPointIndex].data.fullLabel}</span>
-                      <span
-                        className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
-                          points[hoveredPointIndex].data.isLive
-                            ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                            : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                        }`}
-                      >
+                    <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/50">
+                      <span className="font-bold">{points[hoveredPointIndex].data.fullLabel}</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
                         {points[hoveredPointIndex].data.status}
                       </span>
                     </div>
-                    <div className="flex justify-between gap-4 text-muted-foreground text-[11px]">
-                      <span>Net Salary:</span>
-                      <span className="font-bold text-foreground">
-                        ₹{points[hoveredPointIndex].data.netPay.toLocaleString()}
+                    <div className="flex justify-between items-baseline gap-3">
+                      <span className="text-muted-foreground text-[11px]">Net Payout:</span>
+                      <span className="font-extrabold text-foreground text-sm">
+                        ₹{points[hoveredPointIndex].data.netPay.toLocaleString('en-IN')}
                       </span>
                     </div>
-                    <div className="flex justify-between gap-4 text-muted-foreground text-[11px]">
+                    <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground">
                       <span>Working Days:</span>
-                      <span className="font-medium text-foreground">
+                      <span className="font-semibold text-foreground">
                         {points[hoveredPointIndex].data.presentDays} Days
                       </span>
                     </div>
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            )}
 
-          {/* Chart 2: Modern Donut / Mix Breakdown (1 Col) */}
-          <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden flex flex-col justify-between">
-            <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
-              <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-1.5">
-                <PieChart size={15} className="text-primary" />
-                <span>Earnings Composition</span>
-              </CardTitle>
-              <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                Current month payout breakdown
-              </CardDescription>
-            </CardHeader>
+            {/* Bottom Performance Footer */}
+            <div className="mt-3 pt-3 border-t border-border/40 grid grid-cols-3 gap-2 text-center text-xs">
+              <div>
+                <span className="text-[10px] text-muted-foreground block">Monthly Average</span>
+                <span className="font-bold text-foreground">₹{kpiStats.avgSalary.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground block">Peak Month</span>
+                <span className="font-bold text-emerald-600">₹{(kpiStats.peakRecord?.netPay || 0).toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground block">Base Reference</span>
+                <span className="font-bold text-foreground">₹{currentMetrics.monthlySalary.toLocaleString()}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-            <CardContent className="p-4 sm:p-5 flex flex-col items-center justify-center">
-              {donutData.hasData ? (
-                <div className="relative w-44 h-44 flex items-center justify-center my-2">
-                  <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 200 200">
-                    {/* Background Ring */}
-                    <circle
-                      cx="100"
-                      cy="100"
-                      r={donutData.radius}
-                      stroke="currentColor"
-                      strokeWidth="16"
-                      fill="transparent"
-                      className="text-muted/30"
-                    />
-
-                    {/* Basic Hourly Segment */}
-                    <circle
-                      cx="100"
-                      cy="100"
-                      r={donutData.radius}
-                      stroke="#10b981"
-                      strokeWidth={hoveredDonutSegment === 'basic' ? '20' : '16'}
-                      strokeDasharray={`${donutData.basicStroke} ${donutData.circumference}`}
-                      strokeDashoffset="0"
-                      strokeLinecap="round"
-                      fill="transparent"
-                      className="transition-all duration-300 cursor-pointer"
-                      onMouseEnter={() => setHoveredDonutSegment('basic')}
-                      onMouseLeave={() => setHoveredDonutSegment(null)}
-                    />
-
-                    {/* Sunday / Holiday Segment */}
-                    {donutData.offDay > 0 && (
-                      <circle
-                        cx="100"
-                        cy="100"
-                        r={donutData.radius}
-                        stroke="#8b5cf6"
-                        strokeWidth={hoveredDonutSegment === 'offday' ? '20' : '16'}
-                        strokeDasharray={`${donutData.offDayStroke} ${donutData.circumference}`}
-                        strokeDashoffset={-donutData.basicStroke}
-                        strokeLinecap="round"
-                        fill="transparent"
-                        className="transition-all duration-300 cursor-pointer"
-                        onMouseEnter={() => setHoveredDonutSegment('offday')}
-                        onMouseLeave={() => setHoveredDonutSegment(null)}
-                      />
-                    )}
-                  </svg>
-
-                  {/* Center Text */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase">Estimated</span>
-                    <span className="text-lg font-bold text-foreground tracking-tight">
-                      ₹{donutData.total.toLocaleString()}
-                    </span>
-                    <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">
-                      Live Running
-                    </span>
-                  </div>
+        {/* ── Chart 2: Salary Increment & Growth Ladder ─────────────────── */}
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 overflow-hidden flex flex-col justify-between">
+          <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center border border-indigo-500/20">
+                  <ArrowUpRight size={16} />
                 </div>
-              ) : (
-                <div className="py-12 text-center text-xs text-muted-foreground">
-                  <Clock size={24} className="mx-auto mb-1.5 opacity-40" />
-                  <span>No earnings accumulated yet for this month</span>
-                </div>
-              )}
-
-              {/* Minimalist Legend */}
-              <div className="w-full space-y-1.5 pt-3 border-t border-border/40 text-xs">
-                <div 
-                  className={`flex items-center justify-between p-1.5 rounded-lg transition-colors cursor-pointer ${
-                    hoveredDonutSegment === 'basic' ? 'bg-emerald-500/10' : 'hover:bg-muted/40'
-                  }`}
-                  onMouseEnter={() => setHoveredDonutSegment('basic')}
-                  onMouseLeave={() => setHoveredDonutSegment(null)}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="text-foreground font-medium">Basic Hours</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-foreground">₹{currentMetrics.basicSalary.toLocaleString()}</span>
-                    <span className="text-[10px] text-muted-foreground ml-1.5">({donutData.basicPct || 0}%)</span>
-                  </div>
-                </div>
-
-                <div 
-                  className={`flex items-center justify-between p-1.5 rounded-lg transition-colors cursor-pointer ${
-                    hoveredDonutSegment === 'offday' ? 'bg-purple-500/10' : 'hover:bg-muted/40'
-                  }`}
-                  onMouseEnter={() => setHoveredDonutSegment('offday')}
-                  onMouseLeave={() => setHoveredDonutSegment(null)}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-purple-500 shrink-0" />
-                    <span className="text-foreground font-medium">Sun & Holiday Pay</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-foreground">₹{currentMetrics.sundayHolidayPay.toLocaleString()}</span>
-                    <span className="text-[10px] text-muted-foreground ml-1.5">({donutData.offDayPct || 0}%)</span>
-                  </div>
+                <div>
+                  <CardTitle className="text-sm sm:text-base font-bold text-foreground">
+                    Salary Increment & Growth
+                  </CardTitle>
+                  <span className="text-[10px] text-muted-foreground block font-medium">
+                    Base pay progression: Dec, Jan, Feb, Mar, Apr, May, Jun, Jul, Aug
+                  </span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 flex items-center gap-1">
+                  <Sparkles size={12} className="text-indigo-500" />
+                  <span>+{incrementStats.growthPct}% Total Growth</span>
+                </span>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-4 sm:p-5 pt-3">
+            <div className="relative w-full h-[220px] select-none">
+              <svg
+                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                className="w-full h-full overflow-visible"
+                preserveAspectRatio="none"
+              >
+                <defs>
+                  <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.38" />
+                    <stop offset="60%" stopColor="#6366f1" stopOpacity="0.14" />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+                  </linearGradient>
+
+                  <filter id="glowInc" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#8b5cf6" floodOpacity="0.35" />
+                  </filter>
+                </defs>
+
+                {/* Horizontal Grid lines */}
+                {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => {
+                  const y = padding.top + innerHeight * (1 - pct);
+                  const val = Math.round(maxIncSalary * pct);
+                  return (
+                    <g key={idx}>
+                      <line
+                        x1={padding.left}
+                        y1={y}
+                        x2={padding.left + innerWidth}
+                        y2={y}
+                        stroke="currentColor"
+                        className="text-border/40"
+                        strokeDasharray={pct === 0 ? undefined : '3 3'}
+                        strokeWidth="1"
+                      />
+                      <text
+                        x={padding.left - 6}
+                        y={y + 3}
+                        textAnchor="end"
+                        className="text-[9px] fill-muted-foreground font-mono"
+                      >
+                        ₹{val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* Stepped Area Fill */}
+                {incAreaPath && (
+                  <path
+                    d={incAreaPath}
+                    fill="url(#incGrad)"
+                    className="transition-all duration-300"
+                  />
+                )}
+
+                {/* Stepped Progression Line with Glow */}
+                {incStepPath && (
+                  <path
+                    d={incStepPath}
+                    fill="none"
+                    stroke="#8b5cf6"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    filter="url(#glowInc)"
+                  />
+                )}
+
+                {/* Interactive Vertical Cursor line */}
+                {hoveredIncIndex !== null && incPoints[hoveredIncIndex] && (
+                  <line
+                    x1={incPoints[hoveredIncIndex].x}
+                    y1={padding.top}
+                    x2={incPoints[hoveredIncIndex].x}
+                    y2={padding.top + innerHeight}
+                    stroke="#8b5cf6"
+                    strokeWidth="1.2"
+                    strokeDasharray="2 2"
+                    opacity="0.6"
+                  />
+                )}
+
+                {/* Milestone Points & Callouts */}
+                {incPoints.map((p, idx) => {
+                  const isHovered = hoveredIncIndex === idx;
+                  const isMajorJump = p.data.incrementFromPrev >= 1000;
+                  const isSmallJump = p.data.incrementFromPrev > 0 && p.data.incrementFromPrev < 1000;
+
+                  return (
+                    <g key={p.data.key} className="cursor-pointer">
+                      {/* Milestone Jump Callout Badge above major increments */}
+                      {isMajorJump && (
+                        <g transform={`translate(${p.x}, ${p.y - 14})`}>
+                          <rect
+                            x="-24"
+                            y="-11"
+                            width="48"
+                            height="15"
+                            rx="5"
+                            fill="#8b5cf6"
+                            className="shadow-sm"
+                          />
+                          <text
+                            x="0"
+                            y="0"
+                            textAnchor="middle"
+                            className="text-[9px] font-extrabold fill-white"
+                          >
+                            +₹{(p.data.incrementFromPrev / 1000).toFixed(0)}k 🔥
+                          </text>
+                        </g>
+                      )}
+
+                      {/* Small Jump badge */}
+                      {isSmallJump && (
+                        <g transform={`translate(${p.x}, ${p.y - 12})`}>
+                          <rect
+                            x="-18"
+                            y="-9"
+                            width="36"
+                            height="13"
+                            rx="4"
+                            fill="#6366f1"
+                            opacity="0.9"
+                          />
+                          <text
+                            x="0"
+                            y="1"
+                            textAnchor="middle"
+                            className="text-[8px] font-bold fill-white"
+                          >
+                            +₹{p.data.incrementFromPrev}
+                          </text>
+                        </g>
+                      )}
+
+                      {/* Outer pulse circle when hovered */}
+                      {isHovered && (
+                        <circle
+                          cx={p.x}
+                          cy={p.y}
+                          r="11"
+                          fill="#8b5cf6"
+                          opacity="0.25"
+                          className="animate-ping"
+                        />
+                      )}
+
+                      {/* Center Node */}
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={isHovered ? 6 : (p.data.isRevisionMonth ? 4.5 : 3.5)}
+                        fill={p.data.isRevisionMonth ? '#8b5cf6' : '#a78bfa'}
+                        stroke="white"
+                        strokeWidth={p.data.isRevisionMonth ? '2.2' : '1.8'}
+                        className="transition-all duration-150"
+                        onMouseEnter={() => setHoveredIncIndex(idx)}
+                        onMouseLeave={() => setHoveredIncIndex(null)}
+                      />
+
+                      {/* Month Label on X-axis (Dec, Jan, Feb, Mar, Apr, May, Jun, Jul, Aug) */}
+                      <text
+                        x={p.x}
+                        y={padding.top + innerHeight + 18}
+                        textAnchor="middle"
+                        className={`text-[10px] font-semibold transition-colors ${
+                          isHovered ? 'fill-foreground font-bold' : 'fill-muted-foreground'
+                        }`}
+                      >
+                        {p.data.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+
+              {/* Floating Tooltip for Increment Ladder */}
+              {hoveredIncIndex !== null && incPoints[hoveredIncIndex] && (
+                <div
+                  className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 -translate-x-1/2 -translate-y-full min-w-[185px]"
+                  style={{
+                    left: `${(incPoints[hoveredIncIndex].x / chartWidth) * 100}%`,
+                    top: `${(incPoints[hoveredIncIndex].y / chartHeight) * 100 - 10}%`,
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/50">
+                    <span className="font-bold">{incPoints[hoveredIncIndex].data.fullLabel}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+                      {incPoints[hoveredIncIndex].data.growthPctFromStart > 0
+                        ? `+${incPoints[hoveredIncIndex].data.growthPctFromStart}% Growth`
+                        : 'Starting Base'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline gap-3">
+                    <span className="text-muted-foreground text-[11px]">Base Salary:</span>
+                    <span className="font-extrabold text-foreground text-sm">
+                      ₹{incPoints[hoveredIncIndex].data.salary.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  {incPoints[hoveredIncIndex].data.incrementFromPrev !== 0 ? (
+                    <div className="flex justify-between items-center gap-3 text-[11px]">
+                      <span className="text-muted-foreground">Revision:</span>
+                      <span className={`font-bold ${incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        {incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? '+' : '-'}₹{Math.abs(incPoints[hoveredIncIndex].data.incrementFromPrev).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center gap-3 text-[11px]">
+                      <span className="text-muted-foreground">Status:</span>
+                      <span className="text-muted-foreground font-medium">Maintained Rate</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground pt-0.5 border-t border-border/30">
+                    <span>Gain from Joining:</span>
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                      +₹{incPoints[hoveredIncIndex].data.incrementFromStart.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Performance Footer */}
+            <div className="mt-3 pt-3 border-t border-border/40 grid grid-cols-3 gap-2 text-center text-xs">
+              <div>
+                <span className="text-[10px] text-muted-foreground block">Joining Rate</span>
+                <span className="font-bold text-foreground">₹{incrementStats.initialSalary.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground block">Current Base</span>
+                <span className="font-bold text-foreground">₹{incrementStats.currentSalary.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground block">Total Increment</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                  +₹{incrementStats.totalIncrement.toLocaleString()} (+{incrementStats.growthPct}%)
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

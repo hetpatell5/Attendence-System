@@ -248,3 +248,110 @@ export const announcementsApi = {
   update: (id: string, body: unknown) => request<unknown>(`/announcements/${id}`, { method: 'PATCH', body }),
   remove: (id: string) => request<void>(`/announcements/${id}`, { method: 'DELETE' }),
 };
+
+export interface TodayAttendanceRecord {
+  id: string;
+  employeeCode: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  initial: string;
+  departmentName: string;
+  designationTitle: string;
+  status: 'IN' | 'LATE' | 'CHECKED_OUT' | 'ABSENT';
+  punchInAt: string | null;
+  punchOutAt: string | null;
+  punchTime: string;
+  formattedPunchIn: string | null;
+  formattedPunchOut: string | null;
+  workedMinutes: number;
+  lateMinutes: number;
+  earlyLeaveMinutes: number;
+  shiftName: string;
+  shiftStart: string;
+  shiftEnd: string;
+}
+
+export interface TodayAttendancePayload {
+  date: string;
+  summary: {
+    totalStaff: number;
+    presentIn: number;
+    checkedOut: number;
+    absent: number;
+    lateArrived: number;
+    earlyLeft: number;
+  };
+  records: TodayAttendanceRecord[];
+}
+
+export interface PerformanceMonthlyAttendance {
+  month: number;
+  shortName: string;
+  fullName: string;
+  presents: number;
+  absents: number;
+  leaves: number;
+  halfDays: number;
+  isBeforeJoin: boolean;
+  isFutureMonth: boolean;
+  isActive: boolean;
+}
+
+export interface PerformanceMonthlySalary {
+  month: number;
+  shortName: string;
+  fullName: string;
+  netSalary: number;
+  basicSalary: number;
+  status: 'PAID' | 'PENDING' | 'UNPROCESSED';
+  isBeforeJoin: boolean;
+  isFutureMonth: boolean;
+}
+
+export interface PerformanceSalaryHistory {
+  amount: number;
+  effectiveFrom: string;
+  note: string | null;
+}
+
+export interface EmployeePerformancePayload {
+  employee: {
+    id: string;
+    name: string;
+    firstName: string;
+    lastName: string;
+    employeeCode: string;
+    joiningDate: string | null;
+    baseSalary: number;
+    department: string;
+    designation: string;
+  };
+  year: number;
+  summary: {
+    totalYearlyPresents: number;
+    totalYearlySalary: number;
+    avgMonthlyPresents: number;
+    last30DaysPresents: number;
+    last3MonthsPresents: number;
+    activeMonthsCount: number;
+  };
+  monthlyAttendance: PerformanceMonthlyAttendance[];
+  monthlySalary: PerformanceMonthlySalary[];
+  salaryHistory: PerformanceSalaryHistory[];
+}
+
+export const reportsApi = {
+  todayAttendance: (date?: string) =>
+    request<TodayAttendancePayload>(
+      `/reports/today-attendance${date ? `?date=${encodeURIComponent(date)}` : ''}`
+    ),
+  performance: (employeeId?: string, year?: number) => {
+    const params = new URLSearchParams();
+    if (employeeId) params.append('employeeId', employeeId);
+    if (year) params.append('year', year.toString());
+    const query = params.toString();
+    return request<EmployeePerformancePayload>(`/reports/performance${query ? `?${query}` : ''}`);
+  },
+};
+

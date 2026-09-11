@@ -19,7 +19,6 @@ import {
   Clock,
   IndianRupee,
   AlertCircle,
-  ArrowUpRight,
   Megaphone,
   X,
   AlertTriangle,
@@ -66,6 +65,7 @@ export function EmployeeDashboardPage(): JSX.Element {
   const [punchErrorMessage, setPunchErrorMessage] = useState<string | null>(null);
   // Shutdown-gate: shown when the OS tries to shut down while employee is clocked in
   const [showShutdownModal, setShowShutdownModal] = useState(false);
+  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -105,7 +105,26 @@ export function EmployeeDashboardPage(): JSX.Element {
     queryFn: () => attendanceApi.mine(fromDate, toDate),
   });
 
-  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('dismissed_announcements');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleDismissAnnouncement = (id: string) => {
+    setDismissedAnnouncements((prev) => {
+      const next = prev.includes(id) ? prev : [...prev, id];
+      try {
+        localStorage.setItem('dismissed_announcements', JSON.stringify(next));
+      } catch {
+        /* ignore localStorage errors */
+      }
+      return next;
+    });
+  };
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['dashboard', 'employee'] });
@@ -384,23 +403,88 @@ export function EmployeeDashboardPage(): JSX.Element {
     };
   }, [employee, punchState, monthAttendance, holidaysList, currentYear, currentMonthNum, lastDay]);
 
-  if (isLoading || !data) {
-    return <div className="p-12 text-center text-muted-foreground animate-pulse text-sm">Loading dashboard...</div>;
-  }
-
   let todayWorkedMinutes = today?.workedMinutes || 0;
   if (today?.punchInAt && !today?.punchOutAt) {
     const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(today.punchInAt).getTime()) / 60000));
     todayWorkedMinutes = Math.max(todayWorkedMinutes, elapsed);
   }
-  const todayEarnedSalary = Math.round((todayWorkedMinutes / 60) * salaryMetrics.hourRate);
+
+  const weeklyDaysData = useMemo(() => {
+    const shiftTargetHours = salaryMetrics.shiftHours || 9.0;
+    const days = [];
+
+    // Map the last 7 calendar days up to today
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const isToday = i === 0;
+      const isSunday = d.getDay() === 0;
+
+      // Find in backend weeklyActivity
+      const actRow = (data?.weeklyActivity || []).find((w: any) => w.date === dateStr);
+      let hours = actRow ? Number(actRow.hours || 0) : 0;
+
+      // For today, incorporate live minutes if currently clocked in or active
+      if (isToday && todayWorkedMinutes > 0) {
+        hours = Math.max(hours, parseFloat((todayWorkedMinutes / 60).toFixed(2)));
+      }
+
+      const percent = Math.min(100, Math.round((hours / shiftTargetHours) * 100));
+
+      days.push({
+        dateStr,
+        dayLabel,
+        dateNum: d.getDate(),
+        isToday,
+        isSunday,
+        hours,
+        percent,
+        isOvertime: hours > shiftTargetHours,
+      });
+    }
+
+    return days;
+  }, [now, data?.weeklyActivity, todayWorkedMinutes, salaryMetrics.shiftHours]);
+
+  const weeklyStats = useMemo(() => {
+    const totalHours = weeklyDaysData.reduce((acc, d) => acc + d.hours, 0);
+    const activeDays = weeklyDaysData.filter((d) => d.hours > 0).length;
+    const avgHours = activeDays > 0 ? (totalHours / activeDays).toFixed(1) : '0';
+    const targetMetDays = weeklyDaysData.filter(
+      (d) => d.hours >= (salaryMetrics.shiftHours || 9.0) * 0.9
+    ).length;
+
+    return {
+      totalHours: Number(totalHours.toFixed(1)),
+      avgHours,
+      activeDays,
+      targetMetDays,
+    };
+  }, [weeklyDaysData, salaryMetrics.shiftHours]);
+
+  if (isLoading || !data) {
+    return <div className="p-12 text-center text-muted-foreground animate-pulse text-sm">Loading dashboard...</div>;
+  }
 
   const timeString = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const dateString = now.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
-  const visibleAnnouncements = activeAnnouncements.filter(
-    (a) => a.isActive && !dismissedAnnouncements.includes(a.id)
-  );
+  const visibleAnnouncements = activeAnnouncements.filter((a) => {
+    if (!a.isActive) return false;
+    if (dismissedAnnouncements.includes(a.id)) return false;
+
+    // Only remain visible for 24 hours from creation
+    const createdTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const isWithin24Hours = (Date.now() - createdTime) <= 24 * 60 * 60 * 1000;
+    const isNotExpired = !a.expiresAt || new Date(a.expiresAt).getTime() > Date.now();
+
+    return isWithin24Hours && isNotExpired;
+  });
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -449,7 +533,7 @@ export function EmployeeDashboardPage(): JSX.Element {
                 {a.message}
               </div>
               <button
-                onClick={() => setDismissedAnnouncements((prev) => [...prev, a.id])}
+                onClick={() => handleDismissAnnouncement(a.id)}
                 className="text-muted-foreground hover:text-foreground p-1 transition-colors"
                 title="Dismiss"
               >
@@ -486,6 +570,145 @@ export function EmployeeDashboardPage(): JSX.Element {
         </div>
       </div>
 
+      {/* Top Hero: Focused Horizontal Clock & Shift Action Card */}
+      <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 sm:p-6 relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          {/* Left: Status Badge, Digital Clock, Date & Shift Info */}
+          <div className="flex flex-col items-start gap-1.5 min-w-[260px]">
+            <div className="flex items-center gap-2">
+              <div
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                  isClockedIn
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-muted/80 text-muted-foreground border-border/60'
+                }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span
+                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      isClockedIn ? 'bg-emerald-400' : 'bg-zinc-400'
+                    }`}
+                  />
+                  <span
+                    className={`relative inline-flex rounded-full h-2 w-2 ${
+                      isClockedIn ? 'bg-emerald-500' : 'bg-zinc-400'
+                    }`}
+                  />
+                </span>
+                <span>{isClockedIn ? 'Clocked In' : 'Clocked Out'}</span>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">{dateString}</span>
+            </div>
+
+            <div className="text-4xl sm:text-5xl font-extrabold tracking-tight text-foreground font-mono tabular-nums mt-1">
+              {timeString}
+            </div>
+
+            <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5 mt-0.5">
+              <Clock size={12} className="text-muted-foreground shrink-0" />
+              <span>{salaryMetrics.shiftName} Shift</span>
+              <span>•</span>
+              <span>
+                {fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)}
+              </span>
+            </p>
+          </div>
+
+          {/* Middle: Shift Progress (if clocked in) or Today's Summary (if clocked out) */}
+          <div className="flex-1 w-full lg:max-w-md lg:px-6 lg:border-x border-border/50">
+            {isClockedIn && shiftCountdownInfo ? (
+              <div className="space-y-2.5 py-1">
+                <div className="flex items-center justify-between text-xs font-medium">
+                  <span className="text-muted-foreground">Shift Progress</span>
+                  <span className="font-bold text-foreground tabular-nums">
+                    {shiftCountdownInfo.isComplete
+                      ? 'Shift Completed'
+                      : `${shiftCountdownInfo.text} remaining`}
+                  </span>
+                </div>
+                <div className="w-full bg-secondary/80 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all duration-1000 ease-linear"
+                    style={{ width: `${shiftCountdownInfo.percent}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                  <span>First punch: {firstClockIn ? fmt12h(firstClockIn) : '—'}</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                    {shiftCountdownInfo.percent}% completed
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 py-1">
+                <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    <Clock size={11} className="text-primary" /> Active Time Today
+                  </span>
+                  <p className="text-lg font-bold text-foreground mt-0.5">
+                    {formatDuration(todayWorkedMinutes)}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    <Activity size={11} className="text-primary" /> Shift Target
+                  </span>
+                  <p className="text-lg font-bold text-foreground mt-0.5">
+                    {salaryMetrics.shiftHours} hrs
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Big Focused Action Button & Punches Count */}
+          <div className="flex flex-col items-stretch sm:items-end w-full lg:w-auto shrink-0 gap-2">
+            {isClockedIn ? (
+              <Button
+                type="button"
+                size="lg"
+                variant="destructive"
+                className="w-full sm:w-52 h-12 sm:h-14 rounded-xl font-semibold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-sm hover:shadow transition-all active:scale-[0.98]"
+                onClick={() => setIsPunchOutConfirmOpen(true)}
+                disabled={punchOutMutation.isPending}
+              >
+                <LogOut size={18} />
+                <span>{punchOutMutation.isPending ? 'Processing...' : 'Clock Out'}</span>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="lg"
+                className="w-full sm:w-52 h-12 sm:h-14 rounded-xl font-semibold text-sm sm:text-base bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2.5 shadow-sm hover:shadow transition-all active:scale-[0.98]"
+                onClick={() => setIsPunchInConfirmOpen(true)}
+                disabled={punchInMutation.isPending}
+              >
+                <LogIn size={18} />
+                <span>{punchInMutation.isPending ? 'Processing...' : 'Clock In'}</span>
+              </Button>
+            )}
+
+            <div className="text-xs text-muted-foreground font-medium flex items-center justify-center sm:justify-end gap-1.5">
+              <span>
+                {punchCount} {punchCount === 1 ? 'punch' : 'punches'} recorded today
+              </span>
+              {punchTimeline.length > 0 && (
+                <>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTimelineModalOpen(true)}
+                    className="text-primary hover:underline font-semibold cursor-pointer"
+                  >
+                    View sequence
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
+
       {/* 4 Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
@@ -506,158 +729,181 @@ export function EmployeeDashboardPage(): JSX.Element {
         ))}
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Column: Minimalist Punch Card & Today Stats */}
-        <div className="lg:col-span-4 flex flex-col gap-4">
-          {/* Hero Clock & Punch Card */}
-          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-6 flex flex-col justify-between relative overflow-hidden">
-            {/* Top Status & Date */}
-            <div className="flex items-center justify-between w-full mb-3">
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-muted/60 text-[11px] font-medium text-foreground/80">
-                <span className="relative flex h-2 w-2">
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      isClockedIn ? 'bg-emerald-400' : 'bg-zinc-400'
-                    }`}
-                  />
-                  <span
-                    className={`relative inline-flex rounded-full h-2 w-2 ${
-                      isClockedIn ? 'bg-emerald-500' : 'bg-zinc-400'
-                    }`}
-                  />
-                </span>
-                <span>{isClockedIn ? 'Clocked In' : 'Clocked Out'}</span>
+      {/* Row 1: Attendance Calendar & Requests Subgrid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <AttendanceCalendarCard
+          initialYear={currentYear}
+          initialMonth={currentMonthNum}
+          todayDate={now}
+        />
+        <RequestsStatusCard />
+      </div>
+
+      {/* Row 2: Reimagined Weekly Activity & Today's Punch Timeline Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        {/* Left (7 cols): Reimagined Clean Weekly Activity Card */}
+        <div className="lg:col-span-7 flex flex-col">
+          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 sm:p-6 flex flex-col justify-between h-full">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-primary/10 rounded-xl text-primary shrink-0">
+                  <Activity size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-foreground tracking-tight">
+                      Weekly Activity
+                    </h3>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/50">
+                      Last 7 Days
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Logged working hours vs {salaryMetrics.shiftHours}h shift benchmark
+                  </p>
+                </div>
               </div>
-              <span className="text-xs font-medium text-muted-foreground">{dateString}</span>
+
+              {/* Quick Summary Badges */}
+              <div className="flex items-center gap-2 text-xs">
+                <div className="px-3 py-1.5 rounded-xl bg-muted/40 border border-border/40 flex items-center gap-1.5">
+                  <span className="text-muted-foreground text-[11px]">Total:</span>
+                  <span className="font-bold text-foreground">{weeklyStats.totalHours} hrs</span>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-muted/40 border border-border/40 flex items-center gap-1.5">
+                  <span className="text-muted-foreground text-[11px]">Avg:</span>
+                  <span className="font-bold text-foreground">{weeklyStats.avgHours} h/d</span>
+                </div>
+              </div>
             </div>
 
-            {/* Clean Live Time Display */}
-            <div className="text-center py-2">
-              <div className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground font-sans tabular-nums">
-                {timeString}
+            {/* 7-Day Chart Area */}
+            <div className="py-4 my-auto">
+              <div className="grid grid-cols-7 gap-2 sm:gap-3 items-end h-44 pb-2 pt-3">
+                {weeklyDaysData.map((day, idx) => {
+                  const isFull = day.percent >= 90;
+                  const isPartial = day.hours > 0 && !isFull;
+
+                  return (
+                    <div key={idx} className="flex flex-col items-center h-full justify-end group relative">
+                      {/* Floating tooltip */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-9 bg-popover text-popover-foreground text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md pointer-events-none whitespace-nowrap z-20 border border-border flex items-center gap-1.5">
+                        <span>{day.dayLabel}, {day.dateNum}:</span>
+                        <span className="font-bold text-foreground">{day.hours}h</span>
+                        {day.isSunday && <span className="text-muted-foreground text-[10px]">(Sunday)</span>}
+                      </div>
+
+                      {/* Bar Track */}
+                      <div
+                        className={`w-full max-w-[36px] sm:max-w-[42px] h-full flex flex-col justify-end p-1 rounded-xl transition-all ${
+                          day.isToday
+                            ? 'bg-primary/5 ring-2 ring-primary/25'
+                            : 'bg-muted/30 hover:bg-muted/50'
+                        }`}
+                      >
+                        {/* Bar Fill */}
+                        <div
+                          className={`w-full rounded-lg transition-all duration-700 ${
+                            day.isToday
+                              ? 'bg-primary shadow-sm'
+                              : isFull
+                              ? 'bg-emerald-500 hover:bg-emerald-600'
+                              : isPartial
+                              ? 'bg-teal-400/85 hover:bg-teal-500'
+                              : day.isSunday
+                              ? 'bg-zinc-300 dark:bg-zinc-700'
+                              : 'bg-muted-foreground/20'
+                          }`}
+                          style={{ height: `${Math.max(6, Math.min(100, day.percent))}%` }}
+                        />
+                      </div>
+
+                      {/* Day Label & Hours */}
+                      <div className="text-center mt-2 space-y-0.5">
+                        <div
+                          className={`text-[11px] font-bold ${
+                            day.isToday ? 'text-primary' : 'text-foreground'
+                          }`}
+                        >
+                          {day.dayLabel}
+                        </div>
+                        <div
+                          className={`text-[10px] tabular-nums font-medium ${
+                            day.hours > 0 ? 'text-muted-foreground' : 'text-muted-foreground/50'
+                          }`}
+                        >
+                          {day.hours > 0 ? `${day.hours}h` : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <p className="text-xs text-muted-foreground mt-1 font-medium">
-                {salaryMetrics.shiftName} Shift
-              </p>
             </div>
 
-            {/* Shift Progress Section (Unified, clean & minimal) */}
-            {isClockedIn && shiftCountdownInfo && (
-              <div className="w-full my-3 p-3.5 rounded-xl bg-muted/40 border border-border/40 space-y-2">
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-muted-foreground">
-                    {shiftCountdownInfo.isComplete ? 'Shift Completed' : 'Time Remaining'}
-                  </span>
-                  <span className="font-semibold text-foreground tabular-nums">
-                    {shiftCountdownInfo.text}
-                  </span>
-                </div>
-                {/* Sleek Minimal Progress Track */}
-                <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-1000 ease-linear"
-                    style={{ width: `${shiftCountdownInfo.percent}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
-                  <span>In: {firstClockIn ? fmt12h(firstClockIn) : '—'}</span>
-                  <span className="font-medium">{shiftCountdownInfo.percent}% done</span>
-                </div>
-              </div>
-            )}
-
-            {/* Punch Action Button */}
-            <div className="w-full mt-3 flex flex-col items-center gap-2">
-              {isClockedIn ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="destructive"
-                  className="w-full h-11 rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-all"
-                  onClick={() => setIsPunchOutConfirmOpen(true)}
-                  disabled={punchOutMutation.isPending}
-                >
-                  <LogOut size={16} />
-                  <span>{punchOutMutation.isPending ? 'Processing...' : 'Clock Out'}</span>
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="lg"
-                  className="w-full h-11 rounded-xl font-medium text-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all"
-                  onClick={() => setIsPunchInConfirmOpen(true)}
-                  disabled={punchInMutation.isPending}
-                >
-                  <LogIn size={16} />
-                  <span>{punchInMutation.isPending ? 'Processing...' : 'Clock In'}</span>
-                </Button>
-              )}
-
-              {punchCount > 0 && (
-                <span className="text-xs text-muted-foreground font-medium">
-                  {punchCount} {punchCount === 1 ? 'punch' : 'punches'} recorded today
+            {/* Footer Summary */}
+            <div className="pt-3 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                <span>
+                  Shift Target Met: <strong className="text-foreground font-semibold">{weeklyStats.targetMetDays} / 7 days</strong>
                 </span>
-              )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-primary shrink-0" />
+                <span>
+                  Today: <strong className="text-foreground font-semibold">{formatDuration(todayWorkedMinutes)}</strong>
+                </span>
+              </div>
             </div>
           </Card>
+        </div>
 
-          {/* Today's Stats & Punch Timeline Card */}
-          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5">
-            <div className="flex items-center justify-between pb-3 border-b border-border/50 mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Today's Summary</span>
-              <span className="text-xs font-medium text-muted-foreground">Rate: ₹{salaryMetrics.hourRate}/hr</span>
+        {/* Right (5 cols): Today's Punch Timeline & Sequence Card */}
+        <div className="lg:col-span-5 flex flex-col">
+          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 sm:p-6 flex flex-col justify-between h-full">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-600 shrink-0">
+                  <Clock size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground tracking-tight">
+                    Today's Punch Timeline
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground">
+                    {punchTimeline.length} {punchTimeline.length === 1 ? 'event' : 'events'} recorded today
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-muted text-muted-foreground">
+                {formatDuration(todayWorkedMinutes)} Active
+              </span>
             </div>
 
-            {/* Summary Metrics Row */}
-            <div className="grid grid-cols-2 gap-2 pb-3 border-b border-border/40">
-              <div className="p-2.5 rounded-xl bg-muted/30 border border-border/30">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Clock size={11} className="text-primary" /> Active Time
-                </span>
-                <p className="text-sm font-bold text-foreground mt-0.5">
-                  {formatDuration(todayWorkedMinutes)}
-                </p>
-              </div>
-              <div className="p-2.5 rounded-xl bg-muted/30 border border-border/30">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <IndianRupee size={11} className="text-emerald-600" /> Earned Today
-                </span>
-                <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                  ₹{todayEarnedSalary.toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            {/* Punch Timeline Header */}
-            <div className="pt-3">
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Punches Timeline ({punchTimeline.length})
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  Today's Sequence
-                </span>
-              </div>
-
+            {/* Punch Sequence List */}
+            <div className="flex-1 py-3 my-auto min-h-[160px] flex flex-col justify-center">
               {punchTimeline.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-2 text-center">
-                  No punches recorded today yet
-                </p>
+                <div className="text-center py-6">
+                  <Clock size={28} className="mx-auto text-muted-foreground/40 mb-2" />
+                  <p className="text-xs font-medium text-muted-foreground">No punches recorded today yet</p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                    Click Clock In above to begin tracking your work shift
+                  </p>
+                </div>
               ) : (
-                <div className="space-y-0 max-h-56 overflow-y-auto pr-1">
+                <div className="space-y-0 max-h-52 overflow-y-auto pr-1">
                   {punchTimeline.map((item, index) => {
                     const isLast = index === punchTimeline.length - 1;
                     return (
-                      <div key={item.id || index} className="flex items-start gap-3 relative pb-2.5 group">
-                        {/* Vertical connecting line */}
+                      <div key={item.id || index} className="flex items-start gap-3 relative pb-3 group">
                         {!isLast && (
-                          <div className="absolute left-[11px] top-5 bottom-0 w-[2px] bg-border/60" />
+                          <div className="absolute left-[11px] top-6 bottom-0 w-[2px] bg-border/60" />
                         )}
-
-                        {/* Node Icon */}
                         <div
-                          className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 transition-all ${
+                          className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
                             item.type === 'IN'
                               ? 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30'
                               : 'bg-rose-500/15 text-rose-600 border border-rose-500/30'
@@ -665,15 +911,11 @@ export function EmployeeDashboardPage(): JSX.Element {
                         >
                           {item.type === 'IN' ? <LogIn size={11} /> : <LogOut size={11} />}
                         </div>
-
-                        {/* Details */}
                         <div className="flex-1 flex items-center justify-between text-xs min-w-0 pt-0.5">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-foreground">
-                              Punch #{item.num}
-                            </span>
+                            <span className="font-semibold text-foreground">Punch #{item.num}</span>
                             <span
-                              className={`text-[10px] font-medium px-1.5 py-0.2 rounded-md ${
+                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
                                 item.type === 'IN'
                                   ? 'bg-emerald-500/10 text-emerald-600'
                                   : 'bg-rose-500/10 text-rose-600'
@@ -682,14 +924,11 @@ export function EmployeeDashboardPage(): JSX.Element {
                               {item.type === 'IN' ? 'IN' : 'OUT'}
                             </span>
                           </div>
-
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-medium text-foreground/90">
-                              {fmt12h(item.time)}
-                            </span>
+                            <span className="font-mono font-medium text-foreground/90">{fmt12h(item.time)}</span>
                             {item.sessionText && (
                               <span
-                                className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                                   item.isCurrentlyActive
                                     ? 'bg-emerald-500/15 text-emerald-600 animate-pulse font-semibold'
                                     : 'bg-muted text-muted-foreground'
@@ -706,61 +945,12 @@ export function EmployeeDashboardPage(): JSX.Element {
                 </div>
               )}
             </div>
-          </Card>
-        </div>
 
-        {/* Right Column: Redesigned Minimalist Salary Overview & Feature Cards */}
-        <div className="lg:col-span-8 flex flex-col gap-4">
-
-
-          {/* Subgrid: Attendance Calendar (Image 1) & Requests Status Card */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-            <AttendanceCalendarCard
-              initialYear={currentYear}
-              initialMonth={currentMonthNum}
-              todayDate={now}
-            />
-            <RequestsStatusCard />
-          </div>
-
-          {/* Weekly Activity Chart */}
-          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-6">
-             <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-primary/10 rounded-lg">
-                    <Activity size={16} className="text-primary" />
-                  </div>
-                  <h3 className="text-base font-semibold text-foreground tracking-tight">Weekly Activity</h3>
-                </div>
-             </div>
-             
-             <div className="h-48 flex items-end justify-between gap-3 px-2 border-b border-border/50 relative">
-               {data?.weeklyActivity?.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground italic">No activity recorded for the past 7 days</div>
-               )}
-               {data?.weeklyActivity?.map((day: any, idx: number) => {
-                  const maxH = Math.max(...(data.weeklyActivity?.map((d: any) => d.hours) || []), 8);
-                  const pct = day.hours > 0 ? Math.max(8, (day.hours / maxH) * 100) : 4;
-                  const dObj = new Date(day.date);
-                  const dayLabel = dObj.toLocaleDateString('en-US', { weekday: 'short' });
-                  const isToday = dObj.toDateString() === now.toDateString();
-                  
-                  return (
-                    <div key={idx} className="flex flex-col items-center flex-1 group relative h-full justify-end">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-8 bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded shadow pointer-events-none whitespace-nowrap z-10 border border-border">
-                        {day.hours} hrs
-                      </div>
-                      <div className="w-full max-w-[36px] bg-muted/40 rounded-t-lg relative overflow-hidden group-hover:bg-muted/60 transition-colors" style={{ height: '100%' }}>
-                        <div 
-                          className={`absolute bottom-0 w-full rounded-t-lg transition-all duration-700 ${isToday ? 'bg-primary' : 'bg-primary/50'}`}
-                          style={{ height: `${pct}%` }}
-                        />
-                      </div>
-                      <span className={`mt-3 text-[11px] font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{dayLabel}</span>
-                    </div>
-                  );
-               })}
-             </div>
+            {/* Footer */}
+            <div className="pt-3 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Shift: {salaryMetrics.shiftName} ({fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)})</span>
+              <span>Rate: ₹{salaryMetrics.hourRate}/hr</span>
+            </div>
           </Card>
         </div>
       </div>
@@ -821,6 +1011,62 @@ export function EmployeeDashboardPage(): JSX.Element {
               disabled={punchOutMutation.isPending}
             >
               {punchOutMutation.isPending ? 'Processing...' : 'Yes, Clock Out'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Punches Sequence Modal */}
+      <Dialog open={isTimelineModalOpen} onOpenChange={setIsTimelineModalOpen}>
+        <DialogContent className="sm:max-w-[420px] rounded-2xl p-6">
+          <DialogHeader className="pb-3 border-b border-border/40">
+            <DialogTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
+              <Clock size={18} className="text-primary" /> Today's Punch Sequence
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3 max-h-72 overflow-y-auto space-y-2 pr-1">
+            {punchTimeline.length === 0 ? (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No punches recorded today yet.
+              </div>
+            ) : (
+              punchTimeline.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-muted/30 border border-border/40"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                        item.type === 'IN'
+                          ? 'bg-emerald-500/15 text-emerald-600'
+                          : 'bg-rose-500/15 text-rose-600'
+                      }`}
+                    >
+                      {item.type}
+                    </span>
+                    <span className="text-xs font-semibold text-foreground">Punch #{item.num}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-mono font-medium text-foreground">{fmt12h(item.time)}</span>
+                    {item.sessionText && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                        {item.sessionText}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsTimelineModalOpen(false)}
+              className="w-full rounded-xl text-xs"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

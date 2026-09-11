@@ -28,4 +28,6 @@ export interface MonthlyAttendanceSummary {
   halfDay: number;
   leave: number;
   holiday: number;
+  sundayPresent?: number | string;
+  sundayAbsent?: number | string;
 }

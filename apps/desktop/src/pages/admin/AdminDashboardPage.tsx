@@ -24,7 +24,6 @@ import {
   Percent,
   CheckCheck,
   Gift,
-  History,
 } from 'lucide-react';
 import {
   Dialog,
@@ -341,7 +340,7 @@ export function AdminDashboardPage(): JSX.Element {
           </DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0 pt-4 pb-2 space-y-2 pr-1">
             {activeModal === 'present' && (
-              data.presentList?.length > 0 ? data.presentList.map((a: any) => (
+              (data.presentList?.length ?? 0) > 0 ? data.presentList?.map((a: any) => (
                 <div key={a.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
                   <div className="text-sm font-semibold">{a.employee.firstName} {a.employee.lastName}</div>
                   <div className="text-xs text-muted-foreground">{new Date(a.punchInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
@@ -349,7 +348,7 @@ export function AdminDashboardPage(): JSX.Element {
               )) : <div className="text-center text-sm text-muted-foreground py-6">No present staff found.</div>
             )}
             {activeModal === 'absent' && (
-              data.absentList?.length > 0 ? data.absentList.map((emp: any) => (
+              (data.absentList?.length ?? 0) > 0 ? data.absentList?.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
                   <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
                   <div className="text-xs text-muted-foreground">{emp.designation?.title || 'Staff'}</div>
@@ -357,7 +356,7 @@ export function AdminDashboardPage(): JSX.Element {
               )) : <div className="text-center text-sm text-muted-foreground py-6">No absent staff found.</div>
             )}
             {activeModal === 'late' && (
-              data.lateList?.length > 0 ? data.lateList.map((a: any) => (
+              (data.lateList?.length ?? 0) > 0 ? data.lateList?.map((a: any) => (
                 <div key={a.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
                   <div className="text-sm font-semibold">{a.employee.firstName} {a.employee.lastName}</div>
                   <div className="text-xs font-medium text-amber-500">{a.lateMinutes}m Late</div>
@@ -365,7 +364,7 @@ export function AdminDashboardPage(): JSX.Element {
               )) : <div className="text-center text-sm text-muted-foreground py-6">No late arrivals today.</div>
             )}
             {activeModal === 'birthdays' && (
-              data.birthdaysThisMonth?.length > 0 ? data.birthdaysThisMonth.map((emp: any) => (
+              (data.birthdaysThisMonth?.length ?? 0) > 0 ? data.birthdaysThisMonth?.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
                   <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
                   <div className="text-xs font-bold text-pink-500">{new Date(emp.dateOfBirth).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
@@ -373,20 +372,36 @@ export function AdminDashboardPage(): JSX.Element {
               )) : <div className="text-center text-sm text-muted-foreground py-6">No birthdays this month.</div>
             )}
             {activeModal === 'paid' && (
-              data.paidList?.length > 0 ? data.paidList.map((emp: any) => (
+              (salaryOverview as any).paidEmployees?.length > 0 ? (salaryOverview as any).paidEmployees.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
-                  <div className="text-sm font-semibold">{emp.employee.firstName} {emp.employee.lastName}</div>
-                  <div className="text-xs font-bold text-emerald-500">₹{emp.netSalary?.toLocaleString()}</div>
+                  <div>
+                    <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
+                    {emp.employeeCode && <div className="text-[11px] text-muted-foreground">{emp.employeeCode}</div>}
+                  </div>
+                  <div className="text-xs font-bold text-emerald-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
                 </div>
-              )) : <div className="text-center text-sm text-muted-foreground py-6">No paid staff found.</div>
+              )) : (data.paidList?.length ?? 0) > 0 ? data.paidList?.map((emp: any) => (
+                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
+                  <div className="text-sm font-semibold">{emp.employee?.firstName || emp.firstName} {emp.employee?.lastName || emp.lastName}</div>
+                  <div className="text-xs font-bold text-emerald-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
+                </div>
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No paid staff found for this month.</div>
             )}
             {activeModal === 'unpaid' && (
-              data.unpaidList?.length > 0 ? data.unpaidList.map((emp: any) => (
+              (salaryOverview as any).unpaidEmployees?.length > 0 ? (salaryOverview as any).unpaidEmployees.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
-                  <div className="text-sm font-semibold">{emp.employee.firstName} {emp.employee.lastName}</div>
-                  <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString()}</div>
+                  <div>
+                    <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
+                    {emp.employeeCode && <div className="text-[11px] text-muted-foreground">{emp.employeeCode}</div>}
+                  </div>
+                  <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
                 </div>
-              )) : <div className="text-center text-sm text-muted-foreground py-6">No unpaid staff found.</div>
+              )) : (data.unpaidList?.length ?? 0) > 0 ? data.unpaidList?.map((emp: any) => (
+                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
+                  <div className="text-sm font-semibold">{emp.employee?.firstName || emp.firstName} {emp.employee?.lastName || emp.lastName}</div>
+                  <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
+                </div>
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No unpaid staff found for this month.</div>
             )}
           </div>
         </DialogContent>

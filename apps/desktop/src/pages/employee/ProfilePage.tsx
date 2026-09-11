@@ -1,11 +1,10 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { employeesApi } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
-  User, Briefcase, MapPin, HeartPulse, ShieldCheck, 
-  Mail, Calendar, Clock, IndianRupee, Phone, Building2
+  MapPin, HeartPulse, 
+  Mail, Calendar, Clock, IndianRupee, Phone
 } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 
@@ -17,7 +16,7 @@ export function ProfilePage(): JSX.Element {
 
   const shiftInfo = useMemo(() => {
     let shiftName = 'Regular Shift';
-    let shiftStart = '10:30';
+    let shiftStart = '09:00';
     let shiftEnd = '19:30';
     let shiftHours = 9.0;
 
@@ -57,112 +56,97 @@ export function ProfilePage(): JSX.Element {
     : null;
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">My Profile</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Official employee details and organization profile.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge className="bg-muted text-muted-foreground border-border/80 text-xs gap-1.5 py-1 px-3 font-medium rounded-full">
-            <ShieldCheck size={13} className="text-primary" />
-            <span>Admin Managed Profile</span>
-          </Badge>
-        </div>
+    <div className="space-y-5 w-full max-w-7xl mx-auto">
+      {/* Page Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-border/50">
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          My Profile
+        </h2>
       </div>
 
       {/* Profile Header Hero Card */}
-      <Card className="overflow-hidden border-border/60 shadow-sm bg-gradient-to-br from-primary/10 via-primary/5 to-background">
-        <CardContent className="p-6 sm:p-8">
-          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-            <div className="h-24 w-24 rounded-2xl bg-primary/20 flex items-center justify-center text-primary text-3xl font-extrabold border-4 border-background shadow-md shrink-0">
-              {employee.firstName.charAt(0)}{employee.lastName.charAt(0)}
+      <Card className="border border-border/60 shadow-xs rounded-2xl bg-card p-5 sm:p-6 overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+          {/* Avatar Icon */}
+          <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-primary/10 text-primary flex items-center justify-center text-xl sm:text-2xl font-bold border border-primary/20 shrink-0 select-none">
+            {employee.firstName.charAt(0)}{employee.lastName.charAt(0)}
+          </div>
+
+          {/* Name, Role & Core Identifiers */}
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight truncate">
+                {employee.firstName} {employee.lastName}
+              </h3>
+              <StatusBadge status={employee.status} />
             </div>
 
-            <div className="flex-1 text-center sm:text-left space-y-2.5">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-center sm:justify-start">
-                <h3 className="text-2xl font-extrabold text-foreground">
-                  {employee.firstName} {employee.lastName}
-                </h3>
-                <StatusBadge status={employee.status} />
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground font-medium">
+              <span>{employee.designation?.title ?? 'Staff'}</span>
+              <span>•</span>
+              <span>{employee.department?.name ?? 'General'}</span>
+              <span>•</span>
+              <span className="font-mono text-foreground font-semibold">ID: {employee.employeeCode}</span>
+            </div>
+
+            {/* Quick Metadata Row */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <Mail size={13} className="text-muted-foreground/70 shrink-0" />
+                <span className="text-foreground">{employee.email}</span>
               </div>
 
-              <p className="text-muted-foreground flex items-center justify-center sm:justify-start gap-2 text-sm font-medium">
-                <Briefcase size={16} className="text-primary shrink-0" />
-                <span>{employee.designation?.title ?? 'Staff'}</span>
-                <span>•</span>
-                <Building2 size={16} className="text-primary shrink-0" />
-                <span>{employee.department?.name ?? 'General'}</span>
-              </p>
-
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-1.5 text-xs font-semibold text-muted-foreground">
-                <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full border border-border/60 shadow-xs">
-                  <User size={13} className="text-primary" />
-                  <span>Code: {employee.employeeCode}</span>
+              {employee.phone && (
+                <div className="flex items-center gap-1.5">
+                  <Phone size={13} className="text-muted-foreground/70 shrink-0" />
+                  <span className="text-foreground">{employee.phone}</span>
                 </div>
+              )}
 
-                <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full border border-border/60 shadow-xs">
-                  <Mail size={13} className="text-primary" />
-                  <span>{employee.email}</span>
+              {joinDate && (
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={13} className="text-muted-foreground/70 shrink-0" />
+                  <span>Joined: <span className="text-foreground font-medium">{joinDate}</span></span>
                 </div>
+              )}
 
-                {employee.phone && (
-                  <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full border border-border/60 shadow-xs">
-                    <Phone size={13} className="text-primary" />
-                    <span>{employee.phone}</span>
-                  </div>
-                )}
-
-                {joinDate && (
-                  <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full border border-border/60 shadow-xs">
-                    <Calendar size={13} className="text-primary" />
-                    <span>Joined: {joinDate}</span>
-                  </div>
-                )}
-
-                {birthDate && (
-                  <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full border border-border/60 shadow-xs">
-                    <Calendar size={13} className="text-primary" />
-                    <span>DOB: {birthDate}</span>
-                  </div>
-                )}
-              </div>
+              {birthDate && (
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={13} className="text-muted-foreground/70 shrink-0" />
+                  <span>DOB: <span className="text-foreground font-medium">{birthDate}</span></span>
+                </div>
+              )}
             </div>
           </div>
-        </CardContent>
+        </div>
       </Card>
 
-      {/* Profile Details Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Card 1: Shift & Timing Details */}
-        <Card className="border-border/60 shadow-sm flex flex-col justify-between">
-          <CardHeader className="pb-3 border-b border-border/50">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clock size={16} className="text-primary" /> Shift & Working Hours
+      {/* Profile Details 2-Column Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 w-full">
+        {/* Card 1: Shift & Schedule */}
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
+          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
+            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
+              <Clock size={16} className="text-primary" />
+              <span>Shift & Working Hours</span>
             </CardTitle>
-            <CardDescription className="text-xs">
-              Assigned shift timings and daily schedule
-            </CardDescription>
           </CardHeader>
-          <CardContent className="pt-4 space-y-3 text-xs">
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Assigned Shift</span>
               <span className="font-semibold text-foreground bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">
                 {shiftInfo.shiftName}
               </span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Shift Timings</span>
               <span className="font-semibold text-foreground">{shiftInfo.shiftStart} – {shiftInfo.shiftEnd}</span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Required Working Hours</span>
               <span className="font-semibold text-foreground">{shiftInfo.shiftHours} Hours / day</span>
             </div>
-            <div className="flex justify-between items-center py-1.5">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Shift Type</span>
               <span className="font-medium text-foreground">Fixed Hours</span>
             </div>
@@ -170,61 +154,57 @@ export function ProfilePage(): JSX.Element {
         </Card>
 
         {/* Card 2: Compensation Overview */}
-        <Card className="border-border/60 shadow-sm flex flex-col justify-between">
-          <CardHeader className="pb-3 border-b border-border/50">
-            <CardTitle className="text-base flex items-center gap-2">
-              <IndianRupee size={16} className="text-emerald-600" /> Compensation & Pay Basis
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
+          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
+            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
+              <IndianRupee size={16} className="text-emerald-600" />
+              <span>Compensation & Pay Basis</span>
             </CardTitle>
-            <CardDescription className="text-xs">
-              Standard compensation structured by administration
-            </CardDescription>
           </CardHeader>
-          <CardContent className="pt-4 space-y-3 text-xs">
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Base Salary</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
                 ₹{shiftInfo.monthlySalary.toLocaleString()}
               </span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Approx. Per-Day Rate</span>
               <span className="font-semibold text-foreground">₹{shiftInfo.perDaySalary}</span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Approx. Hourly Rate</span>
               <span className="font-semibold text-foreground">₹{shiftInfo.hourRate} / hr</span>
             </div>
-            <div className="flex justify-between items-center py-1.5">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Pay Type</span>
               <span className="font-semibold text-primary">{(employee as any).payType || 'MONTHLY'}</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Card 3: Contact & Residential Address */}
-        <Card className="border-border/60 shadow-sm flex flex-col justify-between">
-          <CardHeader className="pb-3 border-b border-border/50">
-            <CardTitle className="text-base flex items-center gap-2">
-              <MapPin size={16} className="text-primary" /> Contact & Residential Address
+        {/* Card 3: Contact & Address */}
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
+          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
+            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
+              <MapPin size={16} className="text-primary" />
+              <span>Contact & Address</span>
             </CardTitle>
-            <CardDescription className="text-xs">
-              Registered contact numbers and residential location
-            </CardDescription>
           </CardHeader>
-          <CardContent className="pt-4 space-y-3 text-xs">
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Phone Number</span>
               <span className="font-semibold text-foreground">
                 {employee.phone || <span className="text-muted-foreground italic">Not provided</span>}
               </span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Email Address</span>
               <span className="font-semibold text-foreground">{employee.email}</span>
             </div>
-            <div className="pt-1">
-              <span className="text-muted-foreground font-medium block mb-1">Residential Address</span>
-              <div className="p-3 bg-muted/25 rounded-xl border border-border/40 text-foreground font-normal leading-relaxed">
+            <div className="py-2.5">
+              <span className="text-muted-foreground font-medium block mb-1.5">Residential Address</span>
+              <div className="p-2.5 bg-muted/30 rounded-xl border border-border/40 text-foreground font-normal leading-relaxed">
                 {employee.address ? (
                   employee.address
                 ) : (
@@ -235,30 +215,28 @@ export function ProfilePage(): JSX.Element {
           </CardContent>
         </Card>
 
-        {/* Card 4: Emergency Contact Information */}
-        <Card className="border-border/60 shadow-sm flex flex-col justify-between">
-          <CardHeader className="pb-3 border-b border-border/50">
-            <CardTitle className="text-base flex items-center gap-2">
-              <HeartPulse size={16} className="text-rose-500" /> Emergency Contact
+        {/* Card 4: Emergency Contact */}
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
+          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
+            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
+              <HeartPulse size={16} className="text-rose-500" />
+              <span>Emergency Contact</span>
             </CardTitle>
-            <CardDescription className="text-xs">
-              Primary person to contact in urgent or medical situations
-            </CardDescription>
           </CardHeader>
-          <CardContent className="pt-4 space-y-3 text-xs">
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Contact Person</span>
               <span className="font-semibold text-foreground">
                 {employee.emergencyContactName || <span className="text-muted-foreground italic">Not provided</span>}
               </span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-border/40">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Relationship</span>
               <span className="font-semibold text-foreground">
                 {employee.emergencyContactRelation || <span className="text-muted-foreground italic">Not provided</span>}
               </span>
             </div>
-            <div className="flex justify-between items-center py-1.5">
+            <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Emergency Phone</span>
               <span className="font-semibold text-foreground">
                 {employee.emergencyContactPhone || <span className="text-muted-foreground italic">Not provided</span>}
@@ -266,14 +244,6 @@ export function ProfilePage(): JSX.Element {
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Info notice banner */}
-      <div className="bg-muted/40 rounded-2xl p-4 text-xs text-muted-foreground flex items-start gap-3 border border-border/60">
-        <ShieldCheck size={18} className="shrink-0 text-primary mt-0.5" />
-        <p className="leading-relaxed">
-          Official employee profiles, shift timings, and compensation records are configured and maintained by company administration. If any personal details, contact numbers, or addresses have changed, please contact HR or your system administrator.
-        </p>
       </div>
     </div>
   );

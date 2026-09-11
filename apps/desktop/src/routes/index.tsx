@@ -41,7 +41,14 @@ export const router = createHashRouter([
       { path: 'me/salary', element: <MySalaryPage /> },
       { path: 'me/leaves', element: <MyLeavesPage /> },
       { path: 'me/profile', element: <ProfilePage /> },
-      { path: 'settings', element: <SettingsPage /> },
+      {
+        path: 'settings',
+        element: (
+          <RequireRole roles={['SUPER_ADMIN', 'ADMIN', 'HR']}>
+            <SettingsPage />
+          </RequireRole>
+        ),
+      },
       {
         path: 'admin',
         element: (

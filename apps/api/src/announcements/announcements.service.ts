@@ -18,10 +18,12 @@ export class AnnouncementsService {
 
   list(query: ListAnnouncementsQueryDto): Promise<Announcement[]> {
     const now = serverNow();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const where: Prisma.AnnouncementWhereInput =
       query.activeOnly === 'true'
         ? {
             isActive: true,
+            createdAt: { gte: twentyFourHoursAgo },
             OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
           }
         : {};

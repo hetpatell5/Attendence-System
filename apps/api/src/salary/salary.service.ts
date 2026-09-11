@@ -468,6 +468,8 @@ export class SalaryService {
     unpaidCount: number;
     totalEmployeesCount: number;
     percentagePaid: number;
+    paidEmployees?: any[];
+    unpaidEmployees?: any[];
   }> {
     const monthDate = startOfCompanyDay(new Date(monthIso));
     monthDate.setUTCDate(1);
@@ -591,6 +593,8 @@ export class SalaryService {
     let paidCount = 0;
     let unpaidCount = 0;
     let totalEmployeesCount = 0;
+    const paidEmployees: any[] = [];
+    const unpaidEmployees: any[] = [];
 
     for (const emp of employees) {
       const saved = savedRecords.find((s) => s.employeeId === emp.id);
@@ -667,9 +671,25 @@ export class SalaryService {
       if (status === 'PAID') {
         paidSum += thisMonthNet;
         paidCount++;
+        paidEmployees.push({
+          id: emp.id,
+          employeeCode: emp.employeeCode,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          netSalary: thisMonthNet,
+          status: 'PAID',
+        });
       } else {
         unpaidSum += thisMonthNet;
         unpaidCount++;
+        unpaidEmployees.push({
+          id: emp.id,
+          employeeCode: emp.employeeCode,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          netSalary: thisMonthNet,
+          status: 'PENDING',
+        });
       }
       totalDueSum += thisMonthNet;
     }
@@ -689,6 +709,8 @@ export class SalaryService {
       unpaidCount,
       totalEmployeesCount,
       percentagePaid,
+      paidEmployees,
+      unpaidEmployees,
     };
   }
 

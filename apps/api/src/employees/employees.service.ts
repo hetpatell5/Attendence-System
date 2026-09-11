@@ -84,6 +84,9 @@ export class EmployeesService {
           orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
+        salaryHistory: {
+          orderBy: { effectiveFrom: 'asc' },
+        },
       },
     });
     if (!employee) {
@@ -102,6 +105,9 @@ export class EmployeesService {
           include: { shift: true },
           orderBy: { effectiveFrom: 'desc' },
           take: 1,
+        },
+        salaryHistory: {
+          orderBy: { effectiveFrom: 'asc' },
         },
       },
     });

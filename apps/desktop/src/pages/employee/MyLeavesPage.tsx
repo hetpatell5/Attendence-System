@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leaveApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -184,7 +184,6 @@ export function MyLeavesPage(): JSX.Element {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Leave Requests</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Request time off or short breaks</p>
         </div>
         <Button onClick={() => { setForm(EMPTY_FORM); setError(null); setDialogOpen(true); }} className="gap-2 text-sm">
           <Plus size={15} /> New Request
@@ -197,7 +196,6 @@ export function MyLeavesPage(): JSX.Element {
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
             <CalendarDays size={14} /> Leave History
           </CardTitle>
-          <CardDescription className="text-xs">All your past and upcoming leave requests</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <DataTable columns={columns} rows={sortedRequests} getRowKey={(r) => r.id} isLoading={isLoading} />

@@ -9,13 +9,29 @@ import {
   Sse,
   MessageEvent,
 } from '@nestjs/common';
-import { Observable, map, merge } from 'rxjs';
+import { Observable, map, filter } from 'rxjs';
 import type { Notification } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { RequestWithUser } from '../auth/types/request-with-user.type';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
+
+/**
+ * Notification types that are ONLY for employees.
+ * Admin SSE streams must filter these out so that admins don't
+ * receive Windows toast notifications intended for employees.
+ */
+const EMPLOYEE_ONLY_TYPES = new Set([
+  'LEAVE_APPROVED',
+  'LEAVE_REJECTED',
+  'LEAVE_CANCELLED',
+  'SALARY_PAID',
+  'SALARY_GENERATED',
+  'SALARY_INCREMENT',
+  'ATTENDANCE_ADJUSTED',
+  'ANNOUNCEMENT_PUBLISHED',
+]);
 
 @Controller('notifications')
 export class NotificationsController {
@@ -58,8 +74,14 @@ export class NotificationsController {
 
   /**
    * SSE stream — the client subscribes once and receives push events in real time.
-   * Admin users receive ALL notification events.
-   * Employee users receive only their own events.
+   *
+   * Admin users receive admin-relevant events ONLY (e.g. new leave requests,
+   * punch-in/out alerts, attendance correction requests). Employee-only event
+   * types (LEAVE_APPROVED, SALARY_PAID, etc.) are intentionally excluded from
+   * admin streams to prevent admins from receiving Windows toast notifications
+   * that are meant for the target employee.
+   *
+   * Employee users receive only their own personal events.
    */
   @Sse('stream')
   async stream(@CurrentUser() user: RequestWithUser['user']): Promise<Observable<MessageEvent>> {
@@ -69,11 +91,11 @@ export class NotificationsController {
     let events$: Observable<unknown>;
 
     if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
-      // Admin receives all events + events keyed to their virtual admin id
-      const adminVirtual = `admin:${user.sub}`;
-      events$ = merge(
-        bus.all(),
-        bus.forEmployee(adminVirtual),
+      // Admin receives all events BUT with employee-only types filtered OUT.
+      // This ensures admins only get toast notifications for events where
+      // admin action is needed (e.g. new leave request, punch correction submitted).
+      events$ = bus.all().pipe(
+        filter((event: any) => !EMPLOYEE_ONLY_TYPES.has(event?.type ?? '')),
       );
     } else {
       // Employee receives their own events AND org-wide broadcasts (e.g. announcements)

@@ -9,6 +9,7 @@ import type { Employee, Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { fromMoney } from '../common/money';
 import { startOfCompanyDay } from '../common/time.util';
 import type { Paginated } from '../common/dto/pagination.dto';
@@ -28,6 +29,7 @@ export class EmployeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async list(query: ListEmployeesQueryDto): Promise<Paginated<Employee>> {
@@ -336,6 +338,18 @@ export class EmployeesService {
           amount: fromMoney(dto.baseSalary),
           note: 'Manual salary update',
         },
+      });
+
+      // Notify the employee about their salary change via Windows notification
+      setImmediate(() => {
+        this.notificationsService.create({
+          employeeId: id,
+          type: 'SALARY_INCREMENT',
+          title: '💰 Salary Updated',
+          body: `Your base salary has been updated to ₹${Number(dto.baseSalary).toLocaleString('en-IN')}.`,
+          entityType: 'Employee',
+          entityId: id,
+        }).catch(() => {});
       });
     }
 

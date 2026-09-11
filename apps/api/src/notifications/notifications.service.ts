@@ -122,6 +122,7 @@ export class NotificationsService {
             'LEAVE_REJECTED',
             'SALARY_PAID',
             'SALARY_GENERATED',
+            'SALARY_INCREMENT',
             'ANNOUNCEMENT_PUBLISHED',
             'ATTENDANCE_ADJUSTED',
           ],

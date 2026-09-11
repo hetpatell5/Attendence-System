@@ -191,12 +191,12 @@ export function AdminDashboardPage(): JSX.Element {
 
   // Mutations for Leave Approval/Rejection
   const approveLeave = useMutation({
-    mutationFn: (id: string) => leaveApi.approve(id, { note: 'Approved from dashboard' }),
+    mutationFn: (id: string) => leaveApi.approve(id, { remarks: 'Approved from dashboard' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboard', 'admin'] }),
   });
 
   const rejectLeave = useMutation({
-    mutationFn: (id: string) => leaveApi.reject(id, { reason: 'Rejected from dashboard' }),
+    mutationFn: (id: string) => leaveApi.reject(id, { remarks: 'Rejected from dashboard' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboard', 'admin'] }),
   });
 

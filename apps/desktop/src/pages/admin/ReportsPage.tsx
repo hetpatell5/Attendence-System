@@ -18,7 +18,6 @@ import {
   Search,
   RefreshCw,
   Wallet,
-  Sparkles,
   Award,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -56,7 +55,6 @@ export function ReportsPage(): JSX.Element {
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [hoveredAttMonth, setHoveredAttMonth] = useState<number | null>(null);
   const [hoveredSalMonth, setHoveredSalMonth] = useState<number | null>(null);
-  const [hoveredIncPoint, setHoveredIncPoint] = useState<number | null>(null);
 
   // ─── 1. FETCH TODAY'S LIVE ATTENDANCE ─────────────────────────────────────
   const {

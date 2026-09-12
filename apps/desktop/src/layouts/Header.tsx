@@ -342,8 +342,8 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
 
             {/* Notifications Popover */}
             {isNotifOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card text-card-foreground shadow-2xl z-50 overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
-                <div className="p-3.5 border-b border-border bg-muted/40 flex justify-between items-center">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[360px] max-w-[360px] max-h-[min(420px,calc(100vh-5rem))] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl z-50 overflow-hidden flex flex-col animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="px-3.5 py-2.5 border-b border-border bg-muted/40 flex justify-between items-center shrink-0">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Notifications {unread?.count ? `(${unread.count})` : ''}
                   </span>
@@ -373,7 +373,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                   </button>
                 </div>
 
-                <div className="max-h-84 overflow-y-auto overflow-x-hidden bg-card relative">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden bg-card relative [scrollbar-width:thin]">
                   {notifications.length === 0 ? (
                     <div className="py-10 text-center flex flex-col items-center justify-center text-muted-foreground gap-2">
                       <Inbox size={24} className="opacity-40" />
@@ -407,7 +407,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                                   transitionDelay: staggerDelay,
                                 }}
                                 className={cn(
-                                  'p-3.5 text-xs flex gap-3 relative group select-none transition-colors',
+                                  'px-3.5 py-2.5 text-xs flex gap-2.5 relative group select-none transition-colors',
                                   isUnread ? 'bg-primary/5 hover:bg-primary/10' : 'bg-card hover:bg-muted/40'
                                 )}
                               >

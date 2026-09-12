@@ -97,6 +97,13 @@ export class NotificationsService {
 
 
   async listForUser(userId: string, page = 1, pageSize = 25): Promise<Notification[]> {
+    // Auto-clean notifications older than 30 days in background
+    this.prisma.notification
+      .deleteMany({
+        where: { createdAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+      })
+      .catch(() => {});
+
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
     const employee = await this.employeesService.findByUserId(userId);
@@ -201,6 +208,38 @@ export class NotificationsService {
     await this.prisma.notification.updateMany({
       where: { employeeId: employee.id, readAt: null },
       data: { readAt: new Date() },
+    });
+  }
+
+  async clearAll(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
+    const employee = await this.employeesService.findByUserId(userId);
+
+    if (isAdmin) {
+      await this.prisma.notification.deleteMany({});
+      return;
+    }
+
+    if (!employee) return;
+    await this.prisma.notification.deleteMany({
+      where: { employeeId: employee.id },
+    });
+  }
+
+  async remove(id: string, userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
+    const employee = await this.employeesService.findByUserId(userId);
+
+    if (isAdmin) {
+      await this.prisma.notification.deleteMany({ where: { id } });
+      return;
+    }
+
+    if (!employee) return;
+    await this.prisma.notification.deleteMany({
+      where: { id, employeeId: employee.id },
     });
   }
 

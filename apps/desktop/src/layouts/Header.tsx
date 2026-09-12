@@ -16,7 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { 
-  Bell, CheckCheck, Clock, Inbox, AlertCircle 
+  Bell, CheckCheck, Clock, Inbox, AlertCircle, Loader2, X 
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -81,10 +81,55 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
     refetchInterval: 5_000,
   });
 
-  const handleMarkAllRead = async () => {
-    await notificationsApi.markAllRead();
-    void refetchUnread();
-    void refetchList();
+  const [isClearingAll, setIsClearingAll] = useState(false);
+  const [clearingIds, setClearingIds] = useState<Set<string>>(new Set());
+
+  const handleMarkAllReadAndClear = async () => {
+    if (notifications.length === 0 || isClearingAll) return;
+    setIsClearingAll(true);
+
+    // Staggered Android-like wipe animation duration
+    const animDuration = Math.min(notifications.length * 35 + 320, 750);
+
+    setTimeout(async () => {
+      try {
+        await notificationsApi.clearAll();
+      } catch (err) {
+        console.error('Failed to clear notifications:', err);
+      } finally {
+        queryClient.setQueryData(['notifications', 'list'], []);
+        queryClient.setQueryData(['notifications', 'unread-count'], { count: 0 });
+        void refetchUnread();
+        void refetchList();
+        setIsClearingAll(false);
+        setClearingIds(new Set());
+      }
+    }, animDuration);
+  };
+
+  const handleClearSingle = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (clearingIds.has(id)) return;
+    setClearingIds((prev) => new Set(prev).add(id));
+
+    setTimeout(async () => {
+      try {
+        await notificationsApi.remove(id);
+      } catch (err) {
+        console.error('Failed to remove notification:', err);
+      } finally {
+        queryClient.setQueryData(['notifications', 'list'], (old: any[] = []) =>
+          old.filter((n) => n.id !== id)
+        );
+        void refetchUnread();
+        void refetchList();
+        setClearingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }, 300);
   };
 
   const handleConfirmLogout = async (): Promise<void> => {
@@ -213,28 +258,53 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                   </span>
                   <button
                     type="button"
-                    className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 transition-colors cursor-pointer"
-                    onClick={handleMarkAllRead}
+                    disabled={notifications.length === 0 || isClearingAll}
+                    className={cn(
+                      'text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer select-none',
+                      notifications.length === 0 || isClearingAll
+                        ? 'text-muted-foreground/50 cursor-not-allowed opacity-60'
+                        : 'text-primary hover:text-primary/80 hover:underline active:scale-95'
+                    )}
+                    onClick={handleMarkAllReadAndClear}
+                    title="Mark all as read and clear"
                   >
-                    <CheckCheck size={13} />
-                    <span>Mark all read</span>
+                    {isClearingAll ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin text-primary" />
+                        <span>Clearing…</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCheck size={13} />
+                        <span>Mark all read & clear</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
-                <div className="max-h-80 overflow-y-auto divide-y divide-border/40 bg-card">
+                <div className="max-h-80 overflow-y-auto overflow-x-hidden divide-y divide-border/40 bg-card relative">
                   {notifications.length === 0 ? (
                     <div className="py-10 text-center flex flex-col items-center justify-center text-muted-foreground gap-2">
                       <Inbox size={24} className="opacity-40" />
                       <span className="text-xs">No notifications yet</span>
                     </div>
                   ) : (
-                    notifications.slice(0, 10).map((notif: any) => {
+                    notifications.slice(0, 15).map((notif: any, idx: number) => {
                       const isUnread = !notif.readAt;
+                      const isLeaving = isClearingAll || clearingIds.has(notif.id);
+                      const staggerDelay = isClearingAll ? `${idx * 35}ms` : '0ms';
+
                       return (
                         <div
                           key={notif.id}
+                          style={{
+                            transform: isLeaving ? 'translateX(115%)' : 'translateX(0)',
+                            opacity: isLeaving ? 0 : 1,
+                            transition: 'transform 320ms cubic-bezier(0.2, 0, 0, 1), opacity 280ms ease',
+                            transitionDelay: staggerDelay,
+                          }}
                           className={cn(
-                            'p-3.5 text-xs transition-colors flex gap-3',
+                            'p-3.5 text-xs flex gap-3 relative group select-none transition-colors',
                             isUnread ? 'bg-primary/5 hover:bg-primary/10' : 'bg-card hover:bg-muted/40'
                           )}
                         >
@@ -246,7 +316,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                               )}
                             />
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 pr-5">
                             <div className="flex justify-between items-baseline gap-2">
                               <span className="font-bold text-foreground truncate">
                                 {notif.title}
@@ -262,6 +332,16 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                               {notif.body}
                             </p>
                           </div>
+
+                          {/* Individual Clear/Dismiss Button on Hover */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleClearSingle(e, notif.id)}
+                            className="absolute right-2.5 top-2.5 p-1 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/80 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                            title="Dismiss notification"
+                          >
+                            <X size={12} />
+                          </button>
                         </div>
                       );
                     })

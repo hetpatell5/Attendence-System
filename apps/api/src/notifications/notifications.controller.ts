@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Delete,
   Query,
   Sse,
   MessageEvent,
@@ -70,6 +71,18 @@ export class NotificationsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   markAllRead(@CurrentUser() user: RequestWithUser['user']): Promise<void> {
     return this.notificationsService.markAllRead(user.sub);
+  }
+
+  @Post('clear-all')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  clearAll(@CurrentUser() user: RequestWithUser['user']): Promise<void> {
+    return this.notificationsService.clearAll(user.sub);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id') id: string, @CurrentUser() user: RequestWithUser['user']): Promise<void> {
+    return this.notificationsService.remove(id, user.sub);
   }
 
   /**

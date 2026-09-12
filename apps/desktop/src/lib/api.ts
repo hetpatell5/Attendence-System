@@ -203,6 +203,8 @@ export const notificationsApi = {
   unreadCount: () => request<{ count: number }>('/notifications/unread-count'),
   markRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllRead: () => request<void>('/notifications/read-all', { method: 'POST' }),
+  clearAll: () => request<void>('/notifications/clear-all', { method: 'POST' }),
+  remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
 };
 
 export const dashboardApi = {

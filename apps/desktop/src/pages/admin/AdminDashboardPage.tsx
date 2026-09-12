@@ -76,7 +76,7 @@ function StatTile({
 
       {/* Middle: Prominent Metric Value */}
       <div className="my-1">
-        <span className="text-2xl sm:text-[28px] font-black tracking-tight text-foreground font-mono leading-none">
+        <span className="text-2xl sm:text-[28px] font-bold tracking-tight text-foreground leading-none">
           {value}
         </span>
       </div>

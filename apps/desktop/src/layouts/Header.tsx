@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/state/auth-store';
@@ -16,8 +16,73 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { 
-  Bell, CheckCheck, Clock, Inbox, AlertCircle, Loader2, X 
+  Bell, CheckCheck, Clock, Inbox, AlertCircle, Loader2, X, Calendar 
 } from 'lucide-react';
+
+function formatNotificationDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+
+  const now = new Date();
+  const isToday =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+
+  const timeStr = d.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  if (isToday) return `Today, ${timeStr}`;
+  if (isYesterday) return `Yesterday, ${timeStr}`;
+
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const datePart = d.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+
+  return `${datePart}, ${timeStr}`;
+}
+
+function getDateGroupLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Earlier';
+
+  const now = new Date();
+  const isToday =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
+
+  if (isToday) return 'Today';
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+
+  if (isYesterday) return 'Yesterday';
+
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
 
 interface HeaderProps {
   isUserSide?: boolean;
@@ -80,6 +145,32 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
     queryFn: notificationsApi.list,
     refetchInterval: 5_000,
   });
+
+  // Group notifications date-wise, newest first (Today on top, then descending dates)
+  const sortedAndGroupedNotifications = useMemo(() => {
+    if (!notifications || notifications.length === 0) return [];
+
+    const sorted = [...notifications].sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime() || 0;
+      const timeB = new Date(b.createdAt).getTime() || 0;
+      return timeB - timeA;
+    });
+
+    const groups: Array<{ label: string; items: any[] }> = [];
+    const groupMap = new Map<string, any[]>();
+
+    sorted.forEach((notif, flatIdx) => {
+      const groupKey = getDateGroupLabel(notif.createdAt);
+      if (!groupMap.has(groupKey)) {
+        const list: any[] = [];
+        groupMap.set(groupKey, list);
+        groups.push({ label: groupKey, items: list });
+      }
+      groupMap.get(groupKey)!.push({ ...notif, flatIdx });
+    });
+
+    return groups;
+  }, [notifications]);
 
   const [isClearingAll, setIsClearingAll] = useState(false);
   const [clearingIds, setClearingIds] = useState<Set<string>>(new Set());
@@ -282,69 +373,81 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                   </button>
                 </div>
 
-                <div className="max-h-80 overflow-y-auto overflow-x-hidden divide-y divide-border/40 bg-card relative">
+                <div className="max-h-84 overflow-y-auto overflow-x-hidden bg-card relative">
                   {notifications.length === 0 ? (
                     <div className="py-10 text-center flex flex-col items-center justify-center text-muted-foreground gap-2">
                       <Inbox size={24} className="opacity-40" />
                       <span className="text-xs">No notifications yet</span>
                     </div>
                   ) : (
-                    notifications.slice(0, 15).map((notif: any, idx: number) => {
-                      const isUnread = !notif.readAt;
-                      const isLeaving = isClearingAll || clearingIds.has(notif.id);
-                      const staggerDelay = isClearingAll ? `${idx * 35}ms` : '0ms';
-
-                      return (
-                        <div
-                          key={notif.id}
-                          style={{
-                            transform: isLeaving ? 'translateX(115%)' : 'translateX(0)',
-                            opacity: isLeaving ? 0 : 1,
-                            transition: 'transform 320ms cubic-bezier(0.2, 0, 0, 1), opacity 280ms ease',
-                            transitionDelay: staggerDelay,
-                          }}
-                          className={cn(
-                            'p-3.5 text-xs flex gap-3 relative group select-none transition-colors',
-                            isUnread ? 'bg-primary/5 hover:bg-primary/10' : 'bg-card hover:bg-muted/40'
-                          )}
-                        >
-                          <div className="mt-0.5">
-                            <span
-                              className={cn(
-                                'flex h-2 w-2 rounded-full',
-                                isUnread ? 'bg-sky-500' : 'bg-transparent'
-                              )}
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0 pr-5">
-                            <div className="flex justify-between items-baseline gap-2">
-                              <span className="font-bold text-foreground truncate">
-                                {notif.title}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground shrink-0 font-medium">
-                                {new Date(notif.createdAt).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </span>
-                            </div>
-                            <p className="text-muted-foreground text-[11px] mt-0.5 leading-relaxed break-words">
-                              {notif.body}
-                            </p>
-                          </div>
-
-                          {/* Individual Clear/Dismiss Button on Hover */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleClearSingle(e, notif.id)}
-                            className="absolute right-2.5 top-2.5 p-1 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/80 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-                            title="Dismiss notification"
-                          >
-                            <X size={12} />
-                          </button>
+                    sortedAndGroupedNotifications.map((group) => (
+                      <div key={group.label} className="relative">
+                        <div className="sticky top-0 z-10 px-3.5 py-1.5 bg-muted/95 backdrop-blur-xs border-y border-border/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between shadow-2xs">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar size={11} className="text-primary/70" />
+                            <span>{group.label}</span>
+                          </span>
+                          <span className="text-[9px] font-medium opacity-60">
+                            {group.items.length}
+                          </span>
                         </div>
-                      );
-                    })
+                        <div className="divide-y divide-border/30">
+                          {group.items.map((notif: any) => {
+                            const isUnread = !notif.readAt;
+                            const isLeaving = isClearingAll || clearingIds.has(notif.id);
+                            const staggerDelay = isClearingAll ? `${notif.flatIdx * 30}ms` : '0ms';
+
+                            return (
+                              <div
+                                key={notif.id}
+                                style={{
+                                  transform: isLeaving ? 'translateX(115%)' : 'translateX(0)',
+                                  opacity: isLeaving ? 0 : 1,
+                                  transition: 'transform 320ms cubic-bezier(0.2, 0, 0, 1), opacity 280ms ease',
+                                  transitionDelay: staggerDelay,
+                                }}
+                                className={cn(
+                                  'p-3.5 text-xs flex gap-3 relative group select-none transition-colors',
+                                  isUnread ? 'bg-primary/5 hover:bg-primary/10' : 'bg-card hover:bg-muted/40'
+                                )}
+                              >
+                                <div className="mt-0.5">
+                                  <span
+                                    className={cn(
+                                      'flex h-2 w-2 rounded-full',
+                                      isUnread ? 'bg-sky-500' : 'bg-transparent'
+                                    )}
+                                  />
+                                </div>
+                                <div className="flex-1 min-w-0 pr-5">
+                                  <div className="flex justify-between items-baseline gap-2">
+                                    <span className="font-bold text-foreground truncate">
+                                      {notif.title}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground shrink-0 font-medium whitespace-nowrap">
+                                      {formatNotificationDate(notif.createdAt)}
+                                    </span>
+                                  </div>
+                                  <p className="text-muted-foreground text-[11px] mt-0.5 leading-relaxed break-words">
+                                    {notif.body}
+                                  </p>
+                                </div>
+
+                                {/* Individual Clear/Dismiss Button on Hover */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleClearSingle(e, notif.id)}
+                                  className="absolute right-2.5 top-2.5 p-1 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/80 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                                  title="Dismiss notification"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>

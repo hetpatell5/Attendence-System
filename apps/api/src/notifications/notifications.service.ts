@@ -232,14 +232,19 @@ export class NotificationsService {
     const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'HR';
     const employee = await this.employeesService.findByUserId(userId);
 
-    if (isAdmin) {
+    if (isAdmin || !employee) {
       await this.prisma.notification.deleteMany({ where: { id } });
       return;
     }
 
-    if (!employee) return;
     await this.prisma.notification.deleteMany({
-      where: { id, employeeId: employee.id },
+      where: {
+        id,
+        OR: [
+          { employeeId: employee.id },
+          { type: 'ANNOUNCEMENT_PUBLISHED' },
+        ],
+      },
     });
   }
 

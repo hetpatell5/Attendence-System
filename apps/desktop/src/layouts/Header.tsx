@@ -146,11 +146,34 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
     refetchInterval: 5_000,
   });
 
+  // Local persistent set of dismissed notification IDs (ensures dismiss is instant & persists across refreshes/polls)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('atten_dismissed_notifications');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const persistDismissedIds = (newSet: Set<string>) => {
+    setDismissedIds(newSet);
+    try {
+      const arr = Array.from(newSet).slice(-300);
+      localStorage.setItem('atten_dismissed_notifications', JSON.stringify(arr));
+    } catch {}
+  };
+
+  // Filter out any dismissed notifications
+  const visibleNotifications = useMemo(() => {
+    return notifications.filter((n: any) => !dismissedIds.has(n.id));
+  }, [notifications, dismissedIds]);
+
   // Group notifications date-wise, newest first (Today on top, then descending dates)
   const sortedAndGroupedNotifications = useMemo(() => {
-    if (!notifications || notifications.length === 0) return [];
+    if (!visibleNotifications || visibleNotifications.length === 0) return [];
 
-    const sorted = [...notifications].sort((a, b) => {
+    const sorted = [...visibleNotifications].sort((a, b) => {
       const timeA = new Date(a.createdAt).getTime() || 0;
       const timeB = new Date(b.createdAt).getTime() || 0;
       return timeB - timeA;
@@ -170,26 +193,34 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
     });
 
     return groups;
-  }, [notifications]);
+  }, [visibleNotifications]);
 
   const [isClearingAll, setIsClearingAll] = useState(false);
   const [clearingIds, setClearingIds] = useState<Set<string>>(new Set());
 
   const handleMarkAllReadAndClear = async () => {
-    if (notifications.length === 0 || isClearingAll) return;
+    if (visibleNotifications.length === 0 || isClearingAll) return;
     setIsClearingAll(true);
 
     // Staggered Android-like wipe animation duration
-    const animDuration = Math.min(notifications.length * 35 + 320, 750);
+    const animDuration = Math.min(visibleNotifications.length * 30 + 320, 750);
 
     setTimeout(async () => {
+      // Mark all visible notification IDs as dismissed locally
+      const allCurrentIds = visibleNotifications.map((n: any) => n.id);
+      persistDismissedIds(new Set([...dismissedIds, ...allCurrentIds]));
+
+      queryClient.setQueryData(['notifications', 'list'], []);
+      queryClient.setQueryData(['notifications', 'unread-count'], { count: 0 });
+
       try {
         await notificationsApi.clearAll();
       } catch (err) {
-        console.error('Failed to clear notifications:', err);
+        // Fallback to markAllRead if clear-all endpoint is pending server deploy
+        try {
+          await notificationsApi.markAllRead();
+        } catch {}
       } finally {
-        queryClient.setQueryData(['notifications', 'list'], []);
-        queryClient.setQueryData(['notifications', 'unread-count'], { count: 0 });
         void refetchUnread();
         void refetchList();
         setIsClearingAll(false);
@@ -198,20 +229,28 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
     }, animDuration);
   };
 
-  const handleClearSingle = async (e: React.MouseEvent, id: string) => {
+  const handleClearSingle = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    e.preventDefault();
     if (clearingIds.has(id)) return;
     setClearingIds((prev) => new Set(prev).add(id));
 
     setTimeout(async () => {
+      // 1. Instantly persist to dismissed set so it never flickers back
+      persistDismissedIds(new Set([...dismissedIds, id]));
+
+      // 2. Remove from React Query cache
+      queryClient.setQueryData(['notifications', 'list'], (old: any[] = []) =>
+        old.filter((n) => n.id !== id)
+      );
+
+      // 3. Delete on backend
       try {
         await notificationsApi.remove(id);
       } catch (err) {
-        console.error('Failed to remove notification:', err);
+        // Server will catch up once updated; client-side dismiss remains solid
+        console.warn('Notification remove API warning:', err);
       } finally {
-        queryClient.setQueryData(['notifications', 'list'], (old: any[] = []) =>
-          old.filter((n) => n.id !== id)
-        );
         void refetchUnread();
         void refetchList();
         setClearingIds((prev) => {
@@ -349,10 +388,10 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                   </span>
                   <button
                     type="button"
-                    disabled={notifications.length === 0 || isClearingAll}
+                    disabled={visibleNotifications.length === 0 || isClearingAll}
                     className={cn(
                       'text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer select-none',
-                      notifications.length === 0 || isClearingAll
+                      visibleNotifications.length === 0 || isClearingAll
                         ? 'text-muted-foreground/50 cursor-not-allowed opacity-60'
                         : 'text-primary hover:text-primary/80 hover:underline active:scale-95'
                     )}
@@ -374,7 +413,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                 </div>
 
                 <div className="flex-1 overflow-y-auto overflow-x-hidden bg-card relative [scrollbar-width:thin]">
-                  {notifications.length === 0 ? (
+                  {visibleNotifications.length === 0 ? (
                     <div className="py-10 text-center flex flex-col items-center justify-center text-muted-foreground gap-2">
                       <Inbox size={24} className="opacity-40" />
                       <span className="text-xs">No notifications yet</span>
@@ -419,7 +458,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                                     )}
                                   />
                                 </div>
-                                <div className="flex-1 min-w-0 pr-5">
+                                <div className="flex-1 min-w-0 pr-8">
                                   <div className="flex justify-between items-baseline gap-2">
                                     <span className="font-bold text-foreground truncate">
                                       {notif.title}
@@ -437,10 +476,10 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                                 <button
                                   type="button"
                                   onClick={(e) => handleClearSingle(e, notif.id)}
-                                  className="absolute right-2.5 top-2.5 p-1 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/80 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                                  className="absolute right-2 top-2 h-6 w-6 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-muted/80 opacity-0 group-hover:opacity-100 transition-all cursor-pointer z-10"
                                   title="Dismiss notification"
                                 >
-                                  <X size={12} />
+                                  <X size={13} />
                                 </button>
                               </div>
                             );

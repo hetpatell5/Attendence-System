@@ -13,7 +13,7 @@ import type { Attendance } from '@attendance/shared';
 import { 
   Calendar as CalendarIcon, Clock, CheckCircle2, 
   CalendarDays, IndianRupee, Pencil, Send, AlertCircle,
-  Plus, Trash2, List, ChevronLeft, ChevronRight
+  Plus, Trash2, List, ChevronLeft, ChevronRight, Lightbulb
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -169,6 +169,7 @@ export function MyAttendancePage(): JSX.Element {
   ]);
   const [reason, setReason] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [isEditingPunch, setIsEditingPunch] = useState(false);
 
   const createRequestMutation = useMutation({
     mutationFn: (body: {
@@ -183,6 +184,7 @@ export function MyAttendancePage(): JSX.Element {
       setFeedbackMsg('Request submitted successfully! Admin will review your punches.');
       setTimeout(() => {
         setFeedbackMsg('');
+        setIsEditingPunch(false);
         setEditModalOpen(false);
       }, 1500);
     },
@@ -206,6 +208,7 @@ export function MyAttendancePage(): JSX.Element {
     setSelectedAttendance(r ?? null);
     setSelectedRequest(req ?? null);
     setFeedbackMsg('');
+    setIsEditingPunch(false);
 
     // Pre-populate punch sessions
     const pairs: Array<{ punchIn: string; punchOut: string }> = [];
@@ -913,176 +916,289 @@ export function MyAttendancePage(): JSX.Element {
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl border-border/70 shadow-2xl p-6 bg-card">
           <DialogHeader className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
                 <Clock size={18} />
               </div>
               <div>
                 <DialogTitle className="text-lg font-bold text-foreground">
-                  Request Punch Correction
+                  {selectedAttendance?.status === 'LEAVE' ? 'Attendance Details' : 'Punch Details & Correction'}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Forgot to punch or need to adjust times? Submit your request to Admin.
+                  {selectedAttendance?.status === 'LEAVE'
+                    ? 'Official attendance record and leave status for this day.'
+                    : 'Forgot to punch or need to adjust times? Submit your request to Admin.'}
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          {/* Date banner */}
+          {/* Date & Status banner */}
           <div className="p-3 bg-muted/40 rounded-xl border border-border/50 flex items-center justify-between my-2 text-xs">
             <div className="flex items-center gap-2">
               <CalendarIcon size={14} className="text-primary" />
-              <span className="font-semibold text-foreground">
-                {selectedDateStr ? new Date(selectedDateStr).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+              <span className="font-bold text-foreground">
+                {selectedDateStr
+                  ? new Date(selectedDateStr).toLocaleDateString('en-IN', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  : ''}
               </span>
             </div>
-            {selectedAttendance && (
+            {selectedAttendance ? (
               <StatusBadge status={selectedAttendance.status} />
+            ) : (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
+                No Record
+              </span>
             )}
           </div>
 
-          {/* Current Punches Reference */}
-          {selectedAttendance && (
-            <div className="p-3 bg-muted/20 rounded-xl border border-border/40 text-xs mb-3 space-y-1.5">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                Current Punches on Record:
-              </span>
-              {(() => {
-                const currentPairs = Array.isArray(selectedAttendance.punchPairs) && selectedAttendance.punchPairs.length > 0
-                  ? (selectedAttendance.punchPairs as Array<{ punchInAt?: string | null; punchOutAt?: string | null }>)
-                  : selectedAttendance.punchInAt ? [{ punchInAt: selectedAttendance.punchInAt, punchOutAt: selectedAttendance.punchOutAt }] : [];
+          {/* Top Section: Punch Timings on Record with High Visibility */}
+          {(() => {
+            const isLeave = selectedAttendance?.status === 'LEAVE';
+            const currentPairs = selectedAttendance
+              ? Array.isArray(selectedAttendance.punchPairs) && selectedAttendance.punchPairs.length > 0
+                ? (selectedAttendance.punchPairs as Array<{ punchInAt?: string | null; punchOutAt?: string | null }>)
+                : selectedAttendance.punchInAt
+                ? [{ punchInAt: selectedAttendance.punchInAt, punchOutAt: selectedAttendance.punchOutAt }]
+                : []
+              : [];
+            const workedMins = selectedAttendance?.workedMinutes || 0;
 
-                if (currentPairs.length === 0) {
-                  return <span className="text-muted-foreground italic text-xs">No punches recorded</span>;
-                }
+            if (isLeave) {
+              return (
+                <div className="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-900 dark:text-blue-200 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs sm:text-sm">
+                      <CalendarDays className="text-blue-600 dark:text-blue-400 shrink-0" size={16} />
+                      <span>Approved Leave Day</span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                      On Leave
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-blue-700/90 dark:text-blue-300/90 leading-relaxed pt-0.5">
+                    You were officially on leave for this date. No attendance punch was required or recorded.
+                  </p>
+                </div>
+              );
+            }
 
-                return (
-                  <div className="space-y-1">
+            if (currentPairs.length > 0) {
+              return (
+                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Clock size={13} className="text-primary" /> Punches on Record
+                    </span>
+                    {workedMins > 0 && (
+                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                        {formatDuration(workedMins)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
                     {currentPairs.map((p, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs py-0.5">
-                        <span className="text-muted-foreground font-medium">Session #{idx + 1}:</span>
-                        <div className="flex items-center gap-2 font-mono font-medium">
-                          <span className="text-emerald-600 dark:text-emerald-400">
-                            {p.punchInAt ? new Date(p.punchInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-background border border-border/70 shadow-2xs"
+                      >
+                        <span className="text-xs font-bold text-foreground">Session #{idx + 1}</span>
+                        <div className="flex items-center gap-2.5 font-mono text-xs sm:text-sm font-bold">
+                          <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground uppercase font-sans font-medium">In:</span>
+                            {p.punchInAt ? formatTimeTo12h(p.punchInAt) : '--:--'}
                           </span>
-                          <span className="text-muted-foreground">to</span>
-                          <span className="text-orange-600 dark:text-orange-400">
-                            {p.punchOutAt ? new Date(p.punchOutAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
+                          <span className="text-muted-foreground/60 text-xs">➔</span>
+                          <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground uppercase font-sans font-medium">Out:</span>
+                            {p.punchOutAt ? formatTimeTo12h(p.punchOutAt) : '--:--'}
                           </span>
                         </div>
                       </div>
                     ))}
                   </div>
-                );
-              })()}
-            </div>
-          )}
+                </div>
+              );
+            }
+
+            return (
+              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-rose-800 dark:text-rose-300 font-semibold">
+                  <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                  <span>No punches recorded for this day (Marked Absent)</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Existing Pending Alert if any */}
           {selectedRequest?.status === 'PENDING' && (
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs mb-3">
-              <AlertCircle size={14} className="shrink-0" />
-              <span>A pending request is already under review. Updating will overwrite your pending times.</span>
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs my-2 font-medium">
+              <AlertCircle size={14} className="shrink-0 text-amber-600" />
+              <span>A correction request is already pending Admin approval.</span>
             </div>
           )}
 
-          {/* Punch Time Inputs - Multiple Sessions */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-bold text-foreground">Requested Punch Sessions</Label>
-              <span className="text-[11px] text-muted-foreground">{editPunchPairs.length} session{editPunchPairs.length > 1 ? 's' : ''}</span>
-            </div>
-
-            <div className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
-              {editPunchPairs.map((pair, idx) => (
-                <div key={idx} className="p-2.5 rounded-xl border border-border/70 bg-background/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-primary">Session #{idx + 1}</span>
-                    {editPunchPairs.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setEditPunchPairs(editPunchPairs.filter((_, i) => i !== idx))}
-                        className="text-rose-500 hover:text-rose-600 p-0.5 rounded text-xs hover:bg-rose-500/10 transition-colors"
-                        title="Remove session"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                        <Clock size={10} className="text-emerald-500" /> Punch In
-                      </span>
-                      <Input
-                        type="time"
-                        value={pair.punchIn}
-                        onChange={(e) => {
-                          const next = [...editPunchPairs];
-                          if (next[idx]) {
-                            next[idx] = { ...next[idx], punchIn: e.target.value };
-                            setEditPunchPairs(next);
-                          }
-                        }}
-                        className="h-8 rounded-lg border-border/70 text-xs font-medium"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                        <Clock size={10} className="text-orange-500" /> Punch Out
-                      </span>
-                      <Input
-                        type="time"
-                        value={pair.punchOut}
-                        onChange={(e) => {
-                          const next = [...editPunchPairs];
-                          if (next[idx]) {
-                            next[idx] = { ...next[idx], punchOut: e.target.value };
-                            setEditPunchPairs(next);
-                          }
-                        }}
-                        className="h-8 rounded-lg border-border/70 text-xs font-medium"
-                      />
-                    </div>
-                  </div>
+          {/* Option Below to Edit / Adjust Punches */}
+          {!isEditingPunch ? (
+            <div className="pt-2">
+              {selectedAttendance?.status === 'LEAVE' ? (
+                <div className="text-center pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsEditingPunch(true)}
+                    className="rounded-xl text-xs font-semibold gap-1.5 border-dashed border-primary/40 text-primary hover:bg-primary/5"
+                  >
+                    <Pencil size={13} />
+                    <span>Did you work on this leave day? Request Punch</span>
+                  </Button>
                 </div>
-              ))}
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditingPunch(true)}
+                  className="w-full h-10 rounded-xl text-xs font-bold gap-2 border-primary/40 text-primary hover:bg-primary/5 hover:border-primary shadow-2xs"
+                >
+                  <Pencil size={14} />
+                  <span>
+                    {(Array.isArray(selectedAttendance?.punchPairs) && selectedAttendance.punchPairs.length > 0) || selectedAttendance?.punchInAt
+                      ? 'Edit / Adjust This Punch'
+                      : 'Request Punch Entry for this Day'}
+                  </span>
+                </Button>
+              )}
             </div>
+          ) : (
+            /* Punch Edit Form */
+            <div className="space-y-3 pt-2 border-t border-border/50 mt-2 animate-in fade-in-50 duration-150">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs font-bold text-foreground">Adjust Punch Timings</Label>
+                  <span className="text-[10px] text-muted-foreground block">
+                    Enter actual punch times for Admin review
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground font-medium">
+                    {editPunchPairs.length} session{editPunchPairs.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPunch(false)}
+                    className="text-[11px] font-semibold text-muted-foreground hover:text-foreground underline cursor-pointer"
+                  >
+                    Cancel Edit
+                  </button>
+                </div>
+              </div>
 
-            {/* Add Session button */}
-            {editPunchPairs.length < 8 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setEditPunchPairs([...editPunchPairs, { punchIn: '', punchOut: '' }])}
-                className="w-full h-8 text-xs font-semibold rounded-xl border-dashed border-primary/40 text-primary hover:bg-primary/5 gap-1.5"
-              >
-                <Plus size={13} />
-                <span>Add Another Punch Session</span>
-              </Button>
-            )}
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {editPunchPairs.map((pair, idx) => (
+                  <div key={idx} className="p-2.5 rounded-xl border border-border/70 bg-background/50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-primary">Session #{idx + 1}</span>
+                      {editPunchPairs.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setEditPunchPairs(editPunchPairs.filter((_, i) => i !== idx))}
+                          className="text-rose-500 hover:text-rose-600 p-0.5 rounded text-xs hover:bg-rose-500/10 transition-colors"
+                          title="Remove session"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                          <Clock size={10} className="text-emerald-500" /> Punch In
+                        </span>
+                        <Input
+                          type="time"
+                          value={pair.punchIn}
+                          onChange={(e) => {
+                            const next = [...editPunchPairs];
+                            if (next[idx]) {
+                              next[idx] = { ...next[idx], punchIn: e.target.value };
+                              setEditPunchPairs(next);
+                            }
+                          }}
+                          className="h-8 rounded-lg border-border/70 text-xs font-medium"
+                        />
+                      </div>
 
-            <p className="text-[11px] text-muted-foreground italic">
-              💡 Tip: Enter all punch-in and punch-out times for the day. Multiple sessions will be summed for your salary.
-            </p>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                          <Clock size={10} className="text-orange-500" /> Punch Out
+                        </span>
+                        <Input
+                          type="time"
+                          value={pair.punchOut}
+                          onChange={(e) => {
+                            const next = [...editPunchPairs];
+                            if (next[idx]) {
+                              next[idx] = { ...next[idx], punchOut: e.target.value };
+                              setEditPunchPairs(next);
+                            }
+                          }}
+                          className="h-8 rounded-lg border-border/70 text-xs font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-            {/* Reason Textarea */}
-            <div className="space-y-1.5">
-              <Label htmlFor="reason" className="text-xs font-semibold text-foreground">
-                Reason / Note for Admin
-              </Label>
-              <textarea
-                id="reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={2}
-                placeholder="e.g., Forgot to punch in at shift start, biometric scanner was restarting..."
-                className="w-full text-xs rounded-xl border border-input bg-background p-2.5 outline-none focus:ring-2 focus:ring-primary resize-none transition-all placeholder:text-muted-foreground/60"
-              />
+              {/* Add Session button */}
+              {editPunchPairs.length < 8 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditPunchPairs([...editPunchPairs, { punchIn: '', punchOut: '' }])}
+                  className="w-full h-8 text-xs font-semibold rounded-xl border-dashed border-primary/40 text-primary hover:bg-primary/5 gap-1.5"
+                >
+                  <Plus size={13} />
+                  <span>Add Another Punch Session</span>
+                </Button>
+              )}
+
+              {/* Bold High-Visibility Tip Callout */}
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-950 dark:text-amber-100 shadow-xs">
+                <Lightbulb size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs leading-relaxed">
+                  <span className="font-extrabold uppercase tracking-wide mr-1 text-amber-800 dark:text-amber-300">Tip:</span>
+                  <span className="font-bold">
+                    Enter all punch-in and punch-out times for the day. Multiple sessions will be summed for your salary.
+                  </span>
+                </div>
+              </div>
+
+              {/* Reason Textarea */}
+              <div className="space-y-1.5">
+                <Label htmlFor="reason" className="text-xs font-semibold text-foreground">
+                  Reason / Note for Admin
+                </Label>
+                <textarea
+                  id="reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  rows={2}
+                  placeholder="e.g., Forgot to punch in at shift start, biometric scanner was restarting..."
+                  className="w-full text-xs rounded-xl border border-input bg-background p-2.5 outline-none focus:ring-2 focus:ring-primary resize-none transition-all placeholder:text-muted-foreground/60"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Feedback Message */}
           {feedbackMsg && (
@@ -1098,22 +1214,27 @@ export function MyAttendancePage(): JSX.Element {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setEditModalOpen(false)}
+              onClick={() => {
+                setIsEditingPunch(false);
+                setEditModalOpen(false);
+              }}
               disabled={createRequestMutation.isPending}
               className="rounded-xl text-xs h-9"
             >
-              Cancel
+              {isEditingPunch ? 'Cancel' : 'Close'}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSubmitRequest}
-              disabled={createRequestMutation.isPending}
-              className="rounded-xl text-xs h-9 gap-1.5 bg-primary text-primary-foreground font-medium shadow-sm hover:bg-primary/90"
-            >
-              <Send size={13} />
-              <span>{createRequestMutation.isPending ? 'Submitting...' : 'Send Request to Admin'}</span>
-            </Button>
+            {isEditingPunch && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSubmitRequest}
+                disabled={createRequestMutation.isPending}
+                className="rounded-xl text-xs h-9 gap-1.5 bg-primary text-primary-foreground font-semibold shadow-sm hover:bg-primary/90"
+              >
+                <Send size={13} />
+                <span>{createRequestMutation.isPending ? 'Submitting...' : 'Send Request to Admin'}</span>
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

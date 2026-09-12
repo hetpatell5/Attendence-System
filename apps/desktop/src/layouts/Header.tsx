@@ -137,9 +137,9 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
           </div>
         )}
 
-        {/* Middle Section: Top Bar Access Buttons Centered Exactly in the Middle */}
+        {/* Middle Section: Top Bar Access Buttons Centered in available space */}
         {effectiveIsUserSide && (
-          <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 sm:gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-1">
+          <nav className="flex-1 flex justify-center items-center gap-1 sm:gap-1.5 px-2 min-w-0 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-1">
             {EMPLOYEE_NAV.map((item) => {
               const Icon = item.icon;
               return (
@@ -149,7 +149,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
                   end={item.to === '/me'}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs sm:text-sm font-medium transition-all duration-150 shrink-0 select-none',
+                      'flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs sm:text-sm font-medium transition-all duration-150 shrink-0 select-none whitespace-nowrap',
                       isActive
                         ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                         : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
@@ -169,9 +169,9 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
 
         {/* Right Section: Live Time, Notifications & Employee Profile (Click to Sign Out) */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* User Side Date & Time (visible on wide screens) */}
+          {/* User Side Date & Time (visible on 2xl screens to avoid cramped navigation) */}
           {effectiveIsUserSide && (
-            <div className="hidden xl:flex items-center gap-2 text-xs font-medium text-muted-foreground mr-1">
+            <div className="hidden 2xl:flex items-center gap-2 text-xs font-medium text-muted-foreground mr-1 shrink-0">
               <Clock size={14} className="text-muted-foreground/70" />
               <span>
                 {now.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}

@@ -26,6 +26,29 @@ interface SalaryAnalyticsChartsProps {
   employee?: any;
 }
 
+function getSmartTooltipStyle(x: number, y: number, chartWidth: number, chartHeight: number) {
+  const xRatio = x / chartWidth;
+  const yRatio = y / chartHeight;
+
+  // Horizontal translation:
+  // If point is on the right (> 68%), anchor right side to prevent overflowing right edge
+  // If point is on the left (< 32%), anchor left side to prevent overflowing left edge
+  // Otherwise center
+  const translateX = xRatio > 0.68 ? '-92%' : xRatio < 0.32 ? '-8%' : '-50%';
+
+  // Vertical translation:
+  // If point is near top (< 28%), show tooltip below the point to prevent top clipping
+  const isNearTop = yRatio < 0.28;
+  const translateY = isNearTop ? '15px' : '-100%';
+  const topPercent = (y / chartHeight) * 100 + (isNearTop ? 4 : -8);
+
+  return {
+    left: `${xRatio * 100}%`,
+    top: `${topPercent}%`,
+    transform: `translate(${translateX}, ${translateY})`,
+  };
+}
+
 export function SalaryAnalyticsCharts({
   pastRecords,
   currentMetrics,
@@ -406,7 +429,7 @@ export function SalaryAnalyticsCharts({
       {/* Balanced 2-Column Analytics Suite (Dec through Aug with May, Jul, Aug included) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 w-full">
         {/* ── Chart 1: Net Salary Trajectory ────────────────────────────── */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 overflow-hidden flex flex-col justify-between">
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 relative flex flex-col justify-between overflow-visible">
           <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -589,11 +612,13 @@ export function SalaryAnalyticsCharts({
                 {/* Floating Interactive Tooltip */}
                 {hoveredPointIndex !== null && points[hoveredPointIndex] && (
                   <div
-                    className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 -translate-x-1/2 -translate-y-full min-w-[170px]"
-                    style={{
-                      left: `${(points[hoveredPointIndex].x / chartWidth) * 100}%`,
-                      top: `${(points[hoveredPointIndex].y / chartHeight) * 100 - 10}%`,
-                    }}
+                    className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 min-w-[170px] max-w-[240px]"
+                    style={getSmartTooltipStyle(
+                      points[hoveredPointIndex].x,
+                      points[hoveredPointIndex].y,
+                      chartWidth,
+                      chartHeight
+                    )}
                   >
                     <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/50">
                       <span className="font-bold">{points[hoveredPointIndex].data.fullLabel}</span>
@@ -637,7 +662,7 @@ export function SalaryAnalyticsCharts({
         </Card>
 
         {/* ── Chart 2: Salary Increment & Growth Ladder ─────────────────── */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 overflow-hidden flex flex-col justify-between">
+        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 relative flex flex-col justify-between overflow-visible">
           <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -844,11 +869,13 @@ export function SalaryAnalyticsCharts({
               {/* Floating Tooltip for Increment Ladder */}
               {hoveredIncIndex !== null && incPoints[hoveredIncIndex] && (
                 <div
-                  className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 -translate-x-1/2 -translate-y-full min-w-[185px]"
-                  style={{
-                    left: `${(incPoints[hoveredIncIndex].x / chartWidth) * 100}%`,
-                    top: `${(incPoints[hoveredIncIndex].y / chartHeight) * 100 - 10}%`,
-                  }}
+                  className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 min-w-[185px] max-w-[260px]"
+                  style={getSmartTooltipStyle(
+                    incPoints[hoveredIncIndex].x,
+                    incPoints[hoveredIncIndex].y,
+                    chartWidth,
+                    chartHeight
+                  )}
                 >
                   <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/50">
                     <span className="font-bold">{incPoints[hoveredIncIndex].data.fullLabel}</span>

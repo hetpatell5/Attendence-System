@@ -12,6 +12,27 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
 // ---------------------------------------------------------------------------
+// Single-instance lock — prevents multiple copies of the app running at once.
+// If a second instance is launched (e.g. login item fires while app is already
+// open in tray), the second instance immediately exits and the first instance's
+// window is shown/focused instead.
+// ---------------------------------------------------------------------------
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  // This is the duplicate instance — just exit immediately
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  // Someone tried to launch a second instance — focus our existing window
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Punch-Status file
 // ---------------------------------------------------------------------------
 let _punchStatusPath = '';
@@ -403,7 +424,8 @@ app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.attendance.desktop');
     if (app.isPackaged) {
-      app.setLoginItemSettings({ openAtLogin: true, openAsHidden: false });
+      // openAsHidden: true → app starts silently in tray at login (no window popup)
+      app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true });
     }
   }
 

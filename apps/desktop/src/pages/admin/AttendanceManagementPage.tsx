@@ -1,12 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendanceApi, employeesApi, holidaysApi } from '@/lib/api';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, ChevronDown, Users, X } from 'lucide-react';
 
 const MONTHS = [
   { value: '1', label: 'January' },
@@ -22,6 +23,148 @@ const MONTHS = [
   { value: '11', label: 'November' },
   { value: '12', label: 'December' },
 ];
+
+interface SearchableEmployeeSelectProps {
+  employees: any[];
+  value: string;
+  onChange: (val: string) => void;
+}
+
+function SearchableEmployeeSelect({ employees, value, onChange }: SearchableEmployeeSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const activeEmployees = useMemo(() => {
+    return employees.filter(e => e.status === 'ACTIVE');
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    if (!search.trim()) return activeEmployees;
+    const q = search.toLowerCase();
+    return activeEmployees.filter(emp => {
+      const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.toLowerCase();
+      const code = (emp.employeeCode || '').toLowerCase();
+      return fullName.includes(q) || code.includes(q);
+    });
+  }, [activeEmployees, search]);
+
+  const selectedEmployee = activeEmployees.find(e => e.id === value);
+  const displayLabel = value === 'all'
+    ? 'All Employees View'
+    : selectedEmployee
+      ? `${selectedEmployee.firstName} ${selectedEmployee.lastName} (${selectedEmployee.employeeCode})`
+      : 'Select Employee';
+
+  return (
+    <div className="relative w-full sm:w-64 font-medium" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(prev => !prev);
+          if (!isOpen) setSearch('');
+        }}
+        className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-muted/40 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+      >
+        <span className="truncate text-left">{displayLabel}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ml-2 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1.5 w-full sm:w-80 z-50 rounded-xl border border-border bg-popover text-popover-foreground shadow-xl overflow-hidden animate-in fade-in-0 zoom-in-95">
+          {/* Search bar inside employee list filter */}
+          <div className="p-2 border-b border-border bg-muted/40">
+            <div className="relative flex items-center">
+              <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Search employee by name or code..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                autoFocus
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 text-xs text-muted-foreground hover:text-foreground p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-64 overflow-y-auto p-1 space-y-0.5">
+            {/* All Employees View option */}
+            {(!search || 'all employees view'.includes(search.toLowerCase())) && (
+              <div
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                  value === 'all'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-muted text-foreground'
+                }`}
+                onClick={() => {
+                  onChange('all');
+                  setIsOpen(false);
+                  setSearch('');
+                }}
+              >
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span>All Employees View</span>
+              </div>
+            )}
+
+            {filteredEmployees.length === 0 && search && !'all employees view'.includes(search.toLowerCase()) ? (
+              <div className="p-3 text-xs text-center text-muted-foreground">
+                No employee found matching "{search}"
+              </div>
+            ) : (
+              filteredEmployees.map(emp => {
+                const isSelected = value === emp.id;
+                return (
+                  <div
+                    key={emp.id}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-primary text-primary-foreground font-semibold'
+                        : 'hover:bg-muted text-foreground'
+                    }`}
+                    onClick={() => {
+                      onChange(emp.id);
+                      setIsOpen(false);
+                      setSearch('');
+                    }}
+                  >
+                    <span className="truncate">{emp.firstName} {emp.lastName}</span>
+                    <span
+                      className={`text-[11px] font-mono shrink-0 ml-2 ${
+                        isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {emp.employeeCode}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AttendanceManagementPage(): JSX.Element {
   const [searchParams] = useSearchParams();
@@ -40,6 +183,7 @@ export function AttendanceManagementPage(): JSX.Element {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialEmployeeId);
   const [selectedMonth, setSelectedMonth] = useState(initialMonth);
   const [selectedYear, setSelectedYear] = useState(initialYear);
+  const [cardSearch, setCardSearch] = useState('');
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
@@ -126,6 +270,17 @@ export function AttendanceManagementPage(): JSX.Element {
       };
     });
   }, [employeesData?.items, attendanceData?.items, selectedYear, selectedMonth, lastDay, holidaysList]);
+
+  // Filtered summaries for the grid cards
+  const filteredSummaries = useMemo(() => {
+    if (!cardSearch.trim()) return employeeSummaries;
+    const q = cardSearch.toLowerCase();
+    return employeeSummaries.filter(s => {
+      const name = `${s.employee.firstName || ''} ${s.employee.lastName || ''}`.toLowerCase();
+      const code = (s.employee.employeeCode || '').toLowerCase();
+      return name.includes(q) || code.includes(q);
+    });
+  }, [employeeSummaries, cardSearch]);
 
   // Specific employee's records for calendar view
   const calendarRecords = useMemo(() => {
@@ -280,47 +435,109 @@ export function AttendanceManagementPage(): JSX.Element {
   };
 
   const renderGrid = () => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-      {employeeSummaries.map(summary => (
-        <Card key={summary.employee.id} className="flex flex-col border-border bg-card shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="flex flex-col items-center pt-6 space-y-5">
-            <div className="w-20 h-20 rounded-full bg-primary/5 border-2 border-primary/10 flex items-center justify-center text-2xl font-bold text-primary tracking-wider">
-              {summary.employee.firstName.charAt(0)}{summary.employee.lastName.charAt(0)}
-            </div>
-            <h3 className="font-semibold text-lg">{summary.employee.firstName} {summary.employee.lastName}</h3>
-            
-            <div className="grid grid-cols-2 gap-3 w-full">
-               <div className="flex flex-col items-center justify-center p-3 rounded-md bg-green-50/50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40">
-                 <span className="text-2xl font-bold text-green-600 dark:text-green-500">{summary.presentDays}</span>
-                 <span className="text-[10px] uppercase text-green-600/80 dark:text-green-500/80 font-bold tracking-wider mt-1">Present</span>
-               </div>
-               <div className="flex flex-col items-center justify-center p-3 rounded-md bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40">
-                 <span className="text-2xl font-bold text-red-600 dark:text-red-500">{summary.absentDays}</span>
-                 <span className="text-[10px] uppercase text-red-600/80 dark:text-red-500/80 font-bold tracking-wider mt-1">Absent</span>
-               </div>
-               <div className="flex flex-col items-center justify-center p-3 rounded-md bg-yellow-50/50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/40">
-                 <span className="text-2xl font-bold text-yellow-600 dark:text-yellow-500">{summary.halfDays}</span>
-                 <span className="text-[10px] uppercase text-yellow-600/80 dark:text-yellow-500/80 font-bold tracking-wider mt-1">Half Day</span>
-               </div>
-               <div className="flex flex-col items-center justify-center p-3 rounded-md bg-muted/40 border border-border/60">
-                 <span className="text-2xl font-bold text-muted-foreground">{summary.weekOffDays}</span>
-                 <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider mt-1">Week Off</span>
-               </div>
-            </div>
-            
-            <Button 
-               variant="outline" 
-               className="w-full text-primary border-primary hover:bg-primary hover:text-primary-foreground gap-2 font-semibold"
-               onClick={() => { 
-                 setSelectedEmployeeId(summary.employee.id); 
-                 setViewMode('calendar'); 
-               }}
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5 mt-6">
+      {filteredSummaries.length === 0 ? (
+        <div className="col-span-full py-12 text-center text-muted-foreground bg-card border border-dashed rounded-xl">
+          <p className="text-sm font-medium">No employees found matching "{cardSearch}".</p>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setCardSearch('')}
+            className="mt-2 text-xs text-primary"
+          >
+            Clear Filter
+          </Button>
+        </div>
+      ) : (
+        filteredSummaries.map(summary => {
+          const firstInitial = (summary.employee.firstName || '').trim().charAt(0) || '?';
+          const lastInitial = (summary.employee.lastName || '').trim().replace(/^[-_]+/, '').charAt(0) || '';
+          const initials = `${firstInitial}${lastInitial}`.toUpperCase();
+
+          return (
+            <Card 
+              key={summary.employee.id} 
+              className="group flex flex-col border-border bg-card shadow-sm hover:shadow-md hover:border-primary/40 transition-all rounded-xl overflow-hidden"
             >
-               <CalendarIcon size={16} /> View Calendar
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
+              <CardContent className="p-3.5 flex flex-col items-center gap-2.5 flex-1 justify-between">
+                {/* Avatar */}
+                <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary tracking-wider shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                  {initials}
+                </div>
+
+                {/* Name & Code */}
+                <div className="text-center w-full min-w-0">
+                  <h3 
+                    className="font-semibold text-sm text-foreground truncate" 
+                    title={`${summary.employee.firstName} ${summary.employee.lastName}`}
+                  >
+                    {summary.employee.firstName} {summary.employee.lastName}
+                  </h3>
+                  <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                    {summary.employee.employeeCode || '—'}
+                  </p>
+                </div>
+
+                {/* 2x2 Stat Grid */}
+                <div className="grid grid-cols-2 gap-1.5 w-full">
+                  {/* Present */}
+                  <div className="flex flex-col items-center justify-center py-1.5 px-1 rounded-md bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40">
+                    <span className="text-base font-bold text-emerald-600 dark:text-emerald-500 leading-tight">
+                      {summary.presentDays}
+                    </span>
+                    <span className="text-[9px] uppercase text-emerald-700/80 dark:text-emerald-400/80 font-bold tracking-wider mt-0.5">
+                      Present
+                    </span>
+                  </div>
+
+                  {/* Absent */}
+                  <div className="flex flex-col items-center justify-center py-1.5 px-1 rounded-md bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40">
+                    <span className="text-base font-bold text-rose-600 dark:text-rose-500 leading-tight">
+                      {summary.absentDays}
+                    </span>
+                    <span className="text-[9px] uppercase text-rose-700/80 dark:text-rose-400/80 font-bold tracking-wider mt-0.5">
+                      Absent
+                    </span>
+                  </div>
+
+                  {/* Half Day */}
+                  <div className="flex flex-col items-center justify-center py-1.5 px-1 rounded-md bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
+                    <span className="text-base font-bold text-amber-600 dark:text-amber-500 leading-tight">
+                      {summary.halfDays}
+                    </span>
+                    <span className="text-[9px] uppercase text-amber-700/80 dark:text-amber-400/80 font-bold tracking-wider mt-0.5">
+                      Half Day
+                    </span>
+                  </div>
+
+                  {/* Week Off */}
+                  <div className="flex flex-col items-center justify-center py-1.5 px-1 rounded-md bg-muted/40 border border-border/60">
+                    <span className="text-base font-bold text-muted-foreground leading-tight">
+                      {summary.weekOffDays}
+                    </span>
+                    <span className="text-[9px] uppercase text-muted-foreground font-bold tracking-wider mt-0.5">
+                      Week Off
+                    </span>
+                  </div>
+                </div>
+
+                {/* View Calendar Button */}
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="w-full h-8 text-xs text-primary border-primary/40 hover:bg-primary hover:text-primary-foreground gap-1.5 font-semibold transition-colors mt-0.5"
+                  onClick={() => { 
+                    setSelectedEmployeeId(summary.employee.id); 
+                    setViewMode('calendar'); 
+                  }}
+                >
+                  <CalendarIcon className="w-3.5 h-3.5" /> View Calendar
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 
@@ -530,10 +747,10 @@ export function AttendanceManagementPage(): JSX.Element {
       <Card className="bg-card shadow-sm border-border">
         <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            <Select 
-              value={viewMode === 'grid' ? 'all' : selectedEmployeeId} 
-              onChange={(e) => {
-                const val = e.target.value;
+            <SearchableEmployeeSelect
+              employees={employeesData?.items || []}
+              value={viewMode === 'grid' ? 'all' : selectedEmployeeId}
+              onChange={(val) => {
                 if (val === 'all') {
                   setViewMode('grid');
                   setSelectedEmployeeId('all');
@@ -541,14 +758,8 @@ export function AttendanceManagementPage(): JSX.Element {
                   setSelectedEmployeeId(val);
                   setViewMode('calendar');
                 }
-              }} 
-              className="w-full md:w-56 font-semibold"
-            >
-              <option value="all">All Employees View</option>
-              {employeesData?.items?.filter(emp => emp.status === 'ACTIVE').map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName} ({emp.employeeCode})</option>
-              ))}
-            </Select>
+              }}
+            />
 
             <Select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-32 font-medium">
               {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -557,6 +768,28 @@ export function AttendanceManagementPage(): JSX.Element {
             <Select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="w-28 font-medium">
               {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
             </Select>
+
+            {viewMode === 'grid' && (
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-2.5 top-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="text"
+                  placeholder="Filter cards..."
+                  value={cardSearch}
+                  onChange={(e) => setCardSearch(e.target.value)}
+                  className="pl-8 pr-7 h-10 text-xs bg-background"
+                />
+                {cardSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCardSearch('')}
+                    className="absolute right-2.5 top-3 text-xs text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {viewMode === 'calendar' && (

@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Dialog, DialogTitle, DialogContent } from '@/components/ui/dialog';
-import { StatusBadge } from '@/components/StatusBadge';
 import { 
   Search, 
   UserPlus, 
@@ -298,7 +297,7 @@ export function EmployeesPage(): JSX.Element {
                       </td>
 
                       {/* Salary */}
-                      <td className="py-3.5 px-4 font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                      <td className="py-3.5 px-4 font-semibold text-foreground tracking-tight">
                         ₹{Number(emp.baseSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
 
@@ -308,20 +307,28 @@ export function EmployeesPage(): JSX.Element {
                           type="button"
                           onClick={(e) => handleToggleStatus(e, emp)}
                           title={`Click to ${isActive ? 'deactivate' : 'reactivate'}`}
-                          className="cursor-pointer transition-transform active:scale-95"
+                          className="cursor-pointer transition-opacity hover:opacity-75 active:scale-95 text-left"
                         >
-                          <StatusBadge status={emp.status} />
+                          <span
+                            className={`text-xs font-semibold uppercase tracking-wider ${
+                              isActive
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            {emp.status ? emp.status.replace(/_/g, ' ') : 'INACTIVE'}
+                          </span>
                         </button>
                       </td>
 
                       {/* 5 Action Buttons matching old system */}
                       <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-2.5">
                           {/* 1. View Details (Emerald) */}
                           <button
                             type="button"
                             onClick={() => navigate(`/admin/employees/${emp.id}`)}
-                            className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400 transition-colors"
+                            className="p-1 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
                             title="View Details"
                           >
                             <Eye className="w-4 h-4" />
@@ -331,7 +338,7 @@ export function EmployeesPage(): JSX.Element {
                           <button
                             type="button"
                             onClick={() => navigate(`/admin/employees/${emp.id}?edit=true`)}
-                            className="p-1.5 rounded-lg bg-sky-500/10 text-sky-600 hover:bg-sky-500/20 dark:text-sky-400 transition-colors"
+                            className="p-1 text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
                             title="Edit Employee"
                           >
                             <Pencil className="w-4 h-4" />
@@ -341,7 +348,7 @@ export function EmployeesPage(): JSX.Element {
                           <button
                             type="button"
                             onClick={() => navigate(`/admin/attendance?employee_id=${emp.id}`)}
-                            className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 dark:text-indigo-400 transition-colors"
+                            className="p-1 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
                             title="View Attendance / Performance"
                           >
                             <BarChart2 className="w-4 h-4" />
@@ -351,7 +358,7 @@ export function EmployeesPage(): JSX.Element {
                           <button
                             type="button"
                             onClick={() => navigate(`/admin/salary?employeeId=${emp.id}`)}
-                            className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 transition-colors"
+                            className="p-1 text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
                             title="View Salary Card"
                           >
                             <IndianRupee className="w-4 h-4" />
@@ -361,7 +368,7 @@ export function EmployeesPage(): JSX.Element {
                           <button
                             type="button"
                             onClick={(e) => handleDeleteEmployee(e, emp)}
-                            className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 dark:text-rose-400 transition-colors"
+                            className="p-1 text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
                             title="Delete Employee"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -381,7 +388,7 @@ export function EmployeesPage(): JSX.Element {
                   <td colSpan={4} className="py-3 px-4 text-right text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                     Total Active Monthly Salary:
                   </td>
-                  <td className="py-3 px-4 font-mono text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+                  <td className="py-3 px-4 font-semibold text-foreground font-bold text-sm tracking-tight">
                     ₹{totalMonthlySalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                   <td colSpan={2} className="py-3 px-4 text-right text-xs text-muted-foreground">

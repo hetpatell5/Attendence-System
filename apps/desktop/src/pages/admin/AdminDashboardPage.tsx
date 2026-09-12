@@ -41,37 +41,74 @@ interface StatTileProps {
   subtext?: string;
   to?: string;
   onClick?: () => void;
+  indicatorColor?: string;
 }
 
-function StatTile({ label, value, icon, colorClass, subtext, to, onClick }: StatTileProps): JSX.Element {
+function StatTile({
+  label,
+  value,
+  icon,
+  colorClass,
+  subtext,
+  to,
+  onClick,
+  indicatorColor,
+}: StatTileProps): JSX.Element {
   const content = (
-    <Card className="h-full border border-border/70 hover:border-primary/50 hover:shadow-md transition-all duration-200 bg-card hover:bg-muted/10 cursor-pointer overflow-hidden relative">
-      <CardContent className="p-4 flex items-center justify-between">
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-          <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
-          {subtext && <p className="text-[11px] text-muted-foreground">{subtext}</p>}
+    <div className="relative h-full flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 group/card select-none cursor-pointer overflow-hidden">
+      {/* Top subtle accent line on hover */}
+      <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-primary/0 to-transparent group-hover/card:via-primary/70 transition-all duration-300" />
+
+      {/* Top Row: Label & Icon */}
+      <div className="flex items-center justify-between gap-1.5 mb-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 truncate" title={label}>
+          {label}
+        </span>
+        <div
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all duration-200 group-hover/card:scale-110 shadow-2xs',
+            colorClass,
+          )}
+        >
+          {icon}
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className={cn("p-2.5 rounded-xl transition-transform group-hover:scale-110 duration-200", colorClass)}>
-            {icon}
-          </div>
-          <ArrowUpRight size={14} className="text-muted-foreground/40 group-hover:text-primary transition-colors" />
+      </div>
+
+      {/* Middle: Prominent Metric Value */}
+      <div className="my-1">
+        <span className="text-2xl sm:text-[28px] font-black tracking-tight text-foreground font-mono leading-none">
+          {value}
+        </span>
+      </div>
+
+      {/* Bottom: Subtext & Subtle Arrow Indicator */}
+      {subtext && (
+        <div className="mt-2 pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground min-w-0">
+          <span className="truncate flex items-center font-medium text-muted-foreground/80" title={subtext}>
+            {indicatorColor && (
+              <span className={cn('h-1.5 w-1.5 rounded-full mr-1.5 shrink-0', indicatorColor)} />
+            )}
+            <span className="truncate">{subtext}</span>
+          </span>
+          <ArrowUpRight
+            size={12}
+            className="shrink-0 text-muted-foreground/30 group-hover/card:text-primary group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5 transition-all duration-150 ml-1"
+          />
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 
   if (onClick) {
     return (
-      <div onClick={onClick} className="block group">
+      <div onClick={onClick} className="block h-full">
         {content}
       </div>
     );
   }
 
   return (
-    <Link to={to!} className="block group">
+    <Link to={to!} className="block h-full">
       {content}
     </Link>
   );
@@ -413,56 +450,63 @@ export function AdminDashboardPage(): JSX.Element {
           label="Total Staff"
           value={data.totalEmployees}
           subtext="Active members"
-          icon={<Users size={18} />}
-          colorClass="bg-blue-500/10 text-blue-500 dark:bg-blue-500/20"
+          icon={<Users size={16} />}
+          colorClass="bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"
+          indicatorColor="bg-blue-500"
           to="/admin/employees"
         />
         <StatTile
           label="Present"
           value={data.presentToday}
           subtext={`${attendanceRate}% turnout today`}
-          icon={<CheckCircle2 size={18} />}
+          icon={<CheckCircle2 size={16} />}
           colorClass="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400"
+          indicatorColor="bg-emerald-500"
           onClick={() => setActiveModal('present')}
         />
         <StatTile
           label="Absent"
           value={data.absentToday}
           subtext="Unaccounted today"
-          icon={<XCircle size={18} />}
+          icon={<XCircle size={16} />}
           colorClass="bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400"
+          indicatorColor="bg-rose-500"
           onClick={() => setActiveModal('absent')}
         />
         <StatTile
           label="Late Arrival"
           value={data.lateToday}
           subtext="After shift start"
-          icon={<Clock size={18} />}
+          icon={<Clock size={16} />}
           colorClass="bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
+          indicatorColor={data.lateToday > 0 ? 'bg-amber-500' : 'bg-muted-foreground/30'}
           onClick={() => setActiveModal('late')}
         />
         <StatTile
           label="On Leave"
           value={data.onLeaveToday}
           subtext="Approved leaves"
-          icon={<Plane size={18} />}
+          icon={<Plane size={16} />}
           colorClass="bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400"
+          indicatorColor="bg-indigo-500"
           to="/admin/leaves"
         />
         <StatTile
           label="Pending Leaves"
           value={data.pendingLeaveCount}
           subtext="Requires review"
-          icon={<CalendarClock size={18} />}
+          icon={<CalendarClock size={16} />}
           colorClass="bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400"
+          indicatorColor={data.pendingLeaveCount > 0 ? 'bg-orange-500 animate-pulse' : 'bg-muted-foreground/30'}
           to="/admin/leaves"
         />
         <StatTile
           label="Birthdays"
           value={data.birthdaysThisMonthCount || 0}
           subtext="This month"
-          icon={<Gift size={18} />}
+          icon={<Gift size={16} />}
           colorClass="bg-pink-500/10 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400"
+          indicatorColor="bg-pink-500"
           onClick={() => setActiveModal('birthdays')}
         />
       </div>

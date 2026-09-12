@@ -768,28 +768,28 @@ export function SalaryManagementPage(): JSX.Element {
         <Card className="bg-white border-slate-200 shadow-sm">
           <CardContent className="p-4">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Due (All)</div>
-            <div className="text-2xl font-bold font-mono text-slate-900 mt-1">₹ {totalDueSum.toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1">₹ {totalDueSum.toLocaleString('en-IN')}</div>
           </CardContent>
         </Card>
 
         <Card className="bg-emerald-50/50 border-emerald-200/80 shadow-sm">
           <CardContent className="p-4">
             <div className="text-xs font-bold uppercase tracking-wider text-emerald-700">Paid (Selected Month)</div>
-            <div className="text-2xl font-bold font-mono text-emerald-700 mt-1">₹ {paidSum.toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold tracking-tight text-emerald-700 mt-1">₹ {paidSum.toLocaleString('en-IN')}</div>
           </CardContent>
         </Card>
 
         <Card className="bg-amber-50/50 border-amber-200/80 shadow-sm">
           <CardContent className="p-4">
             <div className="text-xs font-bold uppercase tracking-wider text-amber-700">Unpaid</div>
-            <div className="text-2xl font-bold font-mono text-amber-700 mt-1">₹ {unpaidSum.toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold tracking-tight text-amber-700 mt-1">₹ {unpaidSum.toLocaleString('en-IN')}</div>
           </CardContent>
         </Card>
 
         <Card className="bg-indigo-50/50 border-indigo-200/80 shadow-sm">
           <CardContent className="p-4">
             <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">Selected Total</div>
-            <div className="text-2xl font-bold font-mono text-indigo-700 mt-1">₹ {selectedTotal.toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold tracking-tight text-indigo-700 mt-1">₹ {selectedTotal.toLocaleString('en-IN')}</div>
           </CardContent>
         </Card>
       </div>
@@ -939,71 +939,71 @@ export function SalaryManagementPage(): JSX.Element {
                 {/* Row 1 */}
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Monthly Salary</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.monthlySalary.toLocaleString('en-IN')}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.monthlySalary.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Rate / Hr</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.hourRate}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.hourRate}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Hours (Tot / Exp)</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">{card.totalHours} / {card.expectedHours}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">{card.totalHours} / {card.expectedHours}</div>
                 </div>
 
                 {/* Row 2 */}
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Salary Per Day</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.perDaySalary}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.perDaySalary}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Total Days in Month</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">{card.totalDaysInMonth}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">{card.totalDaysInMonth}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Basic Salary</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.basicSalary.toLocaleString('en-IN')}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.basicSalary.toLocaleString('en-IN')}</div>
                 </div>
 
                 {/* Row 3 */}
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Total Working Days</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">{card.totalWorkingDays}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">{card.totalWorkingDays}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Sunday & Holiday Pay</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.sundayHolidayPay.toLocaleString('en-IN')}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.sundayHolidayPay.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Mon-Sat Present Days</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">{card.presentRegularDays}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">{card.presentRegularDays}</div>
                 </div>
 
                 {/* Row 4 */}
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Overtime Payout</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.overtimePayout}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.overtimePayout}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Commission/Pending</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.commission.toLocaleString('en-IN')}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.commission.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="bg-red-50/50 p-2.5 rounded-lg border border-red-100">
                   <div className="text-[10px] uppercase font-bold text-red-600">Advance Deducted</div>
-                  <div className="text-sm font-bold font-mono text-red-600 mt-0.5">- ₹ {card.advance.toLocaleString('en-IN')}</div>
+                  <div className="text-sm font-semibold tracking-tight text-red-600 mt-0.5">- ₹ {card.advance.toLocaleString('en-IN')}</div>
                 </div>
 
                 {/* Row 5 */}
                 <div className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100">
                   <div className="text-[10px] uppercase font-bold text-amber-700">Last Month Pending</div>
-                  <div className="text-sm font-bold font-mono text-amber-700 mt-0.5">₹ {card.lastPending}</div>
+                  <div className="text-sm font-semibold tracking-tight text-amber-700 mt-0.5">₹ {card.lastPending}</div>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="text-[10px] uppercase font-bold text-slate-500">This Month</div>
-                  <div className="text-sm font-bold font-mono text-slate-900 mt-0.5">₹ {card.thisMonthNet.toLocaleString('en-IN')}</div>
+                  <div className="text-sm font-semibold tracking-tight text-slate-900 mt-0.5">₹ {card.thisMonthNet.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="bg-sky-50 p-2.5 rounded-lg border border-sky-100">
                   <div className="text-[10px] uppercase font-bold text-sky-700">Due (incl. carry)</div>
-                  <div className={`text-sm font-bold font-mono mt-0.5 ${card.status === 'PAID' ? 'text-emerald-600 line-through' : 'text-sky-700'}`}>
+                  <div className={`text-sm font-semibold tracking-tight mt-0.5 ${card.status === 'PAID' ? 'text-emerald-600 line-through' : 'text-sky-700'}`}>
                     ₹ {card.totalWithPending.toLocaleString('en-IN')}
                   </div>
                 </div>
@@ -1018,7 +1018,7 @@ export function SalaryManagementPage(): JSX.Element {
                     step="0.01"
                     value={card.commission || ''}
                     onChange={(e) => handleCardInputChange(card.emp.id, 'commission', parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-sm font-mono font-medium outline-none focus:border-sky-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-sm font-medium tracking-tight outline-none focus:border-sky-500"
                     placeholder="0.00"
                   />
                 </div>
@@ -1029,7 +1029,7 @@ export function SalaryManagementPage(): JSX.Element {
                     step="0.01"
                     value={card.advance || ''}
                     onChange={(e) => handleCardInputChange(card.emp.id, 'advance', parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-sm font-mono font-medium outline-none focus:border-sky-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-sm font-medium tracking-tight outline-none focus:border-sky-500"
                     placeholder="0.00"
                   />
                 </div>
@@ -1313,9 +1313,9 @@ export function SalaryManagementPage(): JSX.Element {
                   {calculatedCards.map(c => (
                     <tr key={c.emp.id} className="hover:bg-slate-50">
                       <td className="border p-2 font-medium">{c.emp.firstName} {c.emp.lastName}</td>
-                      <td className="border p-2 text-right font-mono">{c.monthlySalary.toLocaleString('en-IN')}</td>
-                      <td className="border p-2 text-right font-mono">{c.totalHours}</td>
-                      <td className="border p-2 text-right font-mono font-bold text-slate-900">{c.thisMonthNet.toLocaleString('en-IN')}</td>
+                      <td className="border p-2 text-right font-medium tracking-tight">{c.monthlySalary.toLocaleString('en-IN')}</td>
+                      <td className="border p-2 text-right font-medium tracking-tight">{c.totalHours}</td>
+                      <td className="border p-2 text-right font-semibold tracking-tight text-slate-900">{c.thisMonthNet.toLocaleString('en-IN')}</td>
                       <td className="border p-2 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${c.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                           {c.status}
@@ -1325,9 +1325,9 @@ export function SalaryManagementPage(): JSX.Element {
                   ))}
                   <tr className="bg-slate-100 font-bold text-slate-900">
                     <td className="border p-2">TOTAL</td>
-                    <td className="border p-2 text-right font-mono">₹ {calculatedCards.reduce((s, c) => s + c.monthlySalary, 0).toLocaleString('en-IN')}</td>
-                    <td className="border p-2 text-right font-mono">{calculatedCards.reduce((s, c) => s + c.totalHours, 0).toFixed(1)}</td>
-                    <td className="border p-2 text-right font-mono">₹ {calculatedCards.reduce((s, c) => s + c.thisMonthNet, 0).toLocaleString('en-IN')}</td>
+                    <td className="border p-2 text-right font-semibold tracking-tight">₹ {calculatedCards.reduce((s, c) => s + c.monthlySalary, 0).toLocaleString('en-IN')}</td>
+                    <td className="border p-2 text-right font-semibold tracking-tight">{calculatedCards.reduce((s, c) => s + c.totalHours, 0).toFixed(1)}</td>
+                    <td className="border p-2 text-right font-semibold tracking-tight">₹ {calculatedCards.reduce((s, c) => s + c.thisMonthNet, 0).toLocaleString('en-IN')}</td>
                     <td className="border p-2"></td>
                   </tr>
                 </tbody>

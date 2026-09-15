@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import * as crypto from 'node:crypto';
@@ -15,6 +19,44 @@ export interface AuthTokensResult {
 }
 
 const REFRESH_TOKEN_BYTES = 64;
+
+// ---------------------------------------------------------------------------
+// Argon2 concurrency limiter — prevents CPU/memory exhaustion when many
+// wrong-password requests come in simultaneously. Argon2 is intentionally
+// slow and memory-hard; without a limit, concurrent calls will starve the
+// Node.js event loop and crash the process.
+// ---------------------------------------------------------------------------
+const MAX_CONCURRENT_ARGON2 = 3;
+let activeArgon2 = 0;
+
+async function safeArgon2Verify(hash: string, plain: string): Promise<boolean> {
+  if (activeArgon2 >= MAX_CONCURRENT_ARGON2) {
+    // Too many in-flight verification calls — reject early.
+    // This manifests to the caller as a login failure, which is safe.
+    return false;
+  }
+  activeArgon2++;
+  try {
+    return await argon2.verify(hash, plain);
+  } catch (err) {
+    // argon2.verify can throw on malformed hashes or native module errors.
+    // Log and treat as a failed verification rather than a server crash.
+    console.error('[AuthService] argon2.verify threw unexpectedly:', err instanceof Error ? err.message : String(err));
+    return false;
+  } finally {
+    activeArgon2--;
+  }
+}
+
+// A fixed argon2id hash used for dummy verification when the user does not
+// exist in the database. This prevents:
+//   1. Timing attacks that reveal whether a username is valid.
+//   2. CPU stacking from repeated calls on non-existent usernames — the dummy
+//      verify still runs but counts against the concurrency pool so it's
+//      bounded by MAX_CONCURRENT_ARGON2.
+const DUMMY_HASH =
+  '$argon2id$v=19$m=65536,t=3,p=4$dHVuaXQteHh4' +
+  'eHh4eHh4eA$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 
 function parseExpiryToSeconds(expiry: string): number {
   const match = /^(\d+)([smhd])$/.exec(expiry);
@@ -80,33 +122,51 @@ export class AuthService {
 
   async login(username: string, password: string, ip?: string): Promise<AuthTokensResult> {
     const identifier = username?.trim() || '';
-    const user = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { username: identifier },
-          { email: identifier },
-        ],
-      },
-      include: {
-        employee: {
-          select: { id: true, firstName: true, lastName: true },
+
+    let user: (User & { employee?: { id: string; firstName: string; lastName: string } | null }) | null = null;
+    try {
+      user = await this.prisma.user.findFirst({
+        where: {
+          OR: [
+            { username: identifier },
+            { email: identifier },
+          ],
         },
-      },
-    });
+        include: {
+          employee: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+        },
+      });
+    } catch (err) {
+      console.error('[AuthService] DB error during login lookup:', err instanceof Error ? err.message : String(err));
+      throw new InternalServerErrorException('Service temporarily unavailable');
+    }
 
     if (!user || !user.isActive) {
-      await this.auditService.log({ eventType: 'LOGIN_FAILURE', email: identifier, ipAddress: ip });
+      // Log the failure first (fire-and-forget, don't await to avoid stalling).
+      void this.auditService.log({ eventType: 'LOGIN_FAILURE', email: identifier, ipAddress: ip })
+        .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
+
+      // Run a dummy argon2 verify to maintain consistent response timing
+      // (prevents timing-based username enumeration) but bounded by the
+      // concurrency limiter above so we don't stack CPU work.
+      await safeArgon2Verify(DUMMY_HASH, password).catch(() => {/* intentionally ignored */});
+
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const passwordValid = await argon2.verify(user.passwordHash, password);
+    // Real password check — protected by the concurrency limiter.
+    const passwordValid = await safeArgon2Verify(user.passwordHash, password);
+
     if (!passwordValid) {
-      await this.auditService.log({
+      void this.auditService.log({
         eventType: 'LOGIN_FAILURE',
         userId: user.id,
         email: username,
         ipAddress: ip,
-      });
+      }).catch((e: unknown) => console.error('[AuthService] audit log error:', e));
+
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -114,7 +174,8 @@ export class AuthService {
     const accessToken = this.signAccessToken(user);
     const refreshToken = await this.issueRefreshToken(user.id, familyId, ip);
 
-    await this.auditService.log({ eventType: 'LOGIN_SUCCESS', userId: user.id, ipAddress: ip });
+    void this.auditService.log({ eventType: 'LOGIN_SUCCESS', userId: user.id, ipAddress: ip })
+      .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
 
     return {
       accessToken,
@@ -142,11 +203,11 @@ export class AuthService {
           where: { familyId: existing.familyId, revokedAt: null },
           data: { revokedAt: new Date() },
         });
-        await this.auditService.log({
+        void this.auditService.log({
           eventType: 'TOKEN_REUSE_DETECTED',
           userId: existing.userId,
           ipAddress: ip,
-        });
+        }).catch((e: unknown) => console.error('[AuthService] audit log error:', e));
       }
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -177,7 +238,8 @@ export class AuthService {
     });
 
     const accessToken = this.signAccessToken(user);
-    await this.auditService.log({ eventType: 'TOKEN_REFRESH', userId: user.id, ipAddress: ip });
+    void this.auditService.log({ eventType: 'TOKEN_REFRESH', userId: user.id, ipAddress: ip })
+      .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
 
     return {
       accessToken,
@@ -197,6 +259,7 @@ export class AuthService {
       });
     }
 
-    await this.auditService.log({ eventType: 'LOGOUT', userId, ipAddress: ip });
+    void this.auditService.log({ eventType: 'LOGOUT', userId, ipAddress: ip })
+      .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
   }
 }

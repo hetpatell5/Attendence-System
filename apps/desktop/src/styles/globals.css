@@ -55,3 +55,17 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.4);
 }
+
+/* ---------------------------------------------------------------------------
+ * Frozen-input safety net
+ * Radix UI / shadcn dialogs can set `pointer-events: none` on <body> while a
+ * modal is open. If the modal unmounts without triggering its cleanup (e.g.
+ * navigation, hot-reload, crash), the entire page becomes unresponsive.
+ *
+ * This rule acts as an escape hatch: body should NEVER persistently lose
+ * pointer events. Any component that intentionally needs to block events
+ * should use a specific overlay element instead of touching <body>.
+ * ---------------------------------------------------------------------------*/
+body[style*="pointer-events: none"] {
+  pointer-events: auto !important;
+}

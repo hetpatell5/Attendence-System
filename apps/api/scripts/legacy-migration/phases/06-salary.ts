@@ -79,7 +79,15 @@ export async function runSalary(ctx: MigrationContext): Promise<PhaseResult> {
       Date.UTC(effectiveFromDate.getUTCFullYear(), effectiveFromDate.getUTCMonth(), 1),
     );
 
-    // Write into the new SalaryHistory table (idempotent)
+    // The legacy `salary_history` table can carry several rows for the same
+    // employee+month (e.g. an admin correcting a salary amount inserts a new row
+    // rather than editing the old one — the live PHP system used to reconcile
+    // these with `ON DUPLICATE KEY UPDATE amount = VALUES(amount)`, so the most
+    // recently inserted row always won). Rows here are processed in ascending
+    // `id` order, so we must overwrite the amount on every re-encounter of the
+    // same employee+month instead of leaving the first-seen (possibly stale)
+    // value in place — an `update: {}` no-op would silently keep the earliest
+    // amount and drop every later correction.
     await ctx.prisma.salaryHistory.upsert({
       where: { employeeId_effectiveFrom: { employeeId, effectiveFrom } },
       create: {
@@ -88,7 +96,10 @@ export async function runSalary(ctx: MigrationContext): Promise<PhaseResult> {
         effectiveFrom,
         note: 'Migrated from legacy salary_history',
       },
-      update: {},
+      update: {
+        amount: parseFloat(row.amount),
+        note: 'Migrated from legacy salary_history',
+      },
     });
 
     // Also write to AuditLog for historical traceability

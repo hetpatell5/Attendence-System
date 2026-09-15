@@ -17,55 +17,126 @@ import {
 } from 'lucide-react';
 import { useRef } from 'react';
 import defaultCompanyLogo from '@/assets/logo.jpeg';
+import { compareEmployeesByName } from '@/lib/utils';
 
 // Custom Searchable Select
-function SearchableEmployeeSelect({ options, value, onChange }: { options: any[], value: string, onChange: (v: string) => void }) {
+// -----------------------------------------------------------------------
+// IMPORTANT: Do NOT use autoFocus on the inner search <input>. In Electron,
+// autoFocus steals focus unpredictably and can leave the page in a state
+// where all other inputs stop accepting events ("frozen" fields bug).
+// Use a programmatic focus via ref + setTimeout instead.
+//
+// The mousedown listener uses a mounted-ref guard so it never calls setState
+// on an unmounted component, which can cause React to suppress future events.
+// -----------------------------------------------------------------------
+function SearchableEmployeeSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: any[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setIsOpen(false);
+      try {
+        if (
+          isMountedRef.current &&
+          containerRef.current &&
+          event.target instanceof Node &&
+          !containerRef.current.contains(event.target)
+        ) {
+          setIsOpen(false);
+        }
+      } catch {
+        // Swallow any unexpected errors to prevent them from suppressing
+        // future DOM events (which causes the "frozen input" bug).
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredOptions = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
-  const selectedOption = options.find(o => o.value === value);
+  // Programmatically focus the search input whenever the dropdown opens,
+  // with a tiny delay to let the DOM settle. This avoids the autoFocus
+  // conflict with Electron's window focus management.
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 30);
+    return () => clearTimeout(t);
+  }, [isOpen]);
+
+  const filteredOptions = options.filter((o) =>
+    o.label.toLowerCase().includes(search.toLowerCase()),
+  );
+  const selectedOption = options.find((o) => o.value === value);
 
   return (
-    <div className="relative w-64 z-50 font-medium" ref={ref}>
-      <div 
+    // onMouseDown stopPropagation prevents the document-level listener from
+    // seeing clicks inside this component, avoiding false close triggers.
+    <div
+      className="relative w-64 z-50 font-medium"
+      ref={containerRef}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div
         className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer border-slate-200"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((prev) => !prev)}
       >
         <span className="truncate">{selectedOption?.label || 'Select Employee'}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4 opacity-50"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
       </div>
       {isOpen && (
         <div className="absolute top-full left-0 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md bg-white border-slate-200">
           <div className="p-2 border-b border-slate-100">
-            <input 
-              type="text" 
+            <input
+              ref={searchInputRef}
+              type="text"
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border-slate-200"
-              placeholder="Search employee..." 
-              value={search} 
-              onChange={e => setSearch(e.target.value)}
-              autoFocus
+              placeholder="Search employee..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="max-h-60 overflow-y-auto p-1">
             {filteredOptions.length === 0 ? (
               <div className="p-2 text-sm text-center text-muted-foreground">No results found.</div>
             ) : (
-              filteredOptions.map(opt => (
-                <div 
-                  key={opt.value} 
-                  className={`relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-slate-100 ${value === opt.value ? 'bg-slate-100 font-medium' : ''}`}
+              filteredOptions.map((opt) => (
+                <div
+                  key={opt.value}
+                  className={`relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-slate-100 ${
+                    value === opt.value ? 'bg-slate-100 font-medium' : ''
+                  }`}
                   onClick={() => {
                     onChange(opt.value);
                     setIsOpen(false);
@@ -167,11 +238,7 @@ export function SalaryManagementPage(): JSX.Element {
 
   const employeeOptions = useMemo(() => {
     if (!employeesData?.items) return [{ value: 'all', label: 'All Employees' }];
-    const sorted = [...employeesData.items].sort((a, b) => {
-      const aName = `${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase();
-      const bName = `${b.firstName || ''} ${b.lastName || ''}`.trim().toLowerCase();
-      return aName.localeCompare(bName);
-    });
+    const sorted = [...employeesData.items].sort(compareEmployeesByName);
     return [
       { value: 'all', label: 'All Employees' },
       ...sorted.map(emp => ({ 

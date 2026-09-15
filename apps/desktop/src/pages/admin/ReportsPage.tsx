@@ -20,7 +20,7 @@ import {
   Wallet,
   Award,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, compareEmployeesByName } from '@/lib/utils';
 
 const AVATAR_PALETTES = [
   'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200/80 dark:border-blue-800/60',
@@ -77,9 +77,7 @@ export function ReportsPage(): JSX.Element {
 
   const employeeList = useMemo(() => {
     const items = employeesResponse?.items || [];
-    return [...items].sort((a, b) =>
-      (a.firstName || '').localeCompare(b.firstName || '')
-    );
+    return [...items].sort(compareEmployeesByName);
   }, [employeesResponse?.items]);
 
   // Default active employee for performance tab

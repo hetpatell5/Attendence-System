@@ -16,6 +16,21 @@ interface DialogProps {
 }
 
 function Dialog({ open, onOpenChange, children }: DialogProps): JSX.Element | null {
+  // ---------------------------------------------------------------------------
+  // Safety cleanup: if any dialog is open and then suddenly unmounts (e.g. due
+  // to a navigation or error boundary), ensure the body's pointer-events style
+  // is restored. Without this, a modal that never cleanly closes can leave
+  // the entire page frozen (all inputs unresponsive).
+  // ---------------------------------------------------------------------------
+  React.useEffect(() => {
+    return () => {
+      // On unmount, always reset pointer-events so nothing is left frozen.
+      if (document.body.style.pointerEvents === 'none') {
+        document.body.style.pointerEvents = '';
+      }
+    };
+  }, []);
+
   if (!open) return null;
 
   return (
@@ -69,4 +84,3 @@ function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 }
 
 export { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogContent };
-

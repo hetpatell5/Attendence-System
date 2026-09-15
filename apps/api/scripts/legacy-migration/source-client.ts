@@ -38,6 +38,14 @@ export interface LegacyAttendanceRow {
   note: string | null;
 }
 
+export interface LegacyAttendanceLogRow {
+  employee_id: number;
+  date: string;
+  time: string;
+  punch_type: string;
+  created_at: string;
+}
+
 export interface LegacyLeaveRequestRow {
   id: number;
   employee_id: number;
@@ -136,6 +144,23 @@ export class LegacySourceClient {
   async attendance(): Promise<LegacyAttendanceRow[]> {
     const [rows] = await this.pool.query('SELECT * FROM attendance ORDER BY employee_id, date');
     return rows as LegacyAttendanceRow[];
+  }
+
+  /**
+   * Raw punch log — the authoritative source for daily attendance (the old system's
+   * own calendar view is computed live from this table, not from `attendance`, which
+   * is a separate, independently-updated summary table that can fall out of sync).
+   */
+  async attendanceLog(): Promise<LegacyAttendanceLogRow[]> {
+    // created_at is cast to CHAR because a small number of legacy rows have the invalid
+    // MySQL zero-date '0000-00-00 00:00:00'; summarizeDayPunches/safeParseCreatedAt treat
+    // an unparsable value as "legacy" rather than crashing on it.
+    const [rows] = await this.pool.query(`
+      SELECT employee_id, CAST(date AS CHAR) as date, CAST(time AS CHAR) as time, punch_type, CAST(created_at AS CHAR) as created_at
+      FROM attendance_log
+      ORDER BY employee_id, date, id
+    `);
+    return rows as LegacyAttendanceLogRow[];
   }
 
   async leaveRequests(): Promise<LegacyLeaveRequestRow[]> {

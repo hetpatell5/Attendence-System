@@ -24,6 +24,20 @@ async function generateEmployeeCode(prisma: PrismaService): Promise<string> {
   return `EMP-${String(count + 1).padStart(4, '0')}`;
 }
 
+/** Alphabetical-by-name comparator: first name primary, last name as tiebreaker. */
+function compareEmployeesByName(a: Employee, b: Employee): number {
+  const sortKey = (e: Employee): [string, string] => {
+    const primary = (e.firstName || '').toLowerCase();
+    const secondary = (e.lastName || '').toLowerCase();
+    return [primary, secondary];
+  };
+  const [aPrimary, aSecondary] = sortKey(a);
+  const [bPrimary, bSecondary] = sortKey(b);
+  const primaryCmp = aPrimary.localeCompare(bPrimary);
+  if (primaryCmp !== 0) return primaryCmp;
+  return aSecondary.localeCompare(bSecondary);
+}
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -52,24 +66,27 @@ export class EmployeesService {
         : {}),
     };
 
-    const [items, total] = await Promise.all([
-      this.prisma.employee.findMany({
-        where,
-        orderBy: [{ status: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          department: true,
-          designation: true,
-          employeeShifts: {
-            include: { shift: true },
-            orderBy: { effectiveFrom: 'desc' },
-            take: 1,
-          },
+    // Sorted and paginated in-memory (rather than via Prisma's orderBy + skip/take)
+    // because the correct alphabetical order needs the "-" placeholder fallback that
+    // compareEmployeesByName implements — not expressible in a plain column orderBy.
+    // Employee counts here are small (single-company headcount), so fetching every
+    // matching row up front is cheap.
+    const all = await this.prisma.employee.findMany({
+      where,
+      include: {
+        department: true,
+        designation: true,
+        employeeShifts: {
+          include: { shift: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
         },
-      }),
-      this.prisma.employee.count({ where }),
-    ]);
+      },
+    });
+    all.sort(compareEmployeesByName);
+
+    const total = all.length;
+    const items = all.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
 
     return { items, total, page, pageSize };
   }

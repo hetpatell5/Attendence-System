@@ -30,6 +30,27 @@ class ChangePasswordDto {
   newPassword!: string;
 }
 
+/**
+ * Extracts the real client IP even when the server is behind a reverse proxy
+ * (nginx, Cloudflare, etc.). Falls back gracefully to Express's req.ip.
+ *
+ * This is critical for rate-limiting: without it, all users behind the same
+ * proxy appear to share one IP and a single throttle bucket, making the
+ * per-IP limit useless.
+ */
+function getClientIp(req: RequestWithUser): string {
+  const forwarded = req.headers?.['x-forwarded-for'];
+  if (forwarded) {
+    // x-forwarded-for can be a comma-separated list: "client, proxy1, proxy2"
+    // The first entry is the real client IP.
+    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const ip = first?.split(',')[0]?.trim();
+    if (ip) return ip;
+  }
+  // Fallback: Express native IP
+  return req.ip ?? 'unknown';
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -37,17 +58,24 @@ export class AuthController {
     private readonly usersService: UsersService,
   ) {}
 
+  /**
+   * Login endpoint is rate-limited to 5 attempts per 30 seconds per IP.
+   * Combined with the argon2 concurrency limiter in AuthService, this
+   * prevents brute-force attacks from crashing the server.
+   */
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 30_000 } })
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: RequestWithUser): Promise<AuthTokens> {
-    return this.authService.login(dto.username, dto.password, req.ip);
+    const ip = getClientIp(req);
+    return this.authService.login(dto.username, dto.password, ip);
   }
 
   @Public()
   @Post('refresh')
   async refresh(@Body() dto: RefreshTokenDto, @Req() req: RequestWithUser): Promise<AuthTokens> {
-    return this.authService.refresh(dto.refreshToken, req.ip);
+    const ip = getClientIp(req);
+    return this.authService.refresh(dto.refreshToken, ip);
   }
 
   @Post('logout')
@@ -57,7 +85,8 @@ export class AuthController {
     @CurrentUser() user: RequestWithUser['user'],
     @Req() req: RequestWithUser,
   ): Promise<void> {
-    await this.authService.logout(dto.refreshToken, user.sub, req.ip);
+    const ip = getClientIp(req);
+    await this.authService.logout(dto.refreshToken, user.sub, ip);
   }
 
   @Post('change-password')

@@ -34,16 +34,45 @@ function SearchableEmployeeSelect({ employees, value, onChange }: SearchableEmpl
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+      try {
+        if (
+          isMountedRef.current &&
+          containerRef.current &&
+          event.target instanceof Node &&
+          !containerRef.current.contains(event.target)
+        ) {
+          setIsOpen(false);
+        }
+      } catch {
+        // Swallow unexpected errors to prevent suppressing future DOM events
+        // (the root cause of the "frozen input" bug).
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Programmatic focus on open — avoids autoFocus conflicting with Electron
+  // window focus management (which causes "frozen" fields).
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 30);
+    return () => clearTimeout(t);
+  }, [isOpen]);
 
   const activeEmployees = useMemo(() => {
     return employees.filter(e => e.status === 'ACTIVE');
@@ -67,7 +96,13 @@ function SearchableEmployeeSelect({ employees, value, onChange }: SearchableEmpl
       : 'Select Employee';
 
   return (
-    <div className="relative w-full sm:w-64 font-medium" ref={containerRef}>
+    // onMouseDown stopPropagation prevents the document-level listener from
+    // firing for clicks inside this component (avoids false close + frozen inputs).
+    <div
+      className="relative w-full sm:w-64 font-medium"
+      ref={containerRef}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <button
         type="button"
         onClick={() => {
@@ -87,12 +122,12 @@ function SearchableEmployeeSelect({ employees, value, onChange }: SearchableEmpl
             <div className="relative flex items-center">
               <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <input
+                ref={searchInputRef}
                 type="text"
                 className="w-full pl-8 pr-7 py-1.5 text-xs bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="Search employee by name or code..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                autoFocus
               />
               {search && (
                 <button
@@ -818,7 +853,7 @@ export function AttendanceManagementPage(): JSX.Element {
                   <Button 
                     variant="default" 
                     size="sm" 
-                    onClick={() => navigate(`/admin/salary?employeeId=${selectedEmployeeId}`)}
+                    onClick={() => navigate(`/admin/salary?employeeId=${selectedEmployeeId}&month=${selectedMonth.padStart(2, '0')}&year=${selectedYear}`)}
                     className="font-semibold shadow-sm"
                   >
                     View Salary Card

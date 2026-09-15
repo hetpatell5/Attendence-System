@@ -17,7 +17,10 @@ import { RolesGuard } from './guards/roles.guard';
     AuditModule,
     PassportModule,
     JwtModule.register({}),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 1000 }]),
+    // Global baseline: 200 requests per 60 seconds per IP.
+    // Individual endpoints can override with @Throttle() — login uses 5/30s.
+    // This baseline prevents non-auth endpoints from being abused too.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 200 }]),
   ],
   controllers: [AuthController],
   providers: [

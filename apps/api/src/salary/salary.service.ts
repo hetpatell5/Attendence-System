@@ -361,18 +361,19 @@ export class SalaryService {
   ): Promise<number> {
     const { end: monthEnd } = monthBounds(month);
 
-    // The migration stored effectiveFrom dates as IST midnight values but MySQL/Prisma
-    // saved them as UTC — so "Feb 1, 2026 IST" is stored as "Jan 31, 2026 18:30:00 UTC".
-    // Extend the lookup window by 6 hours to cover the IST +5:30 offset without
-    // spilling into the next month's first-day entry.
-    const monthEndExtended = new Date(monthEnd.getTime() + 6 * 60 * 60 * 1000);
+    // effectiveFrom is a @db.Date column: MySQL stores only a calendar date, so Prisma
+    // always reads it back as that date's UTC midnight — there is no time-of-day
+    // ambiguity to correct for. Compare calendar months by their UTC year/month numbers
+    // only; never add or subtract minutes/hours to "convert timezones" on these values.
+    // The exclusive upper bound below is immune to whatever hour a legacy-imported row
+    // happens to carry, since a strict "< first day of next month" test never needs one.
+    const firstOfNextMonth = new Date(
+      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 1),
+    );
 
     const monthlyIncrement = employee.monthlyIncrement?.toNumber() ?? 0;
     const targetSalary = employee.targetSalary?.toNumber() ?? 0;
     const incrementInterval = employee.incrementInterval > 0 ? employee.incrementInterval : 1;
-
-    // Helper: convert any stored date to IST month for clean arithmetic
-    const toISTDate = (d: Date) => new Date(d.getTime() + 330 * 60 * 1000);
 
     if (monthlyIncrement > 0 && targetSalary > 0) {
       // ── Projection mode ────────────────────────────────────────────────────
@@ -395,12 +396,9 @@ export class SalaryService {
         earliestEntry?.effectiveFrom ??
         month;
 
-      const startIST = toISTDate(incrementStart);
-      const endIST = toISTDate(monthEnd);
-
       const monthsElapsed =
-        (endIST.getUTCFullYear() - startIST.getUTCFullYear()) * 12 +
-        (endIST.getUTCMonth() - startIST.getUTCMonth());
+        (monthEnd.getUTCFullYear() - incrementStart.getUTCFullYear()) * 12 +
+        (monthEnd.getUTCMonth() - incrementStart.getUTCMonth());
 
       if (monthsElapsed >= 0) {
         const periods = Math.floor(monthsElapsed / incrementInterval);
@@ -409,7 +407,7 @@ export class SalaryService {
         // 2. Also check if there is a MORE RECENT manual salary revision in history
         //    (e.g. a big pay rise like ₹8,000 manually entered) that should override.
         const latestEntry = await this.prisma.salaryHistory.findFirst({
-          where: { employeeId: employee.id, effectiveFrom: { lte: monthEndExtended } },
+          where: { employeeId: employee.id, effectiveFrom: { lt: firstOfNextMonth } },
           orderBy: { effectiveFrom: 'desc' },
         });
         const historySalary = latestEntry ? latestEntry.amount.toNumber() : baseSalary;
@@ -422,7 +420,7 @@ export class SalaryService {
 
     // ── No-increment mode: use latest history entry lte month end ──────────
     const historyEntry = await this.prisma.salaryHistory.findFirst({
-      where: { employeeId: employee.id, effectiveFrom: { lte: monthEndExtended } },
+      where: { employeeId: employee.id, effectiveFrom: { lt: firstOfNextMonth } },
       orderBy: { effectiveFrom: 'desc' },
     });
 

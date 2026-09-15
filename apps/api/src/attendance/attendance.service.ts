@@ -19,6 +19,7 @@ import type { CreateAttendanceDto } from './dto/create-attendance.dto';
 import type { AdjustAttendanceDto } from './dto/adjust-attendance.dto';
 import type { ListAttendanceQueryDto } from './dto/list-attendance-query.dto';
 import type { CreateAttendanceRequestDto } from './dto/create-attendance-request.dto';
+import { summarizeDayPunches, safeParseCreatedAt } from './punch-log.util';
 
 const PRISMA_UNIQUE_CONSTRAINT_ERROR = 'P2002';
 
@@ -30,6 +31,7 @@ interface AttendanceLogRow {
   punch_type: string; // 'IN' or 'OUT' (uppercase, as stored by old system)
   time: string;       // 'HH:MM:SS'
   date: string;       // 'YYYY-MM-DD'
+  created_at: string; // legacy row insert timestamp — used to detect pre-migration rows
 }
 
 @Injectable()
@@ -76,8 +78,13 @@ export class AttendanceService {
 
   /** Returns today's punches for an employee, ordered by id ASC. */
   private async getTodayPunches(legacyEmployeeId: number, date: string): Promise<AttendanceLogRow[]> {
+    // created_at is cast to CHAR because a small number of legacy rows have the invalid
+    // MySQL zero-date '0000-00-00 00:00:00' (sql_mode allowed it at insert time) — letting
+    // Prisma's engine decode that natively as a DATETIME fails the whole query, not just
+    // that row. safeParseCreatedAt below then treats an unparsable value as "legacy" (its
+    // Invalid Date compares as false to every `< cutoff` check when left unguarded).
     const rows = await this.prisma.$queryRaw<any[]>`
-      SELECT id, punch_type, CAST(time AS CHAR) as time, CAST(date AS CHAR) as date
+      SELECT id, punch_type, CAST(time AS CHAR) as time, CAST(date AS CHAR) as date, CAST(created_at AS CHAR) as created_at
       FROM attendance_log
       WHERE employee_id = ${legacyEmployeeId} AND date = ${date}
       ORDER BY id ASC
@@ -87,6 +94,7 @@ export class AttendanceService {
       punch_type: String(r.punch_type || '').toLowerCase(),
       time: String(r.time || '00:00:00'),
       date: String(r.date || date),
+      created_at: safeParseCreatedAt(r.created_at),
     }));
   }
 
@@ -427,47 +435,12 @@ export class AttendanceService {
       })) as Attendance;
     }
 
-    const pairs: Array<{ punchInAt: string; punchOutAt?: string }> = [];
-    let currentInIso: string | null = null;
-    let workedMinutes = 0;
-
-    for (const p of punches) {
-      const type = String(p.punch_type).toUpperCase();
-      const pDateStr = String(p.date || dateStr).slice(0, 10);
-      const pTimeStr = String(p.time || '00:00:00');
-      const isoTime = new Date(`${pDateStr}T${pTimeStr}+05:30`).toISOString();
-
-      if (type === 'IN') {
-        if (currentInIso) {
-          pairs.push({ punchInAt: currentInIso });
-        }
-        currentInIso = isoTime;
-      } else if (type === 'OUT') {
-        if (currentInIso) {
-          pairs.push({ punchInAt: currentInIso, punchOutAt: isoTime });
-          const diff = Math.max(0, Math.floor((new Date(isoTime).getTime() - new Date(currentInIso).getTime()) / 60000));
-          workedMinutes += diff;
-          currentInIso = null;
-        } else {
-          pairs.push({ punchInAt: isoTime, punchOutAt: isoTime });
-        }
-      }
-    }
-
-    if (currentInIso) {
-      pairs.push({ punchInAt: currentInIso });
-      const now = serverNow();
-      const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(currentInIso).getTime()) / 60000));
-      workedMinutes += elapsed;
-    }
-
-    const firstInAt = pairs[0]?.punchInAt ? new Date(pairs[0].punchInAt) : null;
-    const lastPunch = punches[punches.length - 1];
-    const isClockedIn = lastPunch && String(lastPunch.punch_type).toUpperCase() === 'IN';
-    const lastPair = pairs.length > 0 ? pairs[pairs.length - 1] : undefined;
-    const lastOutAt = !isClockedIn && lastPair?.punchOutAt
-      ? new Date(lastPair.punchOutAt)
-      : null;
+    // Only "today" can have a still-open trailing IN session that should count
+    // worked minutes up to now — a dangling IN on a past day is a missed punch-out,
+    // not an ongoing session, so it must not have elapsed-since-then minutes added.
+    const isToday = dateStr === serverNow().toISOString().slice(0, 10);
+    const { punchInAt: firstInAt, punchOutAt: lastOutAt, punchPairs: pairs, workedMinutes } =
+      summarizeDayPunches(punches, dateStr, isToday ? serverNow() : undefined);
 
     return this.prisma.attendance.upsert({
       where: { employeeId_attendanceDate: { employeeId, attendanceDate: date } },
@@ -545,12 +518,12 @@ export class AttendanceService {
           if (pair.punchInAt) {
             const inDate = new Date(pair.punchInAt);
             const inTime = inDate.toLocaleTimeString('en-IN', { timeZone: settings.timezone, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            punches.push({ id: fakeId++, punch_type: 'in', time: inTime, date: dateStr });
+            punches.push({ id: fakeId++, punch_type: 'in', time: inTime, date: dateStr, created_at: new Date().toISOString() });
           }
           if (pair.punchOutAt) {
             const outDate = new Date(pair.punchOutAt);
             const outTime = outDate.toLocaleTimeString('en-IN', { timeZone: settings.timezone, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            punches.push({ id: fakeId++, punch_type: 'out', time: outTime, date: dateStr });
+            punches.push({ id: fakeId++, punch_type: 'out', time: outTime, date: dateStr, created_at: new Date().toISOString() });
           }
         }
       }

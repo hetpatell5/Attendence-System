@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SINGLETON_COMPANY_SETTINGS_ID } from '../common/constants';
 import type { UpdateSettingsDto } from './dto/update-settings.dto';
+import { summarizeDayPunches, type RawPunchRow } from '../attendance/punch-log.util';
 
 export type ParsedCompanySettings = Omit<CompanySettings, 'weeklyOffDays' | 'allowedIps'> & {
   weeklyOffDays: number[];
@@ -65,6 +66,26 @@ function splitSqlStatements(sql: string): string[] {
   }
   if (current.trim().length > 1) statements.push(current.trim());
   return statements;
+}
+
+/**
+ * Rewrites `INSERT INTO table (colA, colB, ...) VALUES (...)` into an upsert —
+ * `... ON DUPLICATE KEY UPDATE colA=VALUES(colA), colB=VALUES(colB), ...` — so
+ * re-importing a corrected/fresher dump of rows that already exist (same primary
+ * key) actually overwrites them, instead of the dump's first-ever import winning
+ * forever. Falls back to `INSERT IGNORE INTO` when the statement has no explicit
+ * column list (can't build the UPDATE clause without a schema lookup), and leaves
+ * every other statement (REPLACE, CREATE TABLE, ALTER TABLE, SET) untouched.
+ */
+function toIdempotentUpsert(stmt: string): string {
+  const match = /^\s*INSERT\s+INTO\s+([`"]?\w+[`"]?)\s*\(([^)]+)\)/i.exec(stmt);
+  if (!match) {
+    return stmt.replace(/^\s*INSERT\s+INTO/i, 'INSERT IGNORE INTO');
+  }
+  const columns = match[2]!.split(',').map((c) => c.trim().replace(/[`"]/g, ''));
+  const updateClause = columns.map((c) => `\`${c}\`=VALUES(\`${c}\`)`).join(', ');
+  const withoutTrailingSemicolon = stmt.trim().replace(/;\s*$/, '');
+  return `${withoutTrailingSemicolon} ON DUPLICATE KEY UPDATE ${updateClause}`;
 }
 
 @Injectable()
@@ -138,8 +159,15 @@ export class SettingsService {
 
     for (const stmt of allowed) {
       try {
-        // Convert INSERT INTO → INSERT IGNORE INTO to avoid duplicate key errors
-        const safe = stmt.replace(/^\s*INSERT\s+INTO/i, 'INSERT IGNORE INTO');
+        // Re-importing a fresher dump of the SAME legacy row ids (e.g. re-exporting
+        // attendance_log after new punches were corrected on the live phpMyAdmin system)
+        // must actually overwrite the existing row — turning INSERT INTO into
+        // INSERT IGNORE INTO instead silently keeps whatever content was imported FIRST
+        // forever, no matter how many times a corrected dump is re-imported afterwards.
+        // Upsert on every column via ON DUPLICATE KEY UPDATE fixes that; only fall back
+        // to IGNORE when the statement has no explicit column list to build the
+        // UPDATE clause from (can't know the columns without a schema lookup).
+        const safe = toIdempotentUpsert(stmt);
         await this.prisma.$executeRawUnsafe(safe);
         result.successCount++;
       } catch (err: any) {
@@ -155,7 +183,71 @@ export class SettingsService {
     }
 
     this.logger.log(`SQL Import: ${result.successCount} ok, ${result.errorCount} errors`);
+
+    // The legacy `attendance` table (unlike attendance_log/salary_history/employees) has
+    // no primary or unique key at all in the source system's own dump — not even its `id`
+    // column is reliable (the authentic dump itself contains byte-identical duplicate rows
+    // under the same id). Without a key, `INSERT ... ON DUPLICATE KEY UPDATE` above has
+    // nothing to match on, so re-importing without first dropping the table just appends
+    // another full duplicate copy forever — this is what caused `attendance` to balloon to
+    // ~81k rows (should be ~7k) after a handful of re-imports this session, and is almost
+    // certainly what broke things previously too. Self-healing this after every import
+    // means dropping tables first is never required again.
+    await this.ensureAttendanceTableDeduped();
+
     return result;
+  }
+
+  /**
+   * Idempotent, safe to call on every import: adds UNIQUE KEY (employee_id, date) to the
+   * legacy `attendance` table, deduplicating first if needed. No-ops harmlessly if the
+   * table doesn't exist yet, or if the key already exists.
+   */
+  private async ensureAttendanceTableDeduped(): Promise<void> {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TABLE attendance ADD UNIQUE KEY uq_attendance_emp_date (employee_id, date)`,
+      );
+      this.logger.log('attendance: added UNIQUE KEY uq_attendance_emp_date(employee_id, date)');
+      return;
+    } catch (err: any) {
+      const code = err?.meta?.error_number ?? err?.code;
+      if (Number(code) === 1061) {
+        // Key already exists from a previous import — nothing to do.
+        return;
+      }
+      if (Number(code) === 1146) {
+        // Table doesn't exist yet (e.g. dump not imported at all) — nothing to do.
+        return;
+      }
+      if (Number(code) !== 1062) {
+        // Not a "duplicate entry" failure — something unexpected, surface it.
+        this.logger.warn(`attendance: could not add unique key: ${err?.message ?? err}`);
+        return;
+      }
+    }
+
+    // ALTER failed with "duplicate entry" — the table currently has rows that collide on
+    // (employee_id, date). Rebuild it via a deduplicated copy rather than DELETE, since
+    // `id` isn't a reliable row identifier here (duplicates can share the same id value).
+    this.logger.log('attendance: duplicate rows found, deduplicating before adding unique key...');
+    await this.prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS attendance_dedup_tmp`);
+    await this.prisma.$executeRawUnsafe(`CREATE TABLE attendance_dedup_tmp LIKE attendance`);
+    await this.prisma.$executeRawUnsafe(
+      `ALTER TABLE attendance_dedup_tmp ADD UNIQUE KEY uq_attendance_emp_date (employee_id, date)`,
+    );
+    await this.prisma.$executeRawUnsafe(`INSERT IGNORE INTO attendance_dedup_tmp SELECT * FROM attendance`);
+    const beforeRows = await this.prisma.$queryRawUnsafe<Array<{ before: bigint }>>(
+      `SELECT COUNT(*) as before FROM attendance`,
+    );
+    const afterRows = await this.prisma.$queryRawUnsafe<Array<{ after: bigint }>>(
+      `SELECT COUNT(*) as after FROM attendance_dedup_tmp`,
+    );
+    const before = beforeRows[0]!.before;
+    const after = afterRows[0]!.after;
+    await this.prisma.$executeRawUnsafe(`DROP TABLE attendance`);
+    await this.prisma.$executeRawUnsafe(`RENAME TABLE attendance_dedup_tmp TO attendance`);
+    this.logger.log(`attendance: deduplicated ${before} rows -> ${after} unique rows, unique key added`);
   }
 
   // ── Attendance Migration (legacy → new app tables) ─────────────────────────
@@ -167,6 +259,11 @@ export class SettingsService {
       attendanceSkipped: 0,
       errors: [],
     };
+
+    // Self-heals the legacy `attendance` table's missing unique key (see importLegacySql)
+    // in case migration is run without a preceding import in this session — cheap no-op
+    // once the key already exists.
+    await this.ensureAttendanceTableDeduped();
 
     // 1. Migrate employees from legacy `employees` table → `app_employees`
     type LegEmp = {
@@ -217,12 +314,110 @@ export class SettingsService {
       }
     }
 
-    // ── 2. Migrate attendance using direct SQL INSERT … SELECT (set-based, fast, reliable)
+    // ── 2. Migrate attendance ────────────────────────────────────────────────
     //
-    // Row-by-row Node.js loops hit issues with MySQL Buffer types, N+1 queries,
-    // and silent errors. Direct SQL avoids all of that.
+    // 2a: `attendance_log` (the raw punch-in/punch-out records) is the *authoritative*
+    // source — it's what the old system's own calendar view is computed live from, and
+    // it's what the live app's day-to-day punch sync (AttendanceService.syncAttendanceRecordFromLog)
+    // also reads. Grouping is done in Node (via summarizeDayPunches, the same function
+    // the live sync path uses) rather than in raw per-row MIN/MAX SQL, because a plain
+    // MIN(in)/MAX(out) loses multi-session days (punch out for lunch, back in, etc.) and
+    // — critically — can't apply the legacy IST/UTC offset cutoff (see LEGACY_LOG_CUTOFF
+    // in punch-log.util.ts) that a bare SQL CONCAT of date+time has no way to express.
     //
-    // 2a: from `attendance` table (daily summaries with entry/exit times)
+    // Every employee+date is upserted (never INSERT IGNORE) so re-running this after a
+    // fresh SQL import always converges to whatever attendance_log now says, instead of
+    // freezing on stale data from the first import.
+    const employees = await this.prisma.employee.findMany({
+      where: { legacySourceId: { not: null } },
+      select: { id: true, legacySourceId: true },
+    });
+    const employeeIdByLegacyId = new Map(employees.map((e) => [e.legacySourceId!, e.id]));
+
+    // created_at is cast to CHAR because ~200 legacy rows have the invalid MySQL
+    // zero-date '0000-00-00 00:00:00' (old sql_mode allowed writing it) — letting
+    // Prisma's engine decode that natively as a DATETIME fails the *entire* query
+    // with an opaque P2010, not just that one row. This is what was crashing the
+    // migration with a 500.
+    const punchRows = await this.prisma.$queryRawUnsafe<
+      Array<{ employee_id: number; date: string; time: string; punch_type: string; created_at: string }>
+    >(`
+      SELECT employee_id, CAST(date AS CHAR) as date, CAST(time AS CHAR) as time, punch_type, CAST(created_at AS CHAR) as created_at
+      FROM attendance_log
+      ORDER BY employee_id, date, id
+    `);
+
+    const byEmployeeDate = new Map<string, RawPunchRow[]>();
+    for (const row of punchRows) {
+      const key = `${row.employee_id}:${row.date.slice(0, 10)}`;
+      const list = byEmployeeDate.get(key);
+      if (list) {
+        list.push(row);
+      } else {
+        byEmployeeDate.set(key, [row]);
+      }
+    }
+
+    // A single sequential await-per-row loop over several thousand employee-date groups
+    // took minutes over a real DB connection — long enough that the Electron client's
+    // request appeared to hang and, if the dev server restarted mid-request (e.g. a
+    // file-watch reload), surfaced as ECONNREFUSED. Upserting with bounded concurrency
+    // keeps this to a handful of seconds without overwhelming the connection pool.
+    const groups = [...byEmployeeDate.entries()];
+    // Kept comfortably under Prisma's default MySQL pool size (num_cpus*2+1, unset in
+    // this project's DATABASE_URL) so upserts don't queue behind their own connections.
+    const CONCURRENCY = 10;
+    let res2a = 0;
+    for (let i = 0; i < groups.length; i += CONCURRENCY) {
+      const batch = groups.slice(i, i + CONCURRENCY);
+      const outcomes = await Promise.all(
+        batch.map(async ([key, punches]) => {
+          const [legacyEmployeeIdStr, dateStr] = key.split(':');
+          const employeeId = employeeIdByLegacyId.get(Number(legacyEmployeeIdStr));
+          if (!employeeId || punches.length === 0) return false;
+
+          const attendanceDate = new Date(`${dateStr}T00:00:00.000Z`);
+          // A migrated day is always in the past — a dangling trailing IN punch is a
+          // missed punch-out, not an in-progress session, so no elapsed-to-now minutes.
+          const { punchInAt, punchOutAt, punchPairs, workedMinutes } = summarizeDayPunches(
+            punches,
+            dateStr!,
+            undefined,
+          );
+
+          await this.prisma.attendance.upsert({
+            where: { employeeId_attendanceDate: { employeeId, attendanceDate } },
+            create: {
+              employeeId,
+              attendanceDate,
+              punchInAt,
+              punchOutAt,
+              punchPairs: punchPairs as any,
+              workedMinutes,
+              status: 'PRESENT',
+              source: 'LEGACY_IMPORT',
+            },
+            update: {
+              punchInAt,
+              punchOutAt,
+              punchPairs: punchPairs as any,
+              workedMinutes,
+              status: 'PRESENT',
+              source: 'LEGACY_IMPORT',
+            },
+          });
+          return true;
+        }),
+      );
+      res2a += outcomes.filter(Boolean).length;
+    }
+    result.attendanceImported += res2a;
+    this.logger.log(`Step 2a (attendance_log punches): ${res2a} employee-days upserted`);
+
+    // 2b: `attendance` (the separate legacy daily-summary table) only fills in days that
+    // have NO attendance_log punches at all — e.g. an explicit ABSENT/LEAVE/HALF_DAY/HOLIDAY
+    // marking with no punches to back it. It must never run for a date attendance_log already
+    // covered, or its coarser data would clobber the more accurate punch-derived record.
     const sqlAttendanceSummary = `
       INSERT IGNORE INTO app_attendance
         (id, employeeId, attendanceDate, punchInAt, punchOutAt,
@@ -264,65 +459,14 @@ export class SettingsService {
         NOW(), NOW()
       FROM attendance a
       JOIN app_employees ae ON ae.legacySourceId = a.employee_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM attendance_log al
+        WHERE al.employee_id = a.employee_id AND al.date = a.date
+      )
     `;
 
-    const res2a = await this.prisma.$executeRawUnsafe(sqlAttendanceSummary);
-    result.attendanceImported += res2a;
-    this.logger.log(`Step 2a (attendance summary): ${res2a} rows inserted`);
-
-    // 2b: from `attendance_log` table (individual punch-in / punch-out records)
-    //     Group by (employee_id, date) → first IN time, last OUT time.
-    //     INSERT IGNORE skips dates already imported by step 2a.
-    const sqlAttendanceLog = `
-      INSERT IGNORE INTO app_attendance
-        (id, employeeId, attendanceDate, punchInAt, punchOutAt,
-         status, workedMinutes, lateMinutes, earlyLeaveMinutes, overtimeMinutes,
-         source, createdAt, updatedAt)
-      SELECT
-        UUID(),
-        ae.id,
-        g.date,
-        CASE
-          WHEN g.punchIn IS NOT NULL AND g.punchIn NOT IN ('00:00:00','')
-          THEN CONCAT(DATE_FORMAT(g.date,'%Y-%m-%d'),' ',g.punchIn)
-          ELSE NULL
-        END,
-        CASE
-          WHEN g.punchOut IS NOT NULL AND g.punchOut NOT IN ('00:00:00','')
-          THEN CONCAT(DATE_FORMAT(g.date,'%Y-%m-%d'),' ',g.punchOut)
-          ELSE NULL
-        END,
-        CASE
-          WHEN g.punchIn IS NOT NULL AND g.punchIn NOT IN ('00:00:00','')
-          THEN 'PRESENT'
-          ELSE 'ABSENT'
-        END,
-        GREATEST(0, CASE
-          WHEN g.punchIn  IS NOT NULL AND g.punchIn  NOT IN ('00:00:00','')
-           AND g.punchOut IS NOT NULL AND g.punchOut NOT IN ('00:00:00','')
-          THEN TIMESTAMPDIFF(MINUTE,
-            CONCAT(DATE_FORMAT(g.date,'%Y-%m-%d'),' ',g.punchIn),
-            CONCAT(DATE_FORMAT(g.date,'%Y-%m-%d'),' ',g.punchOut))
-          ELSE 0
-        END),
-        0, 0, 0,
-        'LEGACY_IMPORT',
-        NOW(), NOW()
-      FROM (
-        SELECT
-          employee_id,
-          date,
-          MIN(CASE WHEN CAST(punch_type AS CHAR) = 'in'  THEN CAST(time AS CHAR) END) AS punchIn,
-          MAX(CASE WHEN CAST(punch_type AS CHAR) = 'out' THEN CAST(time AS CHAR) END) AS punchOut
-        FROM attendance_log
-        GROUP BY employee_id, date
-      ) g
-      JOIN app_employees ae ON ae.legacySourceId = g.employee_id
-    `;
-
-    const res2b = await this.prisma.$executeRawUnsafe(sqlAttendanceLog);
-    result.attendanceImported += res2b;
-    this.logger.log(`Step 2b (attendance_log punches): ${res2b} rows inserted`);
+    const res2b = await this.prisma.$executeRawUnsafe(sqlAttendanceSummary);
+    this.logger.log(`Step 2b (attendance summary, log-less days only): ${res2b} rows inserted`);
 
     // 2c: Holiday backfill — mark HOLIDAY status for all employees on holiday dates
     // Only inserts where no attendance record exists yet (INSERT IGNORE),
@@ -351,7 +495,7 @@ export class SettingsService {
 
     this.logger.log(
       `Migration done: ${result.employeesImported} employees imported, ` +
-      `${result.attendanceImported} attendance records inserted (${res2a} summary + ${res2b} punch-log), ` +
+      `${result.attendanceImported} attendance records upserted (${res2a} from attendance_log + ${res2b} from summary table), ` +
       `${res2c} holiday records backfilled`,
     );
 

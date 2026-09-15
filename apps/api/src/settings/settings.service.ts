@@ -187,9 +187,15 @@ export class SettingsService {
         result.successCount++;
       } catch (err: any) {
         const errMsg = String(err?.message ?? err);
-        // Silently skip known safe errors (duplicate keys, already-exists)
+        // Silently skip known safe errors (duplicate keys, already-exists). Prisma puts
+        // the real underlying MySQL error number at `err.meta.code` (a string) for a
+        // failed $executeRawUnsafe — NOT `err.meta.error_number` (that field doesn't
+        // exist) and NOT `err.code` (that's Prisma's own generic wrapper code, e.g.
+        // 'P2010', not a MySQL number). The old field name meant this check never
+        // actually matched anything, so every "table already exists" / "duplicate key"
+        // from a safe re-import was being reported as a real error.
         const ignoredCodes = [1022, 1050, 1060, 1061, 1062, 1068, 1826];
-        const code = err?.meta?.error_number ?? err?.code;
+        const code = err?.meta?.code ?? err?.code;
         if (!ignoredCodes.includes(Number(code))) {
           result.errorCount++;
           if (result.errors.length < 20) result.errors.push(errMsg);
@@ -226,7 +232,7 @@ export class SettingsService {
       this.logger.log('attendance: added UNIQUE KEY uq_attendance_emp_date(employee_id, date)');
       return;
     } catch (err: any) {
-      const code = err?.meta?.error_number ?? err?.code;
+      const code = err?.meta?.code ?? err?.code;
       if (Number(code) === 1061) {
         // Key already exists from a previous import — nothing to do.
         return;

@@ -114,6 +114,15 @@ export class SalaryService {
                   netSalary: row.final_salary ?? 0,
                 },
               });
+            } else if (existing.status !== status) {
+              // Same fix as getSummaryForMonth: legacy salary_details.status is the
+              // source of truth for paid/unpaid. Only status is synced, never the
+              // snapshotted amount fields — a locked-in payslip's figures must not
+              // silently change once generated.
+              await this.prisma.salaryRecord.update({
+                where: { id: existing.id },
+                data: { status },
+              });
             }
           }
         }
@@ -523,6 +532,18 @@ export class SalaryService {
                 remarks: row.advance_remarks || '',
                 status,
               },
+            });
+          } else if (existing.status !== status) {
+            // The legacy `salary_details.status` is the source of truth for paid/unpaid
+            // (mirrors the old system exactly) — a SalaryRecord created before that legacy
+            // row existed/was current (e.g. an early placeholder from before the real data
+            // was imported) must not permanently freeze a stale status. Only `status` is
+            // synced here, not the snapshotted amount fields (basicSalary, netSalary, etc.)
+            // — those intentionally stay locked to whatever they were generated with, so a
+            // past payslip's figures never silently change.
+            await this.prisma.salaryRecord.update({
+              where: { id: existing.id },
+              data: { status },
             });
           }
         }

@@ -39,6 +39,20 @@ function serializeAllowedIps(ips: string[]): string {
 }
 
 /** Split a raw SQL dump into individual executable statements. */
+/**
+ * Strips leading `-- comment` lines (mysqldump writes one right before every table's
+ * INSERT, e.g. "-- Dumping data for table `x` --", with no statement separator in
+ * between) so the classification/rewrite logic downstream sees the real SQL keyword
+ * first. Without this, a statement like "-- Dumping data...\nINSERT INTO ..." fails
+ * `startsWith('INSERT')` and gets silently discarded as "not an allowed statement" —
+ * before it even reaches the try/catch, so no error is ever reported. That's a
+ * long-standing bug that made most single-chunk tables in a dump (salary_history,
+ * attendance, employees, holidays, ...) never actually import via this endpoint.
+ */
+function stripLeadingSqlComments(stmt: string): string {
+  return stmt.replace(/^(?:\s*--[^\n]*\n?)+/, '').trimStart();
+}
+
 function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
   let current = '';
@@ -59,12 +73,13 @@ function splitSqlStatements(sql: string): string[] {
     current += ch;
 
     if (!inString && ch === ';') {
-      const stmt = current.trim();
+      const stmt = stripLeadingSqlComments(current.trim());
       if (stmt.length > 1) statements.push(stmt);
       current = '';
     }
   }
-  if (current.trim().length > 1) statements.push(current.trim());
+  const last = stripLeadingSqlComments(current.trim());
+  if (last.length > 1) statements.push(last);
   return statements;
 }
 

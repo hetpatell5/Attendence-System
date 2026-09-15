@@ -213,8 +213,14 @@ export class SettingsService {
     // another full duplicate copy forever — this is what caused `attendance` to balloon to
     // ~81k rows (should be ~7k) after a handful of re-imports this session, and is almost
     // certainly what broke things previously too. Self-healing this after every import
-    // means dropping tables first is never required again.
-    await this.ensureAttendanceTableDeduped();
+    // means dropping tables first is never required again. Best-effort: a failure here
+    // must never fail the whole import request — the actual SQL statements above already
+    // succeeded and that result should still be returned to the caller.
+    try {
+      await this.ensureAttendanceTableDeduped();
+    } catch (err: any) {
+      this.logger.warn(`attendance dedup self-heal failed (import itself still succeeded): ${err?.message ?? err}`);
+    }
 
     return result;
   }
@@ -258,14 +264,17 @@ export class SettingsService {
       `ALTER TABLE attendance_dedup_tmp ADD UNIQUE KEY uq_attendance_emp_date (employee_id, date)`,
     );
     await this.prisma.$executeRawUnsafe(`INSERT IGNORE INTO attendance_dedup_tmp SELECT * FROM attendance`);
-    const beforeRows = await this.prisma.$queryRawUnsafe<Array<{ before: bigint }>>(
-      `SELECT COUNT(*) as before FROM attendance`,
+    // `before`/`after` are reserved words in MySQL (used in trigger/ALTER syntax) — using
+    // them as bare column aliases is a syntax error on real MySQL (it only worked in local
+    // testing because MariaDB is more lenient here). Renamed to avoid that entirely.
+    const beforeRows = await this.prisma.$queryRawUnsafe<Array<{ cnt_before: bigint }>>(
+      `SELECT COUNT(*) as cnt_before FROM attendance`,
     );
-    const afterRows = await this.prisma.$queryRawUnsafe<Array<{ after: bigint }>>(
-      `SELECT COUNT(*) as after FROM attendance_dedup_tmp`,
+    const afterRows = await this.prisma.$queryRawUnsafe<Array<{ cnt_after: bigint }>>(
+      `SELECT COUNT(*) as cnt_after FROM attendance_dedup_tmp`,
     );
-    const before = beforeRows[0]!.before;
-    const after = afterRows[0]!.after;
+    const before = beforeRows[0]!.cnt_before;
+    const after = afterRows[0]!.cnt_after;
     await this.prisma.$executeRawUnsafe(`DROP TABLE attendance`);
     await this.prisma.$executeRawUnsafe(`RENAME TABLE attendance_dedup_tmp TO attendance`);
     this.logger.log(`attendance: deduplicated ${before} rows -> ${after} unique rows, unique key added`);
@@ -283,8 +292,12 @@ export class SettingsService {
 
     // Self-heals the legacy `attendance` table's missing unique key (see importLegacySql)
     // in case migration is run without a preceding import in this session — cheap no-op
-    // once the key already exists.
-    await this.ensureAttendanceTableDeduped();
+    // once the key already exists. Best-effort: must never fail the whole migration.
+    try {
+      await this.ensureAttendanceTableDeduped();
+    } catch (err: any) {
+      this.logger.warn(`attendance dedup self-heal failed (migration continuing anyway): ${err?.message ?? err}`);
+    }
 
     // 1. Migrate employees from legacy `employees` table → `app_employees`
     type LegEmp = {

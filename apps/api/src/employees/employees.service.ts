@@ -46,6 +46,37 @@ export class EmployeesService {
     private readonly notificationEventBus: NotificationEventBus,
   ) {}
 
+  /**
+   * Re-indexes all ACTIVE employees alphabetically into BMA-1, BMA-2, BMA-3...
+   * Ensures that additions, removals, renames, and deactivations keep sequential
+   * numbering strictly aligned with alphabetical order.
+   */
+  async reindexEmployeeCodes(): Promise<void> {
+    const activeEmps = await this.prisma.employee.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    activeEmps.sort((a, b) => {
+      const na = ((a.firstName || '') + ' ' + (a.lastName || '')).trim().toLowerCase();
+      const nb = ((b.firstName || '') + ' ' + (b.lastName || '')).trim().toLowerCase();
+      return na.localeCompare(nb);
+    });
+
+    const now = Date.now();
+    for (let i = 0; i < activeEmps.length; i++) {
+      await this.prisma.employee.update({
+        where: { id: activeEmps[i]!.id },
+        data: { employeeCode: `TEMP-REINDEX-${i + 1}-${now}` },
+      });
+    }
+    for (let i = 0; i < activeEmps.length; i++) {
+      await this.prisma.employee.update({
+        where: { id: activeEmps[i]!.id },
+        data: { employeeCode: `BMA-${i + 1}` },
+      });
+    }
+  }
+
   async list(query: ListEmployeesQueryDto): Promise<Paginated<Employee>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
@@ -293,7 +324,8 @@ export class EmployeesService {
       ipAddress: ip,
     });
 
-    return employee;
+    await this.reindexEmployeeCodes();
+    return this.findByIdOrThrow(employee.id);
   }
 
   async update(
@@ -380,6 +412,11 @@ export class EmployeesService {
       ipAddress: ip,
     });
 
+    if (fullName || dto.firstName || dto.lastName || dto.status) {
+      await this.reindexEmployeeCodes();
+      return this.findByIdOrThrow(id);
+    }
+
     return updated;
   }
 
@@ -425,6 +462,7 @@ export class EmployeesService {
       ipAddress: ip,
     });
 
+    await this.reindexEmployeeCodes();
     return updated;
   }
 
@@ -449,6 +487,7 @@ export class EmployeesService {
       ipAddress: ip,
     });
 
+    await this.reindexEmployeeCodes();
     return updated;
   }
 

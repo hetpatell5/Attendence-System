@@ -105,6 +105,20 @@ export function EmployeeDashboardPage(): JSX.Element {
     queryFn: () => attendanceApi.mine(fromDate, toDate),
   });
 
+  // Previous month — needed so streak calculation doesn't reset at every month boundary
+  const prevMonthYear = currentMonthNum === 1 ? currentYear - 1 : currentYear;
+  const prevMonthNumVal = currentMonthNum === 1 ? 12 : currentMonthNum - 1;
+  const prevMonthStr = `${prevMonthYear}-${String(prevMonthNumVal).padStart(2, '0')}`;
+  const prevMonthLastDay = new Date(prevMonthYear, prevMonthNumVal, 0).getDate();
+
+  const { data: prevMonthAttendance = [] } = useQuery({
+    queryKey: ['attendance', 'me', prevMonthStr],
+    queryFn: () => attendanceApi.mine(
+      `${prevMonthStr}-01`,
+      `${prevMonthStr}-${String(prevMonthLastDay).padStart(2, '0')}`,
+    ),
+  });
+
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('dismissed_announcements');
@@ -467,6 +481,120 @@ export function EmployeeDashboardPage(): JSX.Element {
     };
   }, [weeklyDaysData, salaryMetrics.shiftHours]);
 
+  // ---------------------------------------------------------------------------
+  // Attendance Streak Calculation (Snapchat-style)
+  // Rules:
+  //   • PRESENT / HALF_DAY (or has punchInAt)  → streak day ✅
+  //   • LEAVE / HOLIDAY / WEEKLY_OFF           → transparent (neither counts nor breaks)
+  //   • Sunday / public holiday                → skipped entirely
+  //   • ABSENT / no record on a working day    → breaks streak ❌
+  //   • Today: if no punch yet, start from yesterday (grace period until end of day)
+  // ---------------------------------------------------------------------------
+  const streakData = useMemo(() => {
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    const allRecords = [...(prevMonthAttendance as any[]), ...(monthAttendance as any[])];
+    const recordByDate = new Map<string, any>();
+    allRecords.forEach((r: any) => {
+      if (!r.attendanceDate) return;
+      const key = new Date(r.attendanceDate).toLocaleDateString('en-CA');
+      recordByDate.set(key, r);
+    });
+
+    const holidaySet = new Set<string>(
+      (holidaysList as any[]).map((h: any) => h.date?.slice(0, 10)).filter(Boolean)
+    );
+
+    const isWorkingDay = (dateStr: string) =>
+      new Date(dateStr + 'T12:00:00').getDay() !== 0 && !holidaySet.has(dateStr);
+
+    const getDayResult = (dateStr: string): 'present' | 'leave' | 'absent' => {
+      const rec = recordByDate.get(dateStr);
+      if (!rec) return 'absent';
+      const hasPunch = Boolean(rec.punchInAt);
+      if (rec.status === 'PRESENT' || rec.status === 'HALF_DAY' || hasPunch) return 'present';
+      if (rec.status === 'LEAVE' || rec.status === 'HOLIDAY' || rec.status === 'WEEKLY_OFF') return 'leave';
+      return 'absent';
+    };
+
+    // If today is a working day but employee hasn't punched in yet, start from yesterday
+    const todayIsWorking = isWorkingDay(todayStr);
+    const todayHasPunch = todayIsWorking && getDayResult(todayStr) === 'present';
+    const startOffset = todayIsWorking && !todayHasPunch ? 1 : 0;
+
+    // Walk backwards to compute current streak
+    let currentStreak = 0;
+    for (let i = startOffset; i <= 62; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dStr = d.toLocaleDateString('en-CA');
+      if (!isWorkingDay(dStr)) continue; // skip sundays & holidays
+      const result = getDayResult(dStr);
+      if (result === 'present') { currentStreak++; }
+      else if (result === 'leave') { continue; } // transparent — don't break
+      else { break; } // absent → streak ends
+    }
+
+    // Walk forward to find best streak over the 62-day window
+    let bestStreak = 0;
+    let running = 0;
+    for (let i = 62; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dStr = d.toLocaleDateString('en-CA');
+      if (dStr > todayStr || !isWorkingDay(dStr)) continue;
+      const result = getDayResult(dStr);
+      if (result === 'present') { running++; if (running > bestStreak) bestStreak = running; }
+      else if (result === 'leave') { /* transparent */ }
+      else { running = 0; }
+    }
+    bestStreak = Math.max(bestStreak, currentStreak);
+
+    // Tier classification
+    const tier =
+      currentStreak === 0 ? 0
+      : currentStreak <= 4 ? 1
+      : currentStreak <= 9 ? 2
+      : currentStreak <= 14 ? 3
+      : currentStreak <= 20 ? 4
+      : currentStreak <= 25 ? 5 : 6;
+
+    const TIER_INFO = [
+      { emoji: '💤', label: 'No Streak Yet' },
+      { emoji: '🔥', label: 'Getting Started' },
+      { emoji: '🔥', label: 'On Fire!' },
+      { emoji: '⚡', label: 'Electrifying' },
+      { emoji: '🌟', label: 'Superstar!' },
+      { emoji: '💎', label: 'Diamond' },
+      { emoji: '👑', label: 'Legendary!' },
+    ];
+
+    // Next milestone progress
+    const THRESHOLDS = [1, 5, 10, 15, 21, 26];
+    const nextThreshIdx = THRESHOLDS.findIndex(t => currentStreak < t);
+    const nextMilestone = nextThreshIdx >= 0 ? (() => {
+      const nextT = THRESHOLDS[nextThreshIdx];
+      const prevT = nextThreshIdx === 0 ? 0 : THRESHOLDS[nextThreshIdx - 1];
+      const progress = prevT === nextT ? 100 : Math.round(((currentStreak - prevT) / (nextT - prevT)) * 100);
+      return {
+        daysLeft: nextT - currentStreak,
+        nextEmoji: TIER_INFO[Math.min(nextThreshIdx + 1, 6)].emoji,
+        nextLabel: TIER_INFO[Math.min(nextThreshIdx + 1, 6)].label,
+        progress: Math.max(0, Math.min(100, progress)),
+      };
+    })() : null;
+
+    return {
+      currentStreak,
+      bestStreak,
+      tier,
+      emoji: TIER_INFO[tier].emoji,
+      label: TIER_INFO[tier].label,
+      nextMilestone,
+      isActive: currentStreak > 0,
+    };
+  }, [monthAttendance, prevMonthAttendance, holidaysList, now.getDate(), now.getMonth(), now.getFullYear()]);
+
   if (isLoading || !data) {
     return <div className="p-12 text-center text-muted-foreground animate-pulse text-sm">Loading dashboard...</div>;
   }
@@ -708,6 +836,123 @@ export function EmployeeDashboardPage(): JSX.Element {
           </div>
         </div>
       </Card>
+
+      {/* ── Attendance Streak Banner ── */}
+      <div className={`relative rounded-2xl border p-5 sm:p-6 overflow-hidden transition-all duration-500 ${
+        streakData.tier >= 6
+          ? 'bg-gradient-to-br from-purple-500/10 via-violet-400/5 to-card border-purple-500/25 dark:from-purple-950/35 dark:via-violet-950/15'
+          : streakData.tier >= 5
+          ? 'bg-gradient-to-br from-blue-500/10 via-indigo-400/5 to-card border-blue-500/25 dark:from-blue-950/30'
+          : streakData.tier >= 4
+          ? 'bg-gradient-to-br from-amber-500/10 via-yellow-400/5 to-card border-amber-500/25 dark:from-amber-950/30'
+          : streakData.tier >= 3
+          ? 'bg-gradient-to-br from-yellow-500/10 via-amber-400/5 to-card border-yellow-500/25 dark:from-yellow-950/30'
+          : streakData.isActive
+          ? 'bg-gradient-to-br from-orange-500/10 via-amber-400/5 to-card border-orange-500/25 dark:from-orange-950/30 dark:via-amber-950/15'
+          : 'bg-card border-border/70'
+      }`}>
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+
+          {/* LEFT: Emoji + Streak Count + Milestone Label */}
+          <div className="flex items-center gap-4">
+            <div
+              className={`text-5xl sm:text-6xl select-none leading-none transition-all ${
+                streakData.isActive ? '' : 'opacity-30 grayscale'
+              }`}
+              title={streakData.label}
+            >
+              {streakData.emoji}
+            </div>
+
+            <div>
+              <div className="flex items-end gap-2">
+                <span className={`text-5xl sm:text-6xl font-black tabular-nums leading-none ${
+                  streakData.tier >= 6 ? 'text-purple-600 dark:text-purple-400'
+                  : streakData.tier >= 5 ? 'text-blue-600 dark:text-blue-400'
+                  : streakData.tier >= 4 ? 'text-amber-600 dark:text-amber-400'
+                  : streakData.tier >= 3 ? 'text-yellow-600 dark:text-yellow-400'
+                  : streakData.isActive ? 'text-orange-600 dark:text-orange-400'
+                  : 'text-muted-foreground/50'
+                }`}>
+                  {streakData.currentStreak}
+                </span>
+                <span className="text-sm font-semibold text-muted-foreground pb-1.5">
+                  day{streakData.currentStreak !== 1 ? 's' : ''} streak
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 mt-2">
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                  streakData.tier >= 6 ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/25'
+                  : streakData.tier >= 5 ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/25'
+                  : streakData.tier >= 4 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/25'
+                  : streakData.tier >= 3 ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/25'
+                  : streakData.isActive ? 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/25'
+                  : 'bg-muted text-muted-foreground border-border/40'
+                }`}>
+                  {streakData.label}
+                </span>
+                {!streakData.isActive && (
+                  <span className="text-xs text-muted-foreground">Come on, start today! 💪</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Best Streak + Next Milestone Progress */}
+          <div className="flex items-center gap-6 sm:gap-10">
+            {/* Best streak */}
+            <div className="text-center">
+              <p className={`text-3xl font-black tabular-nums ${
+                streakData.isActive ? 'text-foreground' : 'text-muted-foreground/60'
+              }`}>
+                {streakData.bestStreak}
+              </p>
+              <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Best (60d)</p>
+            </div>
+
+            {/* Next milestone progress bar */}
+            {streakData.nextMilestone && streakData.isActive && (
+              <div className="hidden sm:block min-w-[130px]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] text-muted-foreground font-medium">
+                    Next: {streakData.nextMilestone.nextEmoji} {streakData.nextMilestone.nextLabel}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-muted/40 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 ${
+                      streakData.tier >= 5 ? 'bg-gradient-to-r from-purple-500 to-violet-400'
+                      : streakData.tier >= 4 ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                      : streakData.tier >= 3 ? 'bg-gradient-to-r from-yellow-500 to-amber-400'
+                      : 'bg-gradient-to-r from-orange-500 to-amber-400'
+                    }`}
+                    style={{ width: `${streakData.nextMilestone.progress}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground/70 mt-1 text-right">
+                  {streakData.nextMilestone.daysLeft} more day{streakData.nextMilestone.daysLeft !== 1 ? 's' : ''} to unlock
+                </p>
+              </div>
+            )}
+
+            {/* Already at max milestone */}
+            {!streakData.nextMilestone && streakData.isActive && (
+              <div className="hidden sm:flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400">
+                <span>Max Milestone Reached!</span>
+                <span className="text-xl">🎉</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Decorative large background emoji */}
+        {streakData.isActive && (
+          <div className="absolute -right-3 -bottom-4 text-[110px] sm:text-[140px] opacity-[0.04] select-none pointer-events-none leading-none">
+            {streakData.emoji}
+          </div>
+        )}
+      </div>
 
       {/* 4 Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -510,6 +510,7 @@ export function SalaryManagementPage(): JSX.Element {
         excludeSundayHoliday: currentEdit.excludeSundayHoliday,
         status: savedRecord?.status === 'PAID' ? 'PAID' : (currentEdit.status || 'PENDING'),
         savedRecordId: savedRecord?.id,
+        paymentDate: savedRecord?.paymentDate || null,
       };
     });  // close .map()
   }, [
@@ -527,6 +528,19 @@ export function SalaryManagementPage(): JSX.Element {
     monthEnd,
     lastPendingMap,
   ]);
+
+  // Alphabetical sequential IDs (BMA-1, BMA-2…) — same logic as EmployeesPage
+  const displayIdMap = useMemo<Record<string, string>>(() => {
+    if (!employeesData?.items) return {};
+    const sorted = [...employeesData.items].sort((a, b) => {
+      const na = `${a.firstName} ${a.lastName}`.toLowerCase();
+      const nb = `${b.firstName} ${b.lastName}`.toLowerCase();
+      return na.localeCompare(nb);
+    });
+    const map: Record<string, string> = {};
+    sorted.forEach((emp, idx) => { map[emp.id] = `BMA-${idx + 1}`; });
+    return map;
+  }, [employeesData?.items]);
 
   // Filtered Cards
   const filteredCards = useMemo(() => {
@@ -589,7 +603,16 @@ export function SalaryManagementPage(): JSX.Element {
     mutationFn: async (targets: typeof filteredCards) => {
       for (const card of targets) {
         if (card.savedRecordId) {
+          // Must send the full current live-computed figures, not just commission/advance —
+          // otherwise the backend falls back to whatever basicSalary/workedHours/hourRate the
+          // record was first created with, which goes stale the moment attendance data for
+          // that month is corrected afterward (this is what silently turned a correct ₹7,493
+          // into ₹6,003 for an HOURLY-payType record: the saved workedHours never updated).
           await salaryApi.update(card.savedRecordId, {
+            basicSalary: card.basicSalary,
+            totalAllowances: card.sundayHolidayPay,
+            workedHours: card.totalHours,
+            hourRate: card.hourRate,
             commissionAmount: card.commission,
             advanceDeducted: card.advance,
             totalDeductions: card.advance,
@@ -697,13 +720,15 @@ export function SalaryManagementPage(): JSX.Element {
       company_logo: (settings as any)?.companyLogo || '',
       company_address: (settings as any)?.companyAddress || '',
       employee_name: empFullName,
-      employee_id: card.emp.employeeCode || `EMP-${(card.emp as any).legacySourceId ?? card.emp.id.slice(0, 5)}`,
+      employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
       employee_email: card.emp.email,
       month_name: monthName,
       pay_period: `01 ${monthLabel} ${selectedYear} - ${card.totalDaysInMonth} ${monthLabel} ${selectedYear}`,
-      pay_date: new Date().toLocaleDateString('en-IN'),
+      pay_date: card.status === 'PAID' && card.paymentDate
+        ? new Date(card.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : `${monthLabel} ${selectedYear}`,
       shift_name: card.shiftName || 'Full Day Shift',
-      shift_time: card.shiftStartTime && card.shiftEndTime ? `${card.shiftStartTime} - ${card.shiftEndTime}` : 'Regular',
+      shift_time: card.shiftStartTime && card.shiftEndTime ? `${fmt12h(card.shiftStartTime)} - ${fmt12h(card.shiftEndTime)}` : 'Regular',
       payment_status: card.status === 'PAID' ? 'Paid' : 'Pending',
       monthly_salary: Number(card.monthlySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       total_days: String(card.totalDaysInMonth),
@@ -720,7 +745,9 @@ export function SalaryManagementPage(): JSX.Element {
       advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       expected_hours: String(card.expectedHours),
       net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
-      paid_on: card.status === 'PAID' ? new Date().toLocaleString('en-IN') : 'Pending',
+      paid_on: card.status === 'PAID' && card.paymentDate
+        ? new Date(card.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : card.status === 'PAID' ? new Date().toLocaleString('en-IN') : 'Pending',
       remarks: card.remarks || '',
     };
 
@@ -746,13 +773,15 @@ export function SalaryManagementPage(): JSX.Element {
       company_logo: (settings as any)?.companyLogo || '',
       company_address: (settings as any)?.companyAddress || '',
       employee_name: empFullName,
-      employee_id: card.emp.employeeCode || `EMP-${(card.emp as any).legacySourceId ?? card.emp.id.slice(0, 5)}`,
+      employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
       employee_email: card.emp.email || '',
       month_name: monthName,
       pay_period: `${monthLabel} ${selectedYear}`,
-      pay_date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      pay_date: card.status === 'PAID' && card.paymentDate
+        ? new Date(card.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`,
       shift_name: card.shiftName || 'Full Day',
-      shift_time: card.shiftStartTime && card.shiftEndTime ? `${card.shiftStartTime} - ${card.shiftEndTime}` : '09:00 - 19:30',
+      shift_time: card.shiftStartTime && card.shiftEndTime ? `${fmt12h(card.shiftStartTime)} - ${fmt12h(card.shiftEndTime)}` : '9:00 AM - 7:30 PM',
       payment_status: card.status === 'PAID' ? 'Paid' : 'Pending',
       monthly_salary: Number(card.monthlySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       total_days: String(card.totalDaysInMonth),
@@ -769,7 +798,9 @@ export function SalaryManagementPage(): JSX.Element {
       advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       expected_hours: String(card.expectedHours),
       net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
-      paid_on: card.status === 'PAID' ? new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending',
+      paid_on: card.status === 'PAID' && card.paymentDate
+        ? new Date(card.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : 'Pending',
       remarks: card.remarks || '',
     };
 
@@ -1113,7 +1144,7 @@ export function SalaryManagementPage(): JSX.Element {
                 />
               </div>
 
-              {/* Card Bottom Action Buttons */}
+              {/* Card Bottom Action Buttons - only show PDF/Preview/Mail after paid */}
               <div className="flex flex-wrap gap-2 pt-2 mt-auto border-t">
                 <Button 
                   size="sm"
@@ -1141,48 +1172,52 @@ export function SalaryManagementPage(): JSX.Element {
                   </Button>
                 )}
 
-                <Button 
-                  size="sm"
-                  disabled={downloadingEmpId === card.emp.id}
-                  onClick={() => handleDownloadPdf(card)}
-                  className="flex-1 min-w-[85px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 shadow-sm gap-1.5"
-                >
-                  {downloadingEmpId === card.emp.id ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin" /> PDF...
-                    </>
-                  ) : (
-                    <>
-                      <Download size={13} /> PDF Slip
-                    </>
-                  )}
-                </Button>
+                {card.status === 'PAID' && (
+                  <>
+                    <Button 
+                      size="sm"
+                      disabled={downloadingEmpId === card.emp.id}
+                      onClick={() => handleDownloadPdf(card)}
+                      className="flex-1 min-w-[85px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 shadow-sm gap-1.5"
+                    >
+                      {downloadingEmpId === card.emp.id ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" /> PDF...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={13} /> PDF Slip
+                        </>
+                      )}
+                    </Button>
 
-                <Button 
-                  size="sm"
-                  onClick={() => setSlipModalTarget(card)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold h-9 px-2.5 shadow-sm"
-                  title="Preview Slip Layout"
-                >
-                  👁️
-                </Button>
+                    <Button 
+                      size="sm"
+                      onClick={() => setSlipModalTarget(card)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold h-9 px-2.5 shadow-sm"
+                      title="Preview Slip Layout"
+                    >
+                      👁️
+                    </Button>
 
-                <Button 
-                  size="sm"
-                  disabled={sendingEmailEmpId === card.emp.id}
-                  onClick={() => handleSendMail(card)}
-                  className="flex-1 min-w-[85px] bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold h-9 shadow-sm gap-1.5"
-                >
-                  {sendingEmailEmpId === card.emp.id ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin" /> Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Mail size={13} /> Send Mail
-                    </>
-                  )}
-                </Button>
+                    <Button 
+                      size="sm"
+                      disabled={sendingEmailEmpId === card.emp.id}
+                      onClick={() => handleSendMail(card)}
+                      className="flex-1 min-w-[85px] bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold h-9 shadow-sm gap-1.5"
+                    >
+                      {sendingEmailEmpId === card.emp.id ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" /> Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Mail size={13} /> Send Mail
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1224,127 +1259,137 @@ export function SalaryManagementPage(): JSX.Element {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center items-start">
-              {/* 1:1 Exact Legacy Preview Card Matching AttenOld */}
-              <div className="bg-white max-w-[650px] w-full rounded-2xl p-6 sm:p-8 shadow-md border border-slate-200 font-sans text-sm mb-6">
-                <div className="text-center pb-2">
+          {/* Salary Slip Preview – Professional Clean Design */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-gradient-to-b from-slate-50 to-slate-100 flex justify-center items-start">
+            <div className="bg-white w-full max-w-[660px] rounded-2xl shadow-xl border border-slate-200 overflow-hidden mb-6 font-sans text-[13px]">
+
+              {/* Header: solid blue, logo + company on left, SALARY SLIP label on right */}
+              <div className="bg-[#0f4c81] px-6 py-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   <img
                     src={(settings as any)?.companyLogo || defaultCompanyLogo}
-                    alt="Company Logo"
-                    className="max-h-[85px] max-w-[340px] mx-auto mb-2 object-contain rounded-lg border-2 border-[#dbe7f6] shadow-sm bg-[#f7fafc] p-1"
+                    alt="Logo"
+                    className="h-16 w-16 rounded-xl object-contain bg-white p-1.5 shrink-0 shadow-sm"
                   />
-                  <div className="font-bold text-xl text-[#1968a7] tracking-wide">
-                    {settings?.companyName || 'BMAP Pvt Ltd'}
-                  </div>
-                  <div className="text-[11px] text-[#757a8a] max-w-md mx-auto mt-0.5 leading-snug">
-                    {(settings as any)?.companyAddress || '206 Sunrise Commercial Complex - Near, Savjibhai Korat Bridge, Lajamani chowk, Shanti Niketan Society, Mota Varachha, Surat, Gujarat 394105 • bookmyassignments.com'}
+                  <div>
+                    <div className="text-base font-bold text-white leading-tight">
+                      {settings?.companyName || 'BMAP Pvt Ltd'}
+                    </div>
+                    <div className="text-[10px] text-blue-100 mt-0.5 leading-snug max-w-[280px]">
+                      {(settings as any)?.companyAddress || '206 Sunrise Commercial Complex, Mota Varachha, Surat – 394105'}
+                    </div>
                   </div>
                 </div>
-
-                <div className="mt-4 text-center text-lg font-bold text-[#2e415a]">
-                  Salary Slip
-                </div>
-
-                <table className="w-[88%] mx-auto mt-4 text-[13px] border-collapse">
-                  <tbody>
-                    <tr>
-                      <td className="py-1 px-1.5 text-slate-600 w-1/4"><b>Pay Period:</b></td>
-                      <td className="py-1 px-1.5 text-slate-900 w-1/4">{MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}</td>
-                      <td className="py-1 px-1.5 text-slate-600 w-1/4"><b>Pay Date:</b></td>
-                      <td className="py-1 px-1.5 text-slate-900 w-1/4">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1 px-1.5 text-slate-600"><b>Employee Name:</b></td>
-                      <td className="py-1 px-1.5 text-slate-900 font-semibold">{slipModalTarget.emp.firstName} {slipModalTarget.emp.lastName}</td>
-                      <td className="py-1 px-1.5 text-slate-600"><b>Employee ID:</b></td>
-                      <td className="py-1 px-1.5 text-slate-900">{slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 5)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1 px-1.5 text-slate-600"><b>Shift:</b></td>
-                      <td className="py-1 px-1.5 text-slate-900">{slipModalTarget.shiftName} ({slipModalTarget.shiftStartTime} - {slipModalTarget.shiftEndTime})</td>
-                      <td className="py-1 px-1.5 text-slate-600"><b>Status:</b></td>
-                      <td className="py-1 px-1.5">
-                        <span className={`font-bold ${slipModalTarget.status === 'PAID' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <table className="w-[92%] mx-auto mt-4 text-[13px] border-collapse">
-                  <thead>
-                    <tr className="bg-[#e9f4fb]">
-                      <th colSpan={2} className="py-2 px-2 text-left font-bold text-[#1563ac] rounded-tl-lg">Earnings</th>
-                      <th colSpan={2} className="py-2 px-2 text-left font-bold text-[#d67412] rounded-tr-lg">Attendance & Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="bg-[#f7fafc]">
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Monthly Salary</td>
-                      <td className="py-1.5 px-2 font-bold text-slate-900 border-b border-slate-100">₹ {slipModalTarget.monthlySalary.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Total Days in Month</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.totalDaysInMonth}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Salary Per Day</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.perDaySalary.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Salary Per Hour</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.hourRate.toFixed(2)}</td>
-                    </tr>
-                    <tr className="bg-[#f7fafc]">
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Basic Salary</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.basicSalary.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Total Working Days</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.totalWorkingDays}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Sunday & Holiday Pay</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.sundayHolidayPay.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Mon-Sat Present Days</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.presentRegularDays}</td>
-                    </tr>
-                    <tr className="bg-[#f7fafc]">
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Overtime Payout</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.overtimePayout.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Overtime Hours</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.overtimeHours}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Commission / Extra</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">₹ {slipModalTarget.commission.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Total Hours Worked</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.totalHours}</td>
-                    </tr>
-                    <tr className="bg-[#f7fafc]">
-                      <td className="py-1.5 px-2 text-red-600 font-semibold border-b border-slate-100">Advance Deducted</td>
-                      <td className="py-1.5 px-2 text-red-600 font-bold border-b border-slate-100">- ₹ {slipModalTarget.advance.toFixed(2)}</td>
-                      <td className="py-1.5 px-2 text-slate-600 border-b border-slate-100">Expected Hours</td>
-                      <td className="py-1.5 px-2 text-slate-900 border-b border-slate-100">{slipModalTarget.expectedHours}</td>
-                    </tr>
-                    <tr className="bg-[#d8f0e8]">
-                      <td className="py-2.5 px-2 font-bold text-[#217f44] text-sm rounded-bl-lg">Net Salary</td>
-                      <td className="py-2.5 px-2 font-bold text-[#217f44] text-sm">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</td>
-                      <td colSpan={2} className="py-2.5 px-2 text-right text-xs text-[#217f44] font-semibold rounded-br-lg">All amounts in INR</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <div className="w-[92%] mx-auto mt-4 text-[12px] space-y-1 text-slate-600">
-                  <div className="flex justify-between">
-                    <div><b>Payment Status:</b> <span className={slipModalTarget.status === 'PAID' ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>{slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}</span></div>
-                    <div><b>Paid On:</b> {slipModalTarget.status === 'PAID' ? new Date().toLocaleString('en-IN') : 'Pending'}</div>
+                <div className="text-right shrink-0 ml-4">
+                  <div className="text-[11px] font-bold tracking-widest uppercase text-white/80">Salary Slip</div>
+                  <div className="text-[11px] font-semibold text-blue-200 mt-0.5">
+                    {MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}
                   </div>
-                  {slipModalTarget.remarks && (
-                    <div><b>Remarks:</b> <span className="text-slate-800">{slipModalTarget.remarks}</span></div>
+                </div>
+              </div>
+
+              {/* Employee Info Grid: 2×2 */}
+              <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
+                {[
+                  { label: 'EMPLOYEE NAME', value: `${slipModalTarget.emp.firstName} ${slipModalTarget.emp.lastName}` },
+                  { label: 'EMPLOYEE ID', value: displayIdMap[slipModalTarget.emp.id] || slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 8) },
+                  { label: 'SHIFT', value: `${slipModalTarget.shiftName} (${fmt12h(slipModalTarget.shiftStartTime)} – ${fmt12h(slipModalTarget.shiftEndTime)})` },
+                  { label: 'PAY DATE', value: slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
+                    ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                    : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}` },
+                ].map(({ label, value }) => (
+                  <div key={label} className="px-5 py-3 bg-white">
+                    <div className="text-[9px] font-semibold tracking-wider text-slate-400">{label}</div>
+                    <div className="text-[13px] font-semibold text-slate-800 mt-0.5">{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Table section headers */}
+              <div className="grid grid-cols-2 border-t border-slate-100">
+                <div className="bg-[#f0f7ff] px-5 py-2 text-[10px] font-bold text-[#1563ac] tracking-wider uppercase">Earnings</div>
+                <div className="bg-[#fff7ed] px-5 py-2 text-[10px] font-bold text-[#c2570a] tracking-wider uppercase border-l border-slate-100">Attendance & Hours</div>
+              </div>
+
+              {/* Earnings + Attendance rows */}
+              <div className="divide-y divide-slate-50">
+                {([
+                  [['Monthly Salary', `₹ ${slipModalTarget.monthlySalary.toFixed(2)}`, false, true], ['Total Days in Month', String(slipModalTarget.totalDaysInMonth)]],
+                  [['Salary Per Day',  `₹ ${slipModalTarget.perDaySalary.toFixed(2)}`],   ['Salary Per Hour',      `₹ ${slipModalTarget.hourRate.toFixed(2)}`]],
+                  [['Basic Salary',    `₹ ${slipModalTarget.basicSalary.toFixed(2)}`],     ['Total Working Days',   String(slipModalTarget.totalWorkingDays)]],
+                  [['Sunday & Holiday Pay', `₹ ${slipModalTarget.sundayHolidayPay.toFixed(2)}`], ['Mon-Sat Present Days', String(slipModalTarget.presentRegularDays)]],
+                  [['Overtime Payout', `₹ ${slipModalTarget.overtimePayout.toFixed(2)}`], ['Overtime Hours',       String(slipModalTarget.overtimeHours)]],
+                  [['Commission / Extra', `₹ ${slipModalTarget.commission.toFixed(2)}`],   ['Total Hours Worked',   String(slipModalTarget.totalHours)]],
+                  [['Advance Deducted', `– ₹ ${slipModalTarget.advance.toFixed(2)}`, true], ['Expected Hours',      String(slipModalTarget.expectedHours)]],
+                ] as [string, string, boolean?, boolean?][][]).map((row, i) => {
+                  const [lLabel, lVal, isRed, isBold] = row[0] as [string, string, boolean?, boolean?];
+                  const [rLabel, rVal] = row[1] as [string, string];
+                  return (
+                    <div key={i} className={`grid grid-cols-2 divide-x divide-slate-50 ${i % 2 === 0 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                      <div className="flex items-center justify-between px-5 py-2">
+                        <span className={isRed ? 'text-red-600 font-medium' : 'text-slate-500'}>{lLabel}</span>
+                        <span className={`font-semibold tabular-nums ${isRed ? 'text-red-600' : isBold ? 'text-slate-900' : 'text-slate-700'}`}>{lVal}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-5 py-2">
+                        <span className="text-slate-500">{rLabel}</span>
+                        <span className="font-semibold text-slate-700 tabular-nums">{rVal}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Net Salary row */}
+              <div className="bg-[#e8f5ee] flex items-center justify-between px-5 py-3 border-t border-emerald-100">
+                <div>
+                  <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">Net Salary</div>
+                  <div className="text-xl font-bold text-emerald-700 mt-0.5">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</div>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded ${slipModalTarget.status === 'PAID' ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                    {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
+                  </span>
+                  {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate && (
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      Paid on {new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </div>
                   )}
+                  <div className="text-[10px] text-slate-400 mt-0.5">All amounts in INR</div>
                 </div>
+              </div>
+
+              {/* Payment footer line */}
+              <div className="flex items-center justify-between px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-500">
+                <span>
+                  <span className="font-semibold text-slate-600">Payment Status: </span>
+                  <span className={slipModalTarget.status === 'PAID' ? 'text-emerald-600 font-semibold' : 'text-amber-600 font-semibold'}>
+                    {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
+                  </span>
+                </span>
+                <span>
+                  <span className="font-semibold text-slate-600">Paid On: </span>
+                  {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
+                    ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                    : 'Pending'}
+                </span>
+              </div>
+
+              {slipModalTarget.remarks && (
+                <div className="px-5 pb-3 text-[11px] text-slate-500">
+                  <span className="font-semibold text-slate-600">Remarks: </span>{slipModalTarget.remarks}
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-100 text-center text-[10px] text-slate-400">
+                This is a computer-generated salary slip and does not require a signature.
               </div>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </div>,
+      document.body
+    )}
 
       {/* 6. Consolidated Report Modal */}
       {isReportModalOpen && createPortal(

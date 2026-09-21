@@ -222,6 +222,18 @@ export class SalaryController {
     res.send(buffer);
   }
 
+  /** Convert HH:MM → H:MM AM/PM */
+  private to12h(t: string | undefined): string {
+    if (!t) return '';
+    const parts = t.split(':');
+    const h = parseInt(parts[0] ?? '0', 10);
+    const m = parseInt(parts[1] ?? '0', 10);
+    if (isNaN(h) || isNaN(m)) return t;
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+  }
+
   private async buildSlip(record: SalaryRecord): Promise<Buffer> {
     const employee = await this.prisma.employee.findUnique({
       where: { id: record.employeeId },
@@ -318,7 +330,9 @@ export class SalaryController {
       pay_period: `01 ${monthName} - ${monthDate.getDate()} ${monthName}`,
       pay_date: payDate,
       shift_name: shift?.name || 'Standard Shift',
-      shift_time: shift?.startTime && shift?.endTime ? `${shift.startTime} - ${shift.endTime}` : '09:00 - 19:30',
+      shift_time: shift?.startTime && shift?.endTime
+        ? `${this.to12h(shift.startTime)} - ${this.to12h(shift.endTime)}`
+        : '9:00 AM - 7:30 PM',
       payment_status: record.status === 'PAID' ? 'Paid' : 'Pending',
       monthly_salary: monthlySalary.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       total_days: String(totalDaysInMonth),

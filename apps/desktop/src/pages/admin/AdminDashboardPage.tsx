@@ -315,6 +315,17 @@ export function AdminDashboardPage(): JSX.Element {
     return Math.round((data.presentToday / data.totalEmployees) * 100);
   }, [data]);
 
+  // Today-only birthday count (MM-DD comparison, ignores year)
+  const todayBirthdayCount = useMemo(() => {
+    if (!data?.birthdaysThisMonth) return 0;
+    const todayMd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return data.birthdaysThisMonth.filter((emp: any) => {
+      const dob = emp.dateOfBirth ? String(emp.dateOfBirth) : '';
+      const mmdd = dob.length >= 10 ? `${dob.slice(5, 7)}-${dob.slice(8, 10)}` : '';
+      return mmdd === todayMd;
+    }).length;
+  }, [data?.birthdaysThisMonth, now]);
+
   if (isLoading || !data) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -370,7 +381,7 @@ export function AdminDashboardPage(): JSX.Element {
               {activeModal === 'present' && <><CheckCircle2 className="text-emerald-500" size={18} /> Present Staff Today</>}
               {activeModal === 'absent' && <><XCircle className="text-rose-500" size={18} /> Absent Staff Today</>}
               {activeModal === 'late' && <><Clock className="text-amber-500" size={18} /> Late Arrivals Today</>}
-              {activeModal === 'birthdays' && <><Gift className="text-pink-500" size={18} /> Birthdays This Month</>}
+              {activeModal === 'birthdays' && <><Gift className="text-pink-500" size={18} /> Birthdays Today</>}
               {activeModal === 'paid' && <><IndianRupee className="text-emerald-500" size={18} /> Paid Staff ({salaryMonthLabel.slice(0, 3)})</>}
               {activeModal === 'unpaid' && <><IndianRupee className="text-amber-500" size={18} /> Unpaid Staff</>}
             </DialogTitle>
@@ -400,14 +411,21 @@ export function AdminDashboardPage(): JSX.Element {
                 </div>
               )) : <div className="text-center text-sm text-muted-foreground py-6">No late arrivals today.</div>
             )}
-            {activeModal === 'birthdays' && (
-              (data.birthdaysThisMonth?.length ?? 0) > 0 ? data.birthdaysThisMonth?.map((emp: any) => (
+            {activeModal === 'birthdays' && (() => {
+              const todayMd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              const todayBdays = (data.birthdaysThisMonth || []).filter((emp: any) => {
+                const dob = emp.dateOfBirth ? String(emp.dateOfBirth) : '';
+                // dateOfBirth can be ISO string — extract MM-DD
+                const mmdd = dob.length >= 10 ? `${dob.slice(5, 7)}-${dob.slice(8, 10)}` : '';
+                return mmdd === todayMd;
+              });
+              return todayBdays.length > 0 ? todayBdays.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
                   <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
-                  <div className="text-xs font-bold text-pink-500">{new Date(emp.dateOfBirth).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</div>
+                  <div className="text-xs font-bold text-pink-500">🎂 Today!</div>
                 </div>
-              )) : <div className="text-center text-sm text-muted-foreground py-6">No birthdays this month.</div>
-            )}
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No birthdays today 🎈</div>;
+            })()}
             {activeModal === 'paid' && (
               (salaryOverview as any).paidEmployees?.length > 0 ? (salaryOverview as any).paidEmployees.map((emp: any) => (
                 <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
@@ -417,12 +435,7 @@ export function AdminDashboardPage(): JSX.Element {
                   </div>
                   <div className="text-xs font-bold text-emerald-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
                 </div>
-              )) : (data.paidList?.length ?? 0) > 0 ? data.paidList?.map((emp: any) => (
-                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
-                  <div className="text-sm font-semibold">{emp.employee?.firstName || emp.firstName} {emp.employee?.lastName || emp.lastName}</div>
-                  <div className="text-xs font-bold text-emerald-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
-                </div>
-              )) : <div className="text-center text-sm text-muted-foreground py-6">No paid staff found for this month.</div>
+              )) : <div className="text-center text-sm text-muted-foreground py-6">No paid staff for {salaryMonthLabel}.</div>
             )}
             {activeModal === 'unpaid' && (
               (salaryOverview as any).unpaidEmployees?.length > 0 ? (salaryOverview as any).unpaidEmployees.map((emp: any) => (
@@ -431,11 +444,6 @@ export function AdminDashboardPage(): JSX.Element {
                     <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
                     {emp.employeeCode && <div className="text-[11px] text-muted-foreground">{emp.employeeCode}</div>}
                   </div>
-                  <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
-                </div>
-              )) : (data.unpaidList?.length ?? 0) > 0 ? data.unpaidList?.map((emp: any) => (
-                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
-                  <div className="text-sm font-semibold">{emp.employee?.firstName || emp.firstName} {emp.employee?.lastName || emp.lastName}</div>
                   <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
                 </div>
               )) : <div className="text-center text-sm text-muted-foreground py-6">No unpaid staff found for this month.</div>
@@ -502,8 +510,8 @@ export function AdminDashboardPage(): JSX.Element {
         />
         <StatTile
           label="Birthdays"
-          value={data.birthdaysThisMonthCount || 0}
-          subtext="This month"
+          value={todayBirthdayCount}
+          subtext="Today"
           icon={<Gift size={16} />}
           colorClass="bg-pink-500/10 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400"
           indicatorColor="bg-pink-500"

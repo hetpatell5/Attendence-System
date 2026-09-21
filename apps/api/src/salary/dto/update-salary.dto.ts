@@ -41,4 +41,20 @@ export class UpdateSalaryDto {
   @IsOptional()
   @IsString()
   remarks?: string;
+
+  // Only meaningful for HOURLY-payType records — the calculation that determines
+  // netSalary for them. Without these, update() falls back to whatever workedHours/
+  // hourRate the record was first created with, which goes stale the moment attendance
+  // data for that month is corrected afterward (the record's own netSalary won't be).
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  workedHours?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  hourRate?: number;
 }

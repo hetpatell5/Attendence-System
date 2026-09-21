@@ -21,6 +21,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import type { Employee } from '@attendance/shared';
+import { to12h } from '@/lib/utils';
 
 const emptyForm = {
   fullName: '',
@@ -140,17 +141,24 @@ export function EmployeesPage(): JSX.Element {
     }
   };
 
-  // Filter items by shift if selected
+  // Filter items by shift if selected, then sort alphabetically and assign sequential display IDs
   const filteredEmployees = useMemo(() => {
     if (!employeesData?.items) return [];
-    let items = employeesData.items;
+    let items = [...employeesData.items];
     if (shiftFilter !== 'ALL') {
       items = items.filter(emp => {
         const empShiftId = (emp as any).employeeShifts?.[0]?.shiftId ?? (emp as any).shiftId;
         return empShiftId === shiftFilter;
       });
     }
-    return items;
+    // Sort alphabetically by full name (first + last)
+    items.sort((a, b) => {
+      const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
+      const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    // Attach sequential display ID (BMA-1, BMA-2, ...) based on alphabetical position
+    return items.map((emp, idx) => ({ ...emp, _displayId: `BMA-${idx + 1}` }));
   }, [employeesData?.items, shiftFilter]);
 
   // Calculate total monthly salary of active employees in the list
@@ -169,6 +177,31 @@ export function EmployeesPage(): JSX.Element {
     setStatusFilter('ALL');
     setShiftFilter('ALL');
   };
+
+  // Form validity check for Register New Employee modal
+  const isFullNameValid = form.fullName.trim().length >= 2;
+  const isPhoneValid = form.phone.replace(/\D/g, '').length === 10;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
+  const isDobValid = Boolean(form.dateOfBirth && form.dateOfBirth.trim().length > 0);
+  const isJoiningDateValid = Boolean(form.joiningDate && form.joiningDate.trim().length > 0);
+  const isShiftValid = Boolean(form.shiftId && form.shiftId.trim().length > 0);
+  const isSalaryValid = Boolean(form.baseSalary && Number(form.baseSalary) > 0);
+  const isIntervalValid = Boolean(form.incrementInterval && Number(form.incrementInterval) >= 1);
+  const isUsernameValid = form.username.trim().length >= 3;
+  const isPasswordValid = form.temporaryPassword.length >= 6;
+
+  const isFormValid = Boolean(
+    isFullNameValid &&
+    isPhoneValid &&
+    isEmailValid &&
+    isDobValid &&
+    isJoiningDateValid &&
+    isShiftValid &&
+    isSalaryValid &&
+    isIntervalValid &&
+    isUsernameValid &&
+    isPasswordValid
+  );
 
   return (
     <div className="space-y-6">
@@ -219,7 +252,7 @@ export function EmployeesPage(): JSX.Element {
           >
             <option value="ALL">All Shifts</option>
             {shifts.map(s => (
-              <option key={s.id} value={s.id}>{s.name} ({s.startTime} - {s.endTime})</option>
+              <option key={s.id} value={s.id}>{s.name} ({to12h(s.startTime)} – {to12h(s.endTime)})</option>
             ))}
           </Select>
 
@@ -274,9 +307,9 @@ export function EmployeesPage(): JSX.Element {
                       className="hover:bg-muted/40 transition-colors group cursor-pointer"
                       onClick={() => navigate(`/admin/employees/${emp.id}`)}
                     >
-                      {/* ID / Code */}
+                      {/* ID / Code — sequential BMA-N based on alphabetical order */}
                       <td className="py-3.5 px-4 font-mono text-xs font-semibold text-muted-foreground">
-                        {emp.employeeCode}
+                        {(emp as any)._displayId}
                       </td>
 
                       {/* Full Name */}
@@ -408,9 +441,6 @@ export function EmployeesPage(): JSX.Element {
               <DialogTitle className="text-xl font-bold text-foreground flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-primary" /> Register New Employee
               </DialogTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Fill in the employee's personal details, salary structure, and system login account.
-              </p>
             </div>
           </div>
 
@@ -442,8 +472,11 @@ export function EmployeesPage(): JSX.Element {
                       <Label htmlFor="phone" className="text-xs font-semibold">Mobile Number <span className="text-destructive">*</span></Label>
                       <Input
                         id="phone"
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
                         value={form.phone}
-                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                        onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
                         placeholder="9876543210"
                         required
                         className="h-9"
@@ -453,8 +486,11 @@ export function EmployeesPage(): JSX.Element {
                       <Label htmlFor="alternatePhone" className="text-xs font-semibold">Alternate Phone</Label>
                       <Input
                         id="alternatePhone"
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={15}
                         value={form.alternatePhone}
-                        onChange={(e) => setForm({ ...form, alternatePhone: e.target.value })}
+                        onChange={(e) => setForm({ ...form, alternatePhone: e.target.value.replace(/\D/g, '').slice(0, 15) })}
                         placeholder="Optional"
                         className="h-9"
                       />
@@ -532,7 +568,7 @@ export function EmployeesPage(): JSX.Element {
                       >
                         <option value="">— Select Shift —</option>
                         {shifts.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.startTime} - {s.endTime})</option>
+                          <option key={s.id} value={s.id}>{s.name} ({to12h(s.startTime)} – {to12h(s.endTime)})</option>
                         ))}
                       </Select>
                     </div>
@@ -662,9 +698,11 @@ export function EmployeesPage(): JSX.Element {
               </Button>
               <Button
                 size="sm"
-                className="px-6 font-medium shadow-md shadow-primary/25 hover:shadow-primary/40 transition-all"
-                onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending || !form.fullName || !form.phone || !form.email || !form.username || !form.temporaryPassword || !form.baseSalary || !form.shiftId}
+                className="px-6 font-medium shadow-md shadow-primary/25 hover:shadow-primary/40 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                onClick={() => {
+                  if (isFormValid) createMutation.mutate();
+                }}
+                disabled={!isFormValid || createMutation.isPending}
               >
                 {createMutation.isPending ? 'Creating...' : 'Register Employee'}
               </Button>

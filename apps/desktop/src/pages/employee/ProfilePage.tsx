@@ -7,6 +7,7 @@ import {
   Mail, Calendar, Clock, IndianRupee, Phone
 } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
+import { to12h } from '@/lib/utils';
 
 export function ProfilePage(): JSX.Element {
   const { data: employee, isLoading } = useQuery({ 
@@ -140,7 +141,7 @@ export function ProfilePage(): JSX.Element {
             </div>
             <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Shift Timings</span>
-              <span className="font-semibold text-foreground">{shiftInfo.shiftStart} – {shiftInfo.shiftEnd}</span>
+              <span className="font-semibold text-foreground">{to12h(shiftInfo.shiftStart)} – {to12h(shiftInfo.shiftEnd)}</span>
             </div>
             <div className="flex justify-between items-center py-2.5">
               <span className="text-muted-foreground font-medium">Required Working Hours</span>

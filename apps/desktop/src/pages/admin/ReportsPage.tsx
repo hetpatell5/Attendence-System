@@ -20,7 +20,7 @@ import {
   Wallet,
   Award,
 } from 'lucide-react';
-import { cn, compareEmployeesByName } from '@/lib/utils';
+import { cn, compareEmployeesByName, to12h } from '@/lib/utils';
 
 const AVATAR_PALETTES = [
   'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200/80 dark:border-blue-800/60',
@@ -587,7 +587,7 @@ export function ReportsPage(): JSX.Element {
                             {/* Shift */}
                             <td className="py-3 px-4">
                               <div className="text-xs font-medium text-foreground/80">
-                                {rec.shiftStart} - {rec.shiftEnd}
+                                {to12h(rec.shiftStart)} – {to12h(rec.shiftEnd)}
                               </div>
                               <div className="text-[10px] text-muted-foreground mt-0.5">
                                 {rec.shiftName}
@@ -752,7 +752,7 @@ export function ReportsPage(): JSX.Element {
                     </span>
                   </div>
                   <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
-                    ₹{perfData.summary.totalYearlySalary.toLocaleString('en-IN')}
+                    ₹{Math.round(perfData.summary.totalYearlySalary).toLocaleString('en-IN')}
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
                     Contract Base: ₹{perfData.employee.baseSalary.toLocaleString('en-IN')}
@@ -1062,7 +1062,7 @@ export function ReportsPage(): JSX.Element {
                           <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">Paid Salary:</span>
                             <span className="font-bold text-indigo-500">
-                              ₹{(perfData.monthlySalary[hoveredSalMonth]?.netSalary || 0).toLocaleString('en-IN')}
+                              ₹{Math.round(perfData.monthlySalary[hoveredSalMonth]?.netSalary || 0).toLocaleString('en-IN')}
                             </span>
                           </div>
                           <div className="flex justify-between gap-2 text-[10px] text-muted-foreground">
@@ -1337,8 +1337,13 @@ export function ReportsPage(): JSX.Element {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/30">
-                        {perfData.monthlyAttendance.map((att, idx) => {
-                          const sal = perfData.monthlySalary[idx];
+                        {perfData.monthlyAttendance
+                          .filter((att) => !att.isFutureMonth)
+                          .map((att) => {
+                          // Index by month number, not array position — monthlySalary is
+                          // still the full unfiltered 12-month array, so a filtered index
+                          // here would point at the wrong month's salary.
+                          const sal = perfData.monthlySalary[att.month - 1];
                           return (
                             <tr key={att.month} className="hover:bg-muted/20 transition-colors">
                               <td className="py-2.5 px-4 font-semibold text-foreground">
@@ -1355,7 +1360,7 @@ export function ReportsPage(): JSX.Element {
                               </td>
                               <td className="py-2.5 px-4 text-right font-mono font-bold text-foreground">
                                 {sal && sal.netSalary > 0
-                                  ? `₹${sal.netSalary.toLocaleString('en-IN')}`
+                                  ? `₹${Math.round(sal.netSalary).toLocaleString('en-IN')}`
                                   : '—'}
                               </td>
                               <td className="py-2.5 px-4 text-center">

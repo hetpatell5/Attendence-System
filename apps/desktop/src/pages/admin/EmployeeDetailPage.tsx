@@ -38,7 +38,7 @@ export function EmployeeDetailPage(): JSX.Element {
   const { data: shifts = [] } = useQuery({ queryKey: ['shifts'], queryFn: shiftsApi.list });
 
   useEffect(() => {
-    if (employee && !isEditing) {
+    if (employee) {
       const userAccount = (employee as any).user;
       const currentUsername = userAccount?.username || userAccount?.email || '';
       setEditForm({
@@ -62,7 +62,7 @@ export function EmployeeDetailPage(): JSX.Element {
       });
       setUsernameForm(currentUsername);
     }
-  }, [employee?.id, isEditing]);
+  }, [employee?.id]);
 
   const { data: attendance = [], isLoading: isAttendanceLoading } = useQuery({
     queryKey: ['attendance', 'employee', id],
@@ -269,7 +269,13 @@ export function EmployeeDetailPage(): JSX.Element {
                   <div className="space-y-2">
                     <Label>Mobile Number</Label>
                     {isEditing ? (
-                      <Input value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} />
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        value={editForm.phone}
+                        onChange={e => setEditForm({...editForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10)})}
+                      />
                     ) : (
                       <div className="p-2 bg-muted/30 rounded-md border text-sm">{employee.phone || '—'}</div>
                     )}
@@ -277,7 +283,13 @@ export function EmployeeDetailPage(): JSX.Element {
                   <div className="space-y-2">
                     <Label>Alternate Number</Label>
                     {isEditing ? (
-                      <Input value={editForm.alternatePhone} onChange={e => setEditForm({...editForm, alternatePhone: e.target.value})} />
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={15}
+                        value={editForm.alternatePhone}
+                        onChange={e => setEditForm({...editForm, alternatePhone: e.target.value.replace(/\D/g, '').slice(0, 15)})}
+                      />
                     ) : (
                       <div className="p-2 bg-muted/30 rounded-md border text-sm">{employee.alternatePhone || '—'}</div>
                     )}

@@ -468,14 +468,9 @@ export function SalaryAnalyticsCharts({
                 >
                   <defs>
                     <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.36" />
-                      <stop offset="60%" stopColor="#06b6d4" stopOpacity="0.12" />
-                      <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.16" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
                     </linearGradient>
-
-                    <filter id="glowNet" x="-20%" y="-20%" width="140%" height="140%">
-                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#10b981" floodOpacity="0.35" />
-                    </filter>
                   </defs>
 
                   {/* Horizontal Grid lines */}
@@ -522,73 +517,53 @@ export function SalaryAnalyticsCharts({
                         (currentMetrics.monthlySalary / maxNetPay) * innerHeight
                       }
                       stroke="currentColor"
-                      className="text-primary/30"
-                      strokeDasharray="4 4"
-                      strokeWidth="1.2"
+                      className="text-muted-foreground/40"
+                      strokeDasharray="3 3"
+                      strokeWidth="1"
                     />
                   )}
 
                   {/* Area Fill */}
-                  {areaPath && (
-                    <path
-                      d={areaPath}
-                      fill="url(#netGrad)"
-                      className="transition-all duration-300"
-                    />
-                  )}
+                  {areaPath && <path d={areaPath} fill="url(#netGrad)" />}
 
-                  {/* Smooth Bézier Line with Glow Filter */}
+                  {/* Line */}
                   {linePath && (
                     <path
                       d={linePath}
                       fill="none"
                       stroke="#10b981"
-                      strokeWidth="2.8"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      filter="url(#glowNet)"
                     />
                   )}
 
-                  {/* Interactive Vertical Cursor line */}
+                  {/* Hover crosshair */}
                   {hoveredPointIndex !== null && points[hoveredPointIndex] && (
                     <line
                       x1={points[hoveredPointIndex].x}
                       y1={padding.top}
                       x2={points[hoveredPointIndex].x}
                       y2={padding.top + innerHeight}
-                      stroke="#10b981"
-                      strokeWidth="1.2"
-                      strokeDasharray="2 2"
-                      opacity="0.6"
+                      stroke="currentColor"
+                      className="text-border"
+                      strokeWidth="1"
                     />
                   )}
 
-                  {/* Points & Interactive Nodes */}
+                  {/* Points */}
                   {points.map((p, idx) => {
                     const isHovered = hoveredPointIndex === idx;
 
                     return (
                       <g key={p.data.key} className="cursor-pointer">
-                        {isHovered && (
-                          <circle
-                            cx={p.x}
-                            cy={p.y}
-                            r="11"
-                            fill="#10b981"
-                            opacity="0.25"
-                            className="animate-ping"
-                          />
-                        )}
-
                         <circle
                           cx={p.x}
                           cy={p.y}
-                          r={isHovered ? 6 : 4}
+                          r={isHovered ? 5 : 3}
                           fill="#10b981"
                           stroke="white"
-                          strokeWidth="2.2"
-                          className="transition-all duration-150"
+                          strokeWidth="1.5"
                           onMouseEnter={() => setHoveredPointIndex(idx)}
                           onMouseLeave={() => setHoveredPointIndex(null)}
                         />
@@ -612,7 +587,7 @@ export function SalaryAnalyticsCharts({
                 {/* Floating Interactive Tooltip */}
                 {hoveredPointIndex !== null && points[hoveredPointIndex] && (
                   <div
-                    className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 min-w-[170px] max-w-[240px]"
+                    className="absolute z-20 pointer-events-none p-2.5 rounded-lg bg-popover text-popover-foreground shadow-md border border-border text-xs space-y-1 min-w-[160px] max-w-[220px]"
                     style={getSmartTooltipStyle(
                       points[hoveredPointIndex].x,
                       points[hoveredPointIndex].y,
@@ -620,21 +595,21 @@ export function SalaryAnalyticsCharts({
                       chartHeight
                     )}
                   >
-                    <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/50">
-                      <span className="font-bold">{points[hoveredPointIndex].data.fullLabel}</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                    <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/60">
+                      <span className="font-semibold">{points[hoveredPointIndex].data.fullLabel}</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-medium text-muted-foreground">
                         {points[hoveredPointIndex].data.status}
                       </span>
                     </div>
                     <div className="flex justify-between items-baseline gap-3">
-                      <span className="text-muted-foreground text-[11px]">Net Payout:</span>
-                      <span className="font-extrabold text-foreground text-sm">
+                      <span className="text-muted-foreground text-[11px]">Net Payout</span>
+                      <span className="font-bold text-foreground text-sm">
                         ₹{points[hoveredPointIndex].data.netPay.toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground">
-                      <span>Working Days:</span>
-                      <span className="font-semibold text-foreground">
+                      <span>Working Days</span>
+                      <span className="font-medium text-foreground">
                         {points[hoveredPointIndex].data.presentDays} Days
                       </span>
                     </div>
@@ -697,14 +672,9 @@ export function SalaryAnalyticsCharts({
               >
                 <defs>
                   <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.38" />
-                    <stop offset="60%" stopColor="#6366f1" stopOpacity="0.14" />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.16" />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
                   </linearGradient>
-
-                  <filter id="glowInc" x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#8b5cf6" floodOpacity="0.35" />
-                  </filter>
                 </defs>
 
                 {/* Horizontal Grid lines */}
@@ -736,116 +706,48 @@ export function SalaryAnalyticsCharts({
                 })}
 
                 {/* Stepped Area Fill */}
-                {incAreaPath && (
-                  <path
-                    d={incAreaPath}
-                    fill="url(#incGrad)"
-                    className="transition-all duration-300"
-                  />
-                )}
+                {incAreaPath && <path d={incAreaPath} fill="url(#incGrad)" />}
 
-                {/* Stepped Progression Line with Glow */}
+                {/* Stepped Progression Line */}
                 {incStepPath && (
                   <path
                     d={incStepPath}
                     fill="none"
-                    stroke="#8b5cf6"
-                    strokeWidth="2.8"
+                    stroke="#6366f1"
+                    strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    filter="url(#glowInc)"
                   />
                 )}
 
-                {/* Interactive Vertical Cursor line */}
+                {/* Hover crosshair */}
                 {hoveredIncIndex !== null && incPoints[hoveredIncIndex] && (
                   <line
                     x1={incPoints[hoveredIncIndex].x}
                     y1={padding.top}
                     x2={incPoints[hoveredIncIndex].x}
                     y2={padding.top + innerHeight}
-                    stroke="#8b5cf6"
-                    strokeWidth="1.2"
-                    strokeDasharray="2 2"
-                    opacity="0.6"
+                    stroke="currentColor"
+                    className="text-border"
+                    strokeWidth="1"
                   />
                 )}
 
-                {/* Milestone Points & Callouts */}
+                {/* Points — revision months get a solid, slightly larger marker;
+                    unchanged months a smaller, lighter one. No floating badges on
+                    the plot itself — the detail lives in the tooltip on hover. */}
                 {incPoints.map((p, idx) => {
                   const isHovered = hoveredIncIndex === idx;
-                  const isMajorJump = p.data.incrementFromPrev >= 1000;
-                  const isSmallJump = p.data.incrementFromPrev > 0 && p.data.incrementFromPrev < 1000;
 
                   return (
                     <g key={p.data.key} className="cursor-pointer">
-                      {/* Milestone Jump Callout Badge above major increments */}
-                      {isMajorJump && (
-                        <g transform={`translate(${p.x}, ${p.y - 14})`}>
-                          <rect
-                            x="-24"
-                            y="-11"
-                            width="48"
-                            height="15"
-                            rx="5"
-                            fill="#8b5cf6"
-                            className="shadow-sm"
-                          />
-                          <text
-                            x="0"
-                            y="0"
-                            textAnchor="middle"
-                            className="text-[9px] font-extrabold fill-white"
-                          >
-                            +₹{(p.data.incrementFromPrev / 1000).toFixed(0)}k 🔥
-                          </text>
-                        </g>
-                      )}
-
-                      {/* Small Jump badge */}
-                      {isSmallJump && (
-                        <g transform={`translate(${p.x}, ${p.y - 12})`}>
-                          <rect
-                            x="-18"
-                            y="-9"
-                            width="36"
-                            height="13"
-                            rx="4"
-                            fill="#6366f1"
-                            opacity="0.9"
-                          />
-                          <text
-                            x="0"
-                            y="1"
-                            textAnchor="middle"
-                            className="text-[8px] font-bold fill-white"
-                          >
-                            +₹{p.data.incrementFromPrev}
-                          </text>
-                        </g>
-                      )}
-
-                      {/* Outer pulse circle when hovered */}
-                      {isHovered && (
-                        <circle
-                          cx={p.x}
-                          cy={p.y}
-                          r="11"
-                          fill="#8b5cf6"
-                          opacity="0.25"
-                          className="animate-ping"
-                        />
-                      )}
-
-                      {/* Center Node */}
                       <circle
                         cx={p.x}
                         cy={p.y}
-                        r={isHovered ? 6 : (p.data.isRevisionMonth ? 4.5 : 3.5)}
-                        fill={p.data.isRevisionMonth ? '#8b5cf6' : '#a78bfa'}
+                        r={isHovered ? 5 : (p.data.isRevisionMonth ? 4 : 3)}
+                        fill={p.data.isRevisionMonth ? '#6366f1' : '#a5b4fc'}
                         stroke="white"
-                        strokeWidth={p.data.isRevisionMonth ? '2.2' : '1.8'}
-                        className="transition-all duration-150"
+                        strokeWidth="1.5"
                         onMouseEnter={() => setHoveredIncIndex(idx)}
                         onMouseLeave={() => setHoveredIncIndex(null)}
                       />
@@ -866,10 +768,10 @@ export function SalaryAnalyticsCharts({
                 })}
               </svg>
 
-              {/* Floating Tooltip for Increment Ladder */}
+              {/* Tooltip */}
               {hoveredIncIndex !== null && incPoints[hoveredIncIndex] && (
                 <div
-                  className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-popover/95 text-popover-foreground shadow-2xl border border-border/80 backdrop-blur-md text-xs space-y-1.5 transition-all duration-150 min-w-[185px] max-w-[260px]"
+                  className="absolute z-20 pointer-events-none p-2.5 rounded-lg bg-popover text-popover-foreground shadow-md border border-border text-xs space-y-1 min-w-[175px] max-w-[240px]"
                   style={getSmartTooltipStyle(
                     incPoints[hoveredIncIndex].x,
                     incPoints[hoveredIncIndex].y,
@@ -877,36 +779,36 @@ export function SalaryAnalyticsCharts({
                     chartHeight
                   )}
                 >
-                  <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/50">
-                    <span className="font-bold">{incPoints[hoveredIncIndex].data.fullLabel}</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+                  <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/60">
+                    <span className="font-semibold">{incPoints[hoveredIncIndex].data.fullLabel}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded font-medium text-muted-foreground">
                       {incPoints[hoveredIncIndex].data.growthPctFromStart > 0
-                        ? `+${incPoints[hoveredIncIndex].data.growthPctFromStart}% Growth`
-                        : 'Starting Base'}
+                        ? `+${incPoints[hoveredIncIndex].data.growthPctFromStart}%`
+                        : 'Starting base'}
                     </span>
                   </div>
                   <div className="flex justify-between items-baseline gap-3">
-                    <span className="text-muted-foreground text-[11px]">Base Salary:</span>
-                    <span className="font-extrabold text-foreground text-sm">
+                    <span className="text-muted-foreground text-[11px]">Base Salary</span>
+                    <span className="font-bold text-foreground text-sm">
                       ₹{incPoints[hoveredIncIndex].data.salary.toLocaleString('en-IN')}
                     </span>
                   </div>
                   {incPoints[hoveredIncIndex].data.incrementFromPrev !== 0 ? (
                     <div className="flex justify-between items-center gap-3 text-[11px]">
-                      <span className="text-muted-foreground">Revision:</span>
-                      <span className={`font-bold ${incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                      <span className="text-muted-foreground">Revision</span>
+                      <span className={`font-medium ${incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
                         {incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? '+' : '-'}₹{Math.abs(incPoints[hoveredIncIndex].data.incrementFromPrev).toLocaleString('en-IN')}
                       </span>
                     </div>
                   ) : (
                     <div className="flex justify-between items-center gap-3 text-[11px]">
-                      <span className="text-muted-foreground">Status:</span>
-                      <span className="text-muted-foreground font-medium">Maintained Rate</span>
+                      <span className="text-muted-foreground">Status</span>
+                      <span className="text-muted-foreground font-medium">Unchanged</span>
                     </div>
                   )}
-                  <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground pt-0.5 border-t border-border/30">
-                    <span>Gain from Joining:</span>
-                    <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                  <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                    <span>Since joining</span>
+                    <span className="font-medium text-indigo-600 dark:text-indigo-400">
                       +₹{incPoints[hoveredIncIndex].data.incrementFromStart.toLocaleString('en-IN')}
                     </span>
                   </div>

@@ -1080,12 +1080,19 @@ export class SalaryService {
         : before.advanceDeducted;
     const remarks =
       dto.remarks !== undefined ? dto.remarks : before.remarks;
+    // Only used by the HOURLY branch below, but resolved the same way as every other
+    // field here: an explicit dto value wins, otherwise fall back to what's already
+    // stored — never silently ignored the way it was before (see comment on the DTO).
+    const workedHours =
+      dto.workedHours !== undefined ? fromMoney(dto.workedHours) : (before.workedHours ?? new Prisma.Decimal(0));
+    const hourRate =
+      dto.hourRate !== undefined ? fromMoney(dto.hourRate) : (before.hourRate ?? new Prisma.Decimal(0));
 
     const netSalary =
       before.payType === 'HOURLY'
         ? this.calculationService.calculateHourly({
-            workedHours: before.workedHours ?? new Prisma.Decimal(0),
-            hourRate: before.hourRate ?? new Prisma.Decimal(0),
+            workedHours,
+            hourRate,
             commissionAmount,
             bonusAmount,
             totalAllowances,
@@ -1102,7 +1109,17 @@ export class SalaryService {
 
     const updated = await this.prisma.salaryRecord.update({
       where: { id },
-      data: { basicSalary, totalAllowances, totalDeductions, bonusAmount, commissionAmount, advanceDeducted, remarks, netSalary },
+      data: {
+        basicSalary,
+        totalAllowances,
+        totalDeductions,
+        bonusAmount,
+        commissionAmount,
+        advanceDeducted,
+        remarks,
+        netSalary,
+        ...(before.payType === 'HOURLY' ? { workedHours, hourRate } : {}),
+      },
     });
 
     await this.auditService.logChange({

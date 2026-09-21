@@ -350,6 +350,7 @@ export function MyAttendancePage(): JSX.Element {
 
     return {
       monthlySalary,
+      shiftHours,
       perDaySalary: Number(perDaySalaryExact.toFixed(2)),
       hourRate: Number(hourRateExact.toFixed(2)),
       presentRegularDays,
@@ -360,6 +361,37 @@ export function MyAttendancePage(): JSX.Element {
       totalWorkedHours: Number((totalWorkedSecs / 3600).toFixed(1)),
     };
   }, [employee, rows, totalDays, year, mon, holidaysList]);
+
+  /**
+   * Worked minutes for a row, computed the same way regardless of data shape: prefer
+   * summing actual punch pairs (handles multi-session days correctly), fall back to a
+   * plain punchInAt/punchOutAt diff, and only use the stored `workedMinutes` field as a
+   * last resort — some imported rows have punch timestamps but a stale/zero stored value,
+   * which is what was causing "--" to show for days that clearly have both a punch in and
+   * a punch out.
+   */
+  const computeWorkedMinutes = (r: Attendance): number => {
+    const anyR = r as any;
+    if (Array.isArray(anyR.punchPairs) && anyR.punchPairs.length > 0) {
+      const pairSecs = (anyR.punchPairs as any[]).reduce((sum, p) => {
+        if (p?.punchInAt && p?.punchOutAt) {
+          const diff = (new Date(p.punchOutAt).getTime() - new Date(p.punchInAt).getTime()) / 1000;
+          return sum + (diff > 0 ? diff : 0);
+        }
+        return sum;
+      }, 0);
+      if (pairSecs > 0) return Math.round(pairSecs / 60);
+    }
+    if (r.punchInAt && r.punchOutAt) {
+      const diffMs = new Date(r.punchOutAt).getTime() - new Date(r.punchInAt).getTime();
+      if (diffMs > 0) return Math.round(diffMs / 60000);
+    }
+    return anyR.workedMinutes || 0;
+  };
+
+  // Shift length in minutes, from the same shift-hours computation used for salary rate
+  // metrics above — the single source of truth for "how long is a full shift" on this page.
+  const shiftMinutes = Math.round(rateMetrics.shiftHours * 60);
 
   const columns: DataTableColumn<Attendance>[] = [
     { 
@@ -436,33 +468,67 @@ export function MyAttendancePage(): JSX.Element {
         );
       },
     },
-    { 
-      key: 'workedMinutes', 
+    {
+      key: 'workedMinutes',
       header: 'Working Time',
       render: (r) => {
-        let mins = r.workedMinutes || 0;
-        if (Array.isArray(r.punchPairs) && r.punchPairs.length > 0) {
-          const pairSecs = (r.punchPairs as any[]).reduce((sum, p) => {
-            if (p?.punchInAt && p?.punchOutAt) {
-              const diff = (new Date(p.punchOutAt).getTime() - new Date(p.punchInAt).getTime()) / 1000;
-              return sum + (diff > 0 ? diff : 0);
-            }
-            return sum;
-          }, 0);
-          if (pairSecs > 0) {
-            mins = Math.round(pairSecs / 60);
-          }
-        }
+        const mins = computeWorkedMinutes(r);
         if (!mins) return <span className="text-muted-foreground">--</span>;
         return <span className="font-semibold text-foreground">{formatDuration(mins)}</span>;
       }
     },
-    { 
-      key: 'overtimeMinutes', 
-      header: 'Overtime',
-      render: (r) => r.overtimeMinutes > 0 ? (
-        <span className="text-emerald-600 font-medium">+{r.overtimeMinutes}m</span>
-      ) : <span className="text-muted-foreground">--</span>
+    {
+      key: 'overtimeMinutes',
+      header: 'Overtime / Late',
+      // Overtime is whatever worked time exceeds a full shift. On a Sunday or holiday
+      // any time worked counts fully as overtime. If working hours are less than shift hours
+      // on a regular working day, display the late / deficit time.
+      render: (r) => {
+        const mins = computeWorkedMinutes(r);
+        const dateStr = typeof r.attendanceDate === 'string'
+          ? r.attendanceDate.slice(0, 10)
+          : new Date(r.attendanceDate).toLocaleDateString('en-CA');
+        const isSunday = new Date(r.attendanceDate).getDay() === 0;
+        const isHoliday = holidaysByDate.has(dateStr);
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        const isToday = dateStr === todayStr;
+
+        // On a Sunday or holiday there is no mandatory shift, so any time worked counts as overtime
+        if (isSunday || isHoliday) {
+          if (mins > 0) {
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+            return <span className="text-emerald-600 dark:text-emerald-500 font-medium">+{label}</span>;
+          }
+          return <span className="text-muted-foreground">--</span>;
+        }
+
+        // Regular working day: more than shift hours -> overtime
+        if (shiftMinutes > 0 && mins > shiftMinutes) {
+          const overtime = mins - shiftMinutes;
+          const h = Math.floor(overtime / 60);
+          const m = overtime % 60;
+          const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          return <span className="text-emerald-600 dark:text-emerald-500 font-medium">+{label}</span>;
+        }
+
+        // If today and employee is actively clocked in, shift is still ongoing
+        if (isToday && r.punchInAt && !r.punchOutAt) {
+          return <span className="text-muted-foreground">--</span>;
+        }
+
+        // Regular working day: less than shift hours -> late
+        if (shiftMinutes > 0 && mins > 0 && mins < shiftMinutes && r.status !== 'LEAVE') {
+          const deficit = shiftMinutes - mins;
+          const dh = Math.floor(deficit / 60);
+          const dm = deficit % 60;
+          const dLabel = dh > 0 ? `${dh}h ${dm}m` : `${dm}m`;
+          return <span className="text-amber-600 dark:text-amber-500 font-medium">Late {dLabel}</span>;
+        }
+
+        return <span className="text-muted-foreground">--</span>;
+      }
     },
     { 
       key: 'status', 
@@ -579,13 +645,17 @@ export function MyAttendancePage(): JSX.Element {
               <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">Holiday</span>
             </div>
 
-            <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
-
-            {/* Est. Earnings */}
-            <div className="inline-flex items-center gap-1 text-foreground font-bold" title="Estimated Earnings">
-              <IndianRupee size={12} className="text-emerald-600 dark:text-emerald-400" />
-              <span>{rateMetrics.monthEstimatedSalary.toLocaleString()}</span>
-            </div>
+            {/* Est. Earnings — only for a completed past month. The current month is still
+                in progress, so an estimate here reads as a real figure but isn't one. */}
+            {month < new Date().toISOString().slice(0, 7) && (
+              <>
+                <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
+                <div className="inline-flex items-center gap-1 text-foreground font-bold" title="Estimated Earnings">
+                  <IndianRupee size={12} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>{rateMetrics.monthEstimatedSalary.toLocaleString()}</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Sleek Month Navigator (Calendar Filter) */}
@@ -701,6 +771,7 @@ export function MyAttendancePage(): JSX.Element {
                 const req = requestsByDate.get(dateStr);
                 const isToday = dateStr === todayStr;
                 const isPast = dateStr < todayStr;
+                const isFuture = dateStr > todayStr;
 
                 // Extract punch pairs
                 const hasPunchIn = Boolean(row?.punchInAt);
@@ -859,11 +930,13 @@ export function MyAttendancePage(): JSX.Element {
                 return (
                   <div
                     key={dateStr}
-                    onClick={() => handleOpenEditModal(row, dateStr, req)}
-                    className={`min-h-[110px] sm:min-h-[120px] rounded-2xl border p-2.5 sm:p-3 flex flex-col justify-between transition-all cursor-pointer relative group select-none hover:shadow-md hover:scale-[1.01] ${cardBorderClass} ${
+                    onClick={isFuture ? undefined : () => handleOpenEditModal(row, dateStr, req)}
+                    className={`min-h-[110px] sm:min-h-[120px] rounded-2xl border p-2.5 sm:p-3 flex flex-col justify-between transition-all relative group select-none ${
+                      isFuture ? 'cursor-default opacity-50' : 'cursor-pointer hover:shadow-md hover:scale-[1.01]'
+                    } ${cardBorderClass} ${
                       isToday ? 'ring-2 ring-primary/40' : ''
                     }`}
-                    title="Click date to add, edit or delete punches"
+                    title={isFuture ? undefined : 'Click date to add, edit or delete punches'}
                   >
                     {/* Header: Date number & status badge */}
                     <div className="flex items-start justify-between gap-1">

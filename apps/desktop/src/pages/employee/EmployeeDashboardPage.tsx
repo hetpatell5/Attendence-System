@@ -570,26 +570,29 @@ export function EmployeeDashboardPage(): JSX.Element {
     ];
 
     // Next milestone progress
-    const THRESHOLDS = [1, 5, 10, 15, 21, 26];
+    const THRESHOLDS = [1, 5, 10, 15, 21, 26] as const;
     const nextThreshIdx = THRESHOLDS.findIndex(t => currentStreak < t);
     const nextMilestone = nextThreshIdx >= 0 ? (() => {
-      const nextT = THRESHOLDS[nextThreshIdx];
-      const prevT = nextThreshIdx === 0 ? 0 : THRESHOLDS[nextThreshIdx - 1];
+      const nextT = THRESHOLDS[nextThreshIdx] ?? 26;
+      const prevT = nextThreshIdx === 0 ? 0 : (THRESHOLDS[nextThreshIdx - 1] ?? 0);
       const progress = prevT === nextT ? 100 : Math.round(((currentStreak - prevT) / (nextT - prevT)) * 100);
+      const targetTier = TIER_INFO[Math.min(nextThreshIdx + 1, 6)] ?? TIER_INFO[6]!;
       return {
         daysLeft: nextT - currentStreak,
-        nextEmoji: TIER_INFO[Math.min(nextThreshIdx + 1, 6)].emoji,
-        nextLabel: TIER_INFO[Math.min(nextThreshIdx + 1, 6)].label,
+        nextEmoji: targetTier.emoji,
+        nextLabel: targetTier.label,
         progress: Math.max(0, Math.min(100, progress)),
       };
     })() : null;
+
+    const currentTier = TIER_INFO[tier] ?? TIER_INFO[0]!;
 
     return {
       currentStreak,
       bestStreak,
       tier,
-      emoji: TIER_INFO[tier].emoji,
-      label: TIER_INFO[tier].label,
+      emoji: currentTier.emoji,
+      label: currentTier.label,
       nextMilestone,
       isActive: currentStreak > 0,
     };

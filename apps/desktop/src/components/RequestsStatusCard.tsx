@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { leaveApi, attendanceRequestsApi, type AttendanceRequestItem } from '@/lib/api';
-import { Card } from '@/components/ui/card';
 import {
   FileText,
   CalendarDays,
@@ -162,7 +161,7 @@ export function RequestsStatusCard(): JSX.Element {
   const isLoading = isLoadingLeaves || isLoadingPunches;
 
   return (
-    <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 flex flex-col justify-between h-full min-h-[420px]">
+    <div className="clay-card p-5 sm:p-6 flex flex-col justify-between h-full min-h-[420px]">
       <div>
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
@@ -384,6 +383,6 @@ export function RequestsStatusCard(): JSX.Element {
           </Link>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

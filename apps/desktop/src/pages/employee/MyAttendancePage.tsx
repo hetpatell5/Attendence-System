@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendanceApi, employeesApi, holidaysApi, attendanceRequestsApi, type AttendanceRequestItem } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -591,79 +590,82 @@ export function MyAttendancePage(): JSX.Element {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="relative space-y-6 max-w-7xl mx-auto pb-10">
+      {/* Ambient background glow accents for rich claymorphism depth */}
+      <div className="absolute -top-12 -right-12 -z-10 w-96 h-96 bg-emerald-100/35 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-48 -left-12 -z-10 w-96 h-96 bg-sky-100/35 rounded-full blur-3xl pointer-events-none" />
+
       {/* Header with Navigation and All-in-One Compact Summary Capsule */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-border/50">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-200/70">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">My Attendance</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Review your attendance logs, punch times, and daily earnings.</p>
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">My Attendance</h2>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">Review your attendance logs, punch times, and daily earnings.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* All-in-One Compact Summary Capsule */}
-          <div className="inline-flex items-center flex-wrap sm:flex-nowrap gap-2 sm:gap-2.5 px-3 py-1.5 rounded-xl border border-border/70 bg-card shadow-xs text-xs font-medium">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* All-in-One Compact Summary Capsule (Clay Pod) */}
+          <div className="clay-pod px-4 py-2 flex items-center flex-wrap sm:flex-nowrap gap-3 sm:gap-3.5 text-xs font-semibold">
             {/* Present */}
-            <div className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold" title="Present Days">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+            <div className="inline-flex items-center gap-1.5 text-emerald-700 font-bold" title="Present Days">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)] shrink-0" />
               <span>{summary?.present ?? 0}</span>
-              <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">Present</span>
+              <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Present</span>
             </div>
 
-            <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
 
             {/* Absent */}
-            <div className="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-semibold" title="Absent Days">
-              <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+            <div className="inline-flex items-center gap-1.5 text-rose-700 font-bold" title="Absent Days">
+              <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.5)] shrink-0" />
               <span>{summary?.absent ?? 0}</span>
-              <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">Absent</span>
+              <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Absent</span>
             </div>
 
-            <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
 
             {/* Half Day */}
-            <div className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold" title="Half Days">
-              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+            <div className="inline-flex items-center gap-1.5 text-amber-700 font-bold" title="Half Days">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)] shrink-0" />
               <span>{summary?.halfDay ?? 0}</span>
-              <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">Half Day</span>
+              <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Half Day</span>
             </div>
 
-            <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
 
             {/* Leave */}
-            <div className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-semibold" title="Leave Days">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+            <div className="inline-flex items-center gap-1.5 text-blue-700 font-bold" title="Leave Days">
+              <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)] shrink-0" />
               <span>{summary?.leave ?? 0}</span>
-              <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">Leave</span>
+              <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Leave</span>
             </div>
 
-            <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
 
             {/* Holiday */}
-            <div className="inline-flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-semibold" title="Holidays">
-              <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
+            <div className="inline-flex items-center gap-1.5 text-purple-700 font-bold" title="Holidays">
+              <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.5)] shrink-0" />
               <span>{summary?.holiday ?? 0}</span>
-              <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">Holiday</span>
+              <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Holiday</span>
             </div>
 
-            {/* Est. Earnings — only for a completed past month. The current month is still
-                in progress, so an estimate here reads as a real figure but isn't one. */}
+            {/* Est. Earnings */}
             {month < new Date().toISOString().slice(0, 7) && (
               <>
-                <div className="hidden sm:block w-[1px] h-3.5 bg-border/60" />
-                <div className="inline-flex items-center gap-1 text-foreground font-bold" title="Estimated Earnings">
-                  <IndianRupee size={12} className="text-emerald-600 dark:text-emerald-400" />
+                <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
+                <div className="inline-flex items-center gap-1 text-slate-900 font-black" title="Estimated Earnings">
+                  <IndianRupee size={12} className="text-emerald-600" />
                   <span>{rateMetrics.monthEstimatedSalary.toLocaleString()}</span>
                 </div>
               </>
             )}
           </div>
 
-          {/* Sleek Month Navigator (Calendar Filter) */}
-          <div className="flex items-center bg-card border border-border/70 rounded-xl shadow-xs p-0.5">
+          {/* Sleek Month Navigator (Clay Pod) */}
+          <div className="clay-pod p-1 flex items-center gap-1">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              className="p-1.5 rounded-xl hover:bg-white text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
               title="Previous Month"
             >
               <ChevronLeft size={16} />
@@ -673,13 +675,13 @@ export function MyAttendancePage(): JSX.Element {
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-foreground outline-none cursor-pointer"
+                className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
               />
             </div>
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              className="p-1.5 rounded-xl hover:bg-white text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
               title="Next Month"
             >
               <ChevronRight size={16} />
@@ -688,27 +690,29 @@ export function MyAttendancePage(): JSX.Element {
         </div>
       </div>
 
-      {/* Attendance Log Card: Calendar View & Table View */}
-      <Card className="border border-border/70 shadow-sm rounded-2xl bg-card overflow-hidden">
-        <CardHeader className="p-4 sm:px-6 sm:py-4 border-b border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Attendance Log Card: Calendar View & Table View in Claymorphic Card */}
+      <div className="clay-card p-6 sm:p-7 relative overflow-hidden transition-all">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200/60">
           <div>
-            <CardTitle className="text-base font-bold text-foreground">Attendance & Daily Log</CardTitle>
+            <h3 className="text-lg font-bold text-slate-900 tracking-tight">Attendance & Daily Log</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Interactive daily breakdown with correction requests</p>
           </div>
 
-          <div className="flex items-center flex-wrap gap-2.5">
-            <div className="text-xs font-semibold text-muted-foreground bg-muted/60 border border-border/50 px-3 py-1.5 rounded-xl">
-              Total Worked: <span className="text-foreground font-bold">{rateMetrics.totalWorkedHours} hrs</span>
+          <div className="flex items-center flex-wrap gap-3">
+            <div className="clay-pod px-3.5 py-1.5 text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <span className="text-slate-500 font-medium">Total Worked:</span>
+              <span className="text-slate-900 font-black">{rateMetrics.totalWorkedHours} hrs</span>
             </div>
 
             {/* View Mode Toggle: Calendar / Table */}
-            <div className="flex items-center bg-muted/60 p-0.5 rounded-xl border border-border/60 text-xs">
+            <div className="clay-pod p-1 flex items-center gap-1 text-xs">
               <button
                 type="button"
                 onClick={() => setViewMode('calendar')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   viewMode === 'calendar'
-                    ? 'bg-background text-foreground shadow-xs font-semibold'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'clay-pill bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
                 <CalendarDays size={14} />
@@ -717,10 +721,10 @@ export function MyAttendancePage(): JSX.Element {
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   viewMode === 'table'
-                    ? 'bg-background text-foreground shadow-xs font-semibold'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'clay-pill bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
                 <List size={14} />
@@ -728,20 +732,20 @@ export function MyAttendancePage(): JSX.Element {
               </button>
             </div>
           </div>
-        </CardHeader>
+        </div>
 
-        {/* Card Content: Either Calendar Grid (Image 2 style) or DataTable */}
+        {/* Card Content: Either Calendar Grid or DataTable */}
         {viewMode === 'calendar' ? (
-          <div className="p-4 sm:p-5">
+          <div className="pt-5">
             {/* Days of Week Header: SUN, MON, TUE, WED, THU, FRI, SAT */}
-            <div className="grid grid-cols-7 gap-2 sm:gap-2.5 mb-2.5 text-center">
+            <div className="grid grid-cols-7 gap-2 sm:gap-3 mb-3 text-center">
               {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((dName, idx) => (
                 <div
                   key={dName}
-                  className={`text-xs font-bold py-1.5 rounded-lg uppercase tracking-wider ${
+                  className={`text-xs font-black py-2 rounded-xl uppercase tracking-wider ${
                     idx === 0
-                      ? 'text-rose-500 bg-rose-500/5 dark:bg-rose-950/20'
-                      : 'text-muted-foreground/80'
+                      ? 'text-rose-600 bg-rose-50/70 border border-rose-200/60'
+                      : 'text-slate-500 bg-slate-50/70 border border-slate-200/50'
                   }`}
                 >
                   {dName}
@@ -750,12 +754,12 @@ export function MyAttendancePage(): JSX.Element {
             </div>
 
             {/* Calendar Grid */}
-            <div className="grid grid-cols-7 gap-2 sm:gap-2.5">
+            <div className="grid grid-cols-7 gap-2 sm:gap-3">
               {/* Empty offset days */}
               {Array.from({ length: startDayOffset }).map((_, idx) => (
                 <div
                   key={`empty-${idx}`}
-                  className="min-h-[110px] sm:min-h-[120px] rounded-2xl border border-dashed border-border/30 bg-muted/5"
+                  className="min-h-[115px] sm:min-h-[125px] rounded-[22px] border border-dashed border-slate-200/70 bg-slate-50/30"
                 />
               ))}
 
@@ -802,71 +806,64 @@ export function MyAttendancePage(): JSX.Element {
                   if (diff > 0) cellWorkedMins = Math.round(diff / 60);
                 }
 
-                // Determine daily earnings badge & text
+                // Determine styling and badges based on status
                 let statusBadge: React.ReactNode = null;
                 let centerContent: React.ReactNode = null;
                 let bottomTimings: React.ReactNode = null;
-                let cardBorderClass = 'border-border/60 bg-card hover:border-primary/50';
+                let cardClayClass = 'bg-white border border-slate-200/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.9),0_2px_6px_rgba(0,0,0,0.03)] hover:border-slate-400';
                 let dailySalaryBadge: React.ReactNode = null;
 
                 if (isHoliday) {
-                  cardBorderClass = 'border-amber-300/80 dark:border-amber-700/60 bg-amber-50/20 dark:bg-amber-950/10 hover:border-amber-400';
+                  cardClayClass = 'bg-gradient-to-br from-white via-amber-50/50 to-amber-100/40 border border-amber-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(245,158,11,0.1),0_4px_12px_-2px_rgba(245,158,11,0.12)] hover:scale-[1.02]';
                   statusBadge = (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100/80 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/60">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
                       HOLIDAY
                     </span>
                   );
-                  if (rateMetrics.paidHolidays > 0) {
-                    // Holiday Pay (removed amount display)
-                  }
                   centerContent = (
                     <div className="py-1 text-center">
-                      <span className="text-xs font-semibold text-amber-900 dark:text-amber-200 line-clamp-1">
+                      <span className="text-xs font-bold text-amber-900 line-clamp-1">
                         {holiday?.name || 'Holiday'}
                       </span>
                     </div>
                   );
                 } else if (isSunday) {
-                  cardBorderClass = 'border-slate-200 dark:border-zinc-800 bg-slate-50/30 dark:bg-zinc-900/20 hover:border-slate-300';
+                  cardClayClass = 'bg-gradient-to-br from-slate-50/70 to-slate-100/50 border border-slate-200/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.9),0_2px_6px_rgba(0,0,0,0.03)] text-slate-500';
                   statusBadge = (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-400 border border-border/60">
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full clay-pill text-slate-600">
                       Off
                     </span>
                   );
-                  if (rateMetrics.paidSundays > 0) {
-                    // Sunday Pay (removed amount display)
-                  }
                 } else if (row?.status === 'LEAVE') {
-                  cardBorderClass = 'border-blue-300/80 dark:border-blue-700/60 bg-blue-50/20 dark:bg-blue-950/10 hover:border-blue-400';
+                  cardClayClass = 'bg-gradient-to-br from-white via-blue-50/50 to-blue-100/40 border border-blue-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(59,130,246,0.1),0_4px_12px_-2px_rgba(59,130,246,0.1)] hover:scale-[1.02]';
                   statusBadge = (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-100/80 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300/60">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
                       Leave
                     </span>
                   );
                   dailySalaryBadge = (
-                    <div className="text-center text-xs font-semibold text-blue-600 dark:text-blue-400">
+                    <div className="text-center text-xs font-bold text-blue-600">
                       Approved Leave
                     </div>
                   );
                 } else if (isMissingOut) {
-                  // No Out in amber pill
-                  cardBorderClass = 'border-amber-400/80 dark:border-amber-600/60 bg-amber-50/25 dark:bg-amber-950/15 hover:border-amber-500';
+                  cardClayClass = 'bg-gradient-to-br from-white via-amber-50/60 to-orange-100/40 border border-amber-300 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),0_4px_12px_-2px_rgba(245,158,11,0.15)] hover:scale-[1.02]';
                   statusBadge = (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300/70">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
                       No Out
                     </span>
                   );
                   if (cellWorkedMins > 0) {
                     dailySalaryBadge = (
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-medium">
+                        <span className="text-[10px] text-amber-700 font-bold">
                           {formatDuration(cellWorkedMins)}
                         </span>
                       </div>
                     );
                   } else {
                     dailySalaryBadge = (
-                      <div className="text-right text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                      <div className="text-right text-[10px] text-amber-700 font-bold">
                         Missing Out
                       </div>
                     );
@@ -874,9 +871,9 @@ export function MyAttendancePage(): JSX.Element {
                   bottomTimings = (
                     <div className="space-y-0.5 pt-1">
                       {pairs.map((p, pIdx) => (
-                        <div key={pIdx} className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+                        <div key={pIdx} className="flex items-center justify-between text-[11px] font-mono text-slate-500">
                           <span>{formatTimeTo12h(p.punchInAt)}</span>
-                          <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                          <span className="text-amber-700 font-bold">
                             {p.punchOutAt ? formatTimeTo12h(p.punchOutAt) : '--:--'}
                           </span>
                         </div>
@@ -884,16 +881,15 @@ export function MyAttendancePage(): JSX.Element {
                     </div>
                   );
                 } else if (pairs.length > 0 && (row?.punchInAt || cellWorkedMins > 0)) {
-                  // Present in mint green pill
-                  cardBorderClass = 'border-emerald-400/80 dark:border-emerald-700/60 bg-emerald-50/15 dark:bg-emerald-950/10 hover:border-emerald-500';
+                  cardClayClass = 'bg-gradient-to-br from-white via-emerald-50/50 to-emerald-100/40 border border-emerald-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(16,185,129,0.12),0_4px_12px_-2px_rgba(16,185,129,0.12)] hover:scale-[1.02] hover:shadow-[0_8px_18px_-2px_rgba(16,185,129,0.2)]';
                   statusBadge = (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300/60">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
                       Present
                     </span>
                   );
                   dailySalaryBadge = (
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-[10px] text-muted-foreground font-medium">
+                      <span className="text-[10px] text-emerald-700 font-bold">
                         {formatDuration(cellWorkedMins)}
                       </span>
                     </div>
@@ -901,7 +897,7 @@ export function MyAttendancePage(): JSX.Element {
                   bottomTimings = (
                     <div className="space-y-0.5 pt-1">
                       {pairs.map((p, pIdx) => (
-                        <div key={pIdx} className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+                        <div key={pIdx} className="flex items-center justify-between text-[11px] font-mono text-slate-600 font-medium">
                           <span>{formatTimeTo12h(p.punchInAt)}</span>
                           <span>{p.punchOutAt ? formatTimeTo12h(p.punchOutAt) : '--:--'}</span>
                         </div>
@@ -909,16 +905,15 @@ export function MyAttendancePage(): JSX.Element {
                     </div>
                   );
                 } else if (isPast && !isSunday && !isHoliday) {
-                  // ABSENT in pink/rose pill
-                  cardBorderClass = 'border-rose-300/80 dark:border-rose-700/60 bg-rose-50/20 dark:bg-rose-950/10 hover:border-rose-400';
+                  cardClayClass = 'bg-gradient-to-br from-white via-rose-50/50 to-rose-100/40 border border-rose-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(244,63,94,0.1),0_4px_12px_-2px_rgba(244,63,94,0.1)] hover:scale-[1.02] hover:shadow-[0_8px_18px_-2px_rgba(244,63,94,0.18)]';
                   statusBadge = (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-100/80 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300/60">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
                       ABSENT
                     </span>
                   );
                   dailySalaryBadge = (
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-[10px] text-rose-500/80 dark:text-rose-400/80 font-medium">
+                      <span className="text-[10px] text-rose-600 font-bold">
                         Absent
                       </span>
                     </div>
@@ -931,23 +926,23 @@ export function MyAttendancePage(): JSX.Element {
                   <div
                     key={dateStr}
                     onClick={isFuture ? undefined : () => handleOpenEditModal(row, dateStr, req)}
-                    className={`min-h-[110px] sm:min-h-[120px] rounded-2xl border p-2.5 sm:p-3 flex flex-col justify-between transition-all relative group select-none ${
-                      isFuture ? 'cursor-default opacity-50' : 'cursor-pointer hover:shadow-md hover:scale-[1.01]'
-                    } ${cardBorderClass} ${
-                      isToday ? 'ring-2 ring-primary/40' : ''
+                    className={`min-h-[115px] sm:min-h-[125px] rounded-[22px] p-3 flex flex-col justify-between transition-all duration-200 relative group select-none ${
+                      isFuture ? 'cursor-default opacity-40' : 'cursor-pointer'
+                    } ${cardClayClass} ${
+                      isToday ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-white shadow-md' : ''
                     }`}
                     title={isFuture ? undefined : 'Click date to add, edit or delete punches'}
                   >
                     {/* Header: Date number & status badge */}
                     <div className="flex items-start justify-between gap-1">
-                      <span className={`text-xs sm:text-sm font-bold ${isToday ? 'text-primary font-black' : 'text-foreground'}`}>
+                      <span className={`text-sm sm:text-base font-black ${isToday ? 'text-emerald-600 font-black' : 'text-slate-900'}`}>
                         {day}
                       </span>
 
                       <div className="flex items-center gap-1">
                         {hasPendingRequest && (
                           <span
-                            className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/40"
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300"
                             title="Correction request under review"
                           >
                             Pending
@@ -968,8 +963,8 @@ export function MyAttendancePage(): JSX.Element {
                       {bottomTimings}
 
                       {/* Hover action hint */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-primary flex items-center justify-end gap-0.5 pt-1 font-medium">
-                        <Pencil size={10} />
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-emerald-600 flex items-center justify-end gap-1 pt-1 font-bold">
+                        <Pencil size={11} />
                         <span>Edit / Add</span>
                       </div>
                     </div>
@@ -979,25 +974,25 @@ export function MyAttendancePage(): JSX.Element {
             </div>
           </div>
         ) : (
-          <CardContent className="p-0">
+          <div className="pt-4 overflow-x-auto">
             <DataTable columns={columns} rows={rows} getRowKey={(r) => r.id} isLoading={isLoading} />
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Attendance Correction Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl border-border/70 shadow-2xl p-6 bg-card">
+        <DialogContent className="sm:max-w-md rounded-[28px] border border-white/80 shadow-2xl p-6 sm:p-7 bg-white/95">
           <DialogHeader className="space-y-1">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+              <div className="p-2.5 rounded-xl clay-pod text-emerald-600 shrink-0">
                 <Clock size={18} />
               </div>
               <div>
-                <DialogTitle className="text-lg font-bold text-foreground">
+                <DialogTitle className="text-lg font-bold text-slate-900">
                   {selectedAttendance?.status === 'LEAVE' ? 'Attendance Details' : 'Punch Details & Correction'}
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                <DialogDescription className="text-xs text-slate-500 mt-0.5 font-medium">
                   {selectedAttendance?.status === 'LEAVE'
                     ? 'Official attendance record and leave status for this day.'
                     : 'Forgot to punch or need to adjust times? Submit your request to Admin.'}
@@ -1007,10 +1002,10 @@ export function MyAttendancePage(): JSX.Element {
           </DialogHeader>
 
           {/* Date & Status banner */}
-          <div className="p-3 bg-muted/40 rounded-xl border border-border/50 flex items-center justify-between my-2 text-xs">
+          <div className="clay-pod p-3.5 flex items-center justify-between my-2 text-xs">
             <div className="flex items-center gap-2">
-              <CalendarIcon size={14} className="text-primary" />
-              <span className="font-bold text-foreground">
+              <CalendarIcon size={14} className="text-emerald-600" />
+              <span className="font-bold text-slate-900">
                 {selectedDateStr
                   ? new Date(selectedDateStr).toLocaleDateString('en-IN', {
                       weekday: 'short',
@@ -1282,31 +1277,28 @@ export function MyAttendancePage(): JSX.Element {
           )}
 
           {/* Dialog Action Buttons */}
-          <div className="flex items-center justify-end gap-2.5 pt-4 mt-2 border-t border-border/50">
-            <Button
+          <div className="flex items-center justify-end gap-2.5 pt-4 mt-2 border-t border-slate-200/60">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
               onClick={() => {
                 setIsEditingPunch(false);
                 setEditModalOpen(false);
               }}
               disabled={createRequestMutation.isPending}
-              className="rounded-xl text-xs h-9"
+              className="clay-button-subtle px-4 py-2 text-xs font-bold text-slate-700 cursor-pointer"
             >
               {isEditingPunch ? 'Cancel' : 'Close'}
-            </Button>
+            </button>
             {isEditingPunch && (
-              <Button
+              <button
                 type="button"
-                size="sm"
                 onClick={handleSubmitRequest}
                 disabled={createRequestMutation.isPending}
-                className="rounded-xl text-xs h-9 gap-1.5 bg-primary text-primary-foreground font-semibold shadow-sm hover:bg-primary/90"
+                className="clay-btn-green px-5 py-2 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <Send size={13} />
                 <span>{createRequestMutation.isPending ? 'Submitting...' : 'Send Request to Admin'}</span>
-              </Button>
+              </button>
             )}
           </div>
         </DialogContent>

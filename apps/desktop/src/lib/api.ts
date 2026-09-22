@@ -182,6 +182,9 @@ export const salaryApi = {
   /** Returns the historically-correct baseSalary for every active employee for the given month. */
   effectiveRates: (month: string) =>
     request<Record<string, number>>(`/salary/effective-rates?month=${encodeURIComponent(month)}`),
+  /** Unpaid previous-month amount per employee id (old system's "Last Month Pending"). */
+  lastPending: (month: string) =>
+    request<Record<string, number>>(`/salary/last-pending?month=${encodeURIComponent(month)}`),
   sendEmail: (id: string, body?: { recipientEmail?: string }) =>
     request<{ success: boolean; message: string }>(`/salary/${id}/send-email`, { method: 'POST', body }),
   sendCustomSlip: (body: unknown) =>

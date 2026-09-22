@@ -768,7 +768,7 @@ export function AdminDashboardPage(): JSX.Element {
               </p>
             </div>
             <Link
-              to="/admin/attendance"
+              to="/admin/reports"
               className="text-xs text-primary font-medium hover:underline flex items-center gap-1 group"
             >
               <span>View All</span>
@@ -785,7 +785,7 @@ export function AdminDashboardPage(): JSX.Element {
                   render: (r) => (
                     <div
                       className="cursor-pointer hover:text-primary transition-colors py-0.5"
-                      onClick={() => navigate('/admin/attendance')}
+                      onClick={() => navigate('/admin/reports')}
                     >
                       <div className="font-semibold text-sm text-foreground">
                         {r.employee.firstName} {r.employee.lastName}

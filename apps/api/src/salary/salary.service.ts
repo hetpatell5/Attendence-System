@@ -467,7 +467,7 @@ export class SalaryService {
     return result;
   }
 
-  async getSummaryForMonth(monthIso: string): Promise<{
+  async getSummaryForMonth(monthIso: string, includeCarry = true): Promise<{
     paidSum: number;
     unpaidSum: number;
     totalDueSum: number;
@@ -528,8 +528,11 @@ export class SalaryService {
                 totalDeductions: 0,
                 netSalary: Number(row.final_salary || 0),
                 advanceDeducted: Number(row.advance_amount || 0),
-                commissionAmount: Number(row.commission_amount || 0),
-                remarks: row.advance_remarks || '',
+                // salary_details columns are `commission` and `remarks` — the old
+                // `commission_amount` / `advance_remarks` names never existed, so this
+                // path silently created every record with commission 0.
+                commissionAmount: Number(row.commission || 0),
+                remarks: row.remarks || '',
                 status,
               },
             });
@@ -605,6 +608,11 @@ export class SalaryService {
       if (!empAttMap.has(a.employeeId)) empAttMap.set(a.employeeId, []);
       empAttMap.get(a.employeeId)!.push(a);
     });
+
+    // Last month's unpaid amount rolls into this month's due, exactly like the salary page and
+    // the old system. `includeCarry` is false only when computing that carry itself, which
+    // would otherwise recurse back through every earlier month.
+    const carry = includeCarry ? await this.getLastMonthPendingForMonth(monthIso) : {};
 
     let paidSum = 0;
     let unpaidSum = 0;
@@ -686,6 +694,8 @@ export class SalaryService {
       const commission = saved ? Number(saved.commissionAmount || 0) : 0;
       const status = saved && saved.status === 'PAID' ? 'PAID' : 'PENDING';
       const thisMonthNet = Math.round(basicSalary + sundayHolidayPay + commission - advance);
+      const lastPending = carry[emp.id] ?? 0;
+      const totalWithPending = thisMonthNet + lastPending;
 
       if (status === 'PAID') {
         paidSum += thisMonthNet;
@@ -699,18 +709,19 @@ export class SalaryService {
           status: 'PAID',
         });
       } else {
-        unpaidSum += thisMonthNet;
+        unpaidSum += totalWithPending;
         unpaidCount++;
         unpaidEmployees.push({
           id: emp.id,
           employeeCode: emp.employeeCode,
           firstName: emp.firstName,
           lastName: emp.lastName,
-          netSalary: thisMonthNet,
+          netSalary: includeCarry ? totalWithPending : thisMonthNet,
+          lastPending,
           status: 'PENDING',
         });
       }
-      totalDueSum += thisMonthNet;
+      totalDueSum += totalWithPending;
     }
 
     const percentagePaid =
@@ -733,6 +744,28 @@ export class SalaryService {
     };
   }
 
+
+  /**
+   * "Last month pending" for every active employee, mirroring the old system's
+   * get_last_month_pending(): the previous month's salary if it is still unpaid, and
+   * 0 if it was paid or nobody worked. Crucially this covers employees with NO saved
+   * salary record for last month (e.g. someone who joined mid-month and was never
+   * opened on the salary sheet) — the old system recomputes what was owed from
+   * attendance in that case, while the UI used to look only at saved records and show 0.
+   */
+  async getLastMonthPendingForMonth(monthIso: string): Promise<Record<string, number>> {
+    const monthDate = startOfCompanyDay(new Date(monthIso));
+    monthDate.setUTCDate(1);
+    const prev = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() - 1, 1));
+    const prevIso = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}-01`;
+
+    const summary = await this.getSummaryForMonth(prevIso, false);
+    const map: Record<string, number> = {};
+    for (const e of summary.unpaidEmployees ?? []) {
+      if (e.netSalary > 0) map[e.id] = e.netSalary;
+    }
+    return map;
+  }
 
   async generateForMonth(
     dto: GenerateSalaryDto,

@@ -214,10 +214,6 @@ export function SalaryManagementPage(): JSX.Element {
   const monthEnd = `${selectedYear}-${selectedMonth}-${String(totalDaysInMonth).padStart(2, '0')}`;
   const monthIso = `${selectedYear}-${selectedMonth}-01`;
 
-  // Previous month ISO (for last-month-pending carry-forward)
-  const prevMonthDate = new Date(parseInt(selectedYear), parseInt(selectedMonth) - 2, 1);
-  const prevMonthIso = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
-
   // 1. Fetch Active Employees only (exclude former/inactive employees)
   const { data: employeesData, isLoading: isEmployeesLoading } = useQuery({
     queryKey: ['employees', 'all', 'ACTIVE'],
@@ -255,9 +251,11 @@ export function SalaryManagementPage(): JSX.Element {
   });
 
   // 4b. Fetch PREVIOUS month's saved salary records for carry-forward pending amount
-  const { data: prevMonthSalaries } = useQuery({
-    queryKey: ['salary', 'all', prevMonthIso],
-    queryFn: () => salaryApi.listAll({ month: prevMonthIso, pageSize: '1000' }),
+  // Server-side so employees with no saved record last month (e.g. joined mid-month) still
+  // carry what they were owed, like the old system.
+  const { data: lastPendingData } = useQuery({
+    queryKey: ['salary', 'last-pending', monthIso],
+    queryFn: () => salaryApi.lastPending(monthIso),
     staleTime: 60_000,
   });
 
@@ -270,16 +268,7 @@ export function SalaryManagementPage(): JSX.Element {
   });
 
   // Build a map of employeeId -> last month's PENDING net salary (carry-forward)
-  const lastPendingMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    if (!prevMonthSalaries?.items) return map;
-    for (const record of prevMonthSalaries.items as any[]) {
-      if (record.status !== 'PAID') {
-        map[record.employeeId] = Math.round(Number(record.netSalary || 0));
-      }
-    }
-    return map;
-  }, [prevMonthSalaries?.items]);
+  const lastPendingMap = useMemo(() => lastPendingData ?? {}, [lastPendingData]);
 
   // Populate local card edits whenever saved salaries or month changes
   useEffect(() => {

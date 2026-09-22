@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, ArrowUpRight, Award, Sparkles } from 'lucide-react';
 import type { SalaryRecord } from '@attendance/shared';
 
@@ -382,79 +381,79 @@ export function SalaryAnalyticsCharts({
   return (
     <div className="space-y-4 w-full">
       {/* KPI Performance Metric Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-primary/40 transition-colors">
-          <span className="text-[11px] text-muted-foreground font-medium">Cumulative Net Payout</span>
-          <div className="text-lg font-bold text-foreground mt-0.5 tracking-tight">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="clay-pod p-4 flex flex-col justify-between border-2 border-emerald-500/40 hover:border-emerald-500 transition-all">
+          <span className="text-[11px] text-slate-500 font-semibold">Cumulative Net Payout</span>
+          <div className="text-xl font-black text-slate-900 mt-1 tracking-tight">
             ₹{kpiStats.totalEarnings.toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-            <span className="text-emerald-600 font-semibold">{kpiStats.totalCycles} consecutive cycles</span>
+          <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+            <span className="text-emerald-700 font-bold">{kpiStats.totalCycles} consecutive cycles</span>
           </p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-primary/40 transition-colors">
-          <span className="text-[11px] text-muted-foreground font-medium">Monthly Net Average</span>
-          <div className="text-lg font-bold text-foreground mt-0.5 tracking-tight">
+        <div className="clay-pod p-4 flex flex-col justify-between border-2 border-sky-500/40 hover:border-sky-500 transition-all">
+          <span className="text-[11px] text-slate-500 font-semibold">Monthly Net Average</span>
+          <div className="text-xl font-black text-slate-900 mt-1 tracking-tight">
             ₹{kpiStats.avgSalary.toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
+          <p className="text-[10px] text-slate-500 mt-1 font-medium">
             Avg monthly take-home
           </p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-primary/40 transition-colors">
-          <span className="text-[11px] text-muted-foreground font-medium">Peak Salary Month</span>
-          <div className="text-lg font-bold text-primary mt-0.5 tracking-tight">
+        <div className="clay-pod p-4 flex flex-col justify-between border-2 border-amber-500/40 hover:border-amber-500 transition-all">
+          <span className="text-[11px] text-slate-500 font-semibold">Peak Salary Month</span>
+          <div className="text-xl font-black text-amber-700 mt-1 tracking-tight">
             ₹{(kpiStats.peakRecord?.netPay || 0).toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 truncate flex items-center gap-1">
-            <Award size={11} className="text-amber-500 shrink-0" />
+          <p className="text-[10px] text-slate-500 mt-1 truncate flex items-center gap-1 font-medium">
+            <Award size={12} className="text-amber-500 shrink-0" />
             <span>{kpiStats.peakRecord?.fullLabel || '—'}</span>
           </p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-xs hover:border-indigo-500/40 transition-colors">
-          <span className="text-[11px] text-muted-foreground font-medium">Total Career Increment</span>
-          <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-0.5 flex items-center gap-1 tracking-tight">
+        <div className="clay-pod p-4 flex flex-col justify-between border-2 border-indigo-500/40 hover:border-indigo-500 transition-all">
+          <span className="text-[11px] text-slate-500 font-semibold">Total Career Increment</span>
+          <div className="text-xl font-black text-indigo-700 mt-1 flex items-center gap-1 tracking-tight">
             <span>+{incrementStats.growthPct}%</span>
-            <ArrowUpRight size={16} className="text-indigo-600 shrink-0" />
+            <ArrowUpRight size={18} className="text-indigo-600 shrink-0" />
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+          <p className="text-[10px] text-slate-500 mt-1 font-bold">
             +₹{incrementStats.totalIncrement.toLocaleString('en-IN')} since joining
           </p>
         </div>
       </div>
 
       {/* Balanced 2-Column Analytics Suite (Dec through Aug with May, Jul, Aug included) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         {/* ── Chart 1: Net Salary Trajectory ────────────────────────────── */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 relative flex flex-col justify-between overflow-visible">
-          <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
+        <div className="clay-card p-5 sm:p-6 relative flex flex-col justify-between overflow-visible transition-all">
+          <div className="pb-4 border-b border-slate-200/60">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/20">
-                  <TrendingUp size={16} />
+                <div className="clay-pod p-2 text-emerald-600 shrink-0">
+                  <TrendingUp size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-foreground">
+                  <h4 className="text-sm sm:text-base font-bold text-slate-900">
                     Net Salary Trajectory
-                  </CardTitle>
-                  <span className="text-[10px] text-muted-foreground block font-medium">
+                  </h4>
+                  <span className="text-[10px] text-slate-500 block font-medium">
                     All completed payout cycles (Dec – Aug)
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                <span className="clay-pod px-3 py-1 text-[11px] font-bold text-emerald-700">
                   ₹{(trendData[trendData.length - 1]?.netPay || 0).toLocaleString('en-IN')} (Aug)
                 </span>
               </div>
             </div>
-          </CardHeader>
+          </div>
 
-          <CardContent className="p-4 sm:p-5 pt-3">
+          <div className="pt-3">
             {trendData.length === 0 ? (
               <div className="py-16 text-center text-xs text-muted-foreground">
                 No finalized salary records to plot yet.
@@ -587,7 +586,7 @@ export function SalaryAnalyticsCharts({
                 {/* Floating Interactive Tooltip */}
                 {hoveredPointIndex !== null && points[hoveredPointIndex] && (
                   <div
-                    className="absolute z-20 pointer-events-none p-2.5 rounded-lg bg-popover text-popover-foreground shadow-md border border-border text-xs space-y-1 min-w-[160px] max-w-[220px]"
+                    className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-white/95 backdrop-blur-md shadow-[0_12px_30px_rgba(0,0,0,0.12)] border border-slate-200/80 text-xs space-y-1.5 min-w-[170px] max-w-[220px]"
                     style={getSmartTooltipStyle(
                       points[hoveredPointIndex].x,
                       points[hoveredPointIndex].y,
@@ -595,21 +594,21 @@ export function SalaryAnalyticsCharts({
                       chartHeight
                     )}
                   >
-                    <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/60">
-                      <span className="font-semibold">{points[hoveredPointIndex].data.fullLabel}</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded font-medium text-muted-foreground">
+                    <div className="flex items-center justify-between gap-3 pb-1 border-b border-slate-100">
+                      <span className="font-bold text-slate-800">{points[hoveredPointIndex].data.fullLabel}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-600">
                         {points[hoveredPointIndex].data.status}
                       </span>
                     </div>
                     <div className="flex justify-between items-baseline gap-3">
-                      <span className="text-muted-foreground text-[11px]">Net Payout</span>
-                      <span className="font-bold text-foreground text-sm">
+                      <span className="text-slate-500 text-[11px] font-medium">Net Payout</span>
+                      <span className="font-black text-slate-900 text-sm">
                         ₹{points[hoveredPointIndex].data.netPay.toLocaleString('en-IN')}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground">
+                    <div className="flex justify-between items-center gap-3 text-[11px] text-slate-500 font-medium">
                       <span>Working Days</span>
-                      <span className="font-medium text-foreground">
+                      <span className="font-bold text-slate-800">
                         {points[hoveredPointIndex].data.presentDays} Days
                       </span>
                     </div>
@@ -619,51 +618,51 @@ export function SalaryAnalyticsCharts({
             )}
 
             {/* Bottom Performance Footer */}
-            <div className="mt-3 pt-3 border-t border-border/40 grid grid-cols-3 gap-2 text-center text-xs">
-              <div>
-                <span className="text-[10px] text-muted-foreground block">Monthly Average</span>
-                <span className="font-bold text-foreground">₹{kpiStats.avgSalary.toLocaleString()}</span>
+            <div className="mt-4 pt-3.5 border-t border-slate-200/60 grid grid-cols-3 gap-2.5 text-center text-xs">
+              <div className="clay-pod py-2 px-1">
+                <span className="text-[10px] text-slate-500 block font-medium">Monthly Average</span>
+                <span className="font-black text-slate-900 text-sm">₹{kpiStats.avgSalary.toLocaleString()}</span>
               </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground block">Peak Month</span>
-                <span className="font-bold text-emerald-600">₹{(kpiStats.peakRecord?.netPay || 0).toLocaleString()}</span>
+              <div className="clay-pod py-2 px-1">
+                <span className="text-[10px] text-slate-500 block font-medium">Peak Month</span>
+                <span className="font-black text-emerald-600 text-sm">₹{(kpiStats.peakRecord?.netPay || 0).toLocaleString()}</span>
               </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground block">Base Reference</span>
-                <span className="font-bold text-foreground">₹{currentMetrics.monthlySalary.toLocaleString()}</span>
+              <div className="clay-pod py-2 px-1">
+                <span className="text-[10px] text-slate-500 block font-medium">Base Reference</span>
+                <span className="font-black text-slate-900 text-sm">₹{currentMetrics.monthlySalary.toLocaleString()}</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* ── Chart 2: Salary Increment & Growth Ladder ─────────────────── */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-gradient-to-b from-card via-card to-card/95 relative flex flex-col justify-between overflow-visible">
-          <CardHeader className="p-4 sm:p-5 border-b border-border/50 pb-3">
+        <div className="clay-card p-5 sm:p-6 relative flex flex-col justify-between overflow-visible transition-all">
+          <div className="pb-4 border-b border-slate-200/60">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center border border-indigo-500/20">
-                  <ArrowUpRight size={16} />
+                <div className="clay-pod p-2 text-indigo-600 shrink-0">
+                  <ArrowUpRight size={18} />
                 </div>
                 <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-foreground">
+                  <h4 className="text-sm sm:text-base font-bold text-slate-900">
                     Salary Increment & Growth
-                  </CardTitle>
-                  <span className="text-[10px] text-muted-foreground block font-medium">
+                  </h4>
+                  <span className="text-[10px] text-slate-500 block font-medium">
                     Base pay progression: Dec, Jan, Feb, Mar, Apr, May, Jun, Jul, Aug
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 flex items-center gap-1">
+                <span className="clay-pod px-3 py-1 text-[11px] font-bold text-indigo-700 flex items-center gap-1">
                   <Sparkles size={12} className="text-indigo-500" />
                   <span>+{incrementStats.growthPct}% Total Growth</span>
                 </span>
               </div>
             </div>
-          </CardHeader>
+          </div>
 
-          <CardContent className="p-4 sm:p-5 pt-3">
+          <div className="pt-3">
             <div className="relative w-full h-[220px] select-none">
               <svg
                 viewBox={`0 0 ${chartWidth} ${chartHeight}`}
@@ -771,7 +770,7 @@ export function SalaryAnalyticsCharts({
               {/* Tooltip */}
               {hoveredIncIndex !== null && incPoints[hoveredIncIndex] && (
                 <div
-                  className="absolute z-20 pointer-events-none p-2.5 rounded-lg bg-popover text-popover-foreground shadow-md border border-border text-xs space-y-1 min-w-[175px] max-w-[240px]"
+                  className="absolute z-20 pointer-events-none p-3 rounded-2xl bg-white/95 backdrop-blur-md shadow-[0_12px_30px_rgba(0,0,0,0.12)] border border-slate-200/80 text-xs space-y-1.5 min-w-[185px] max-w-[245px]"
                   style={getSmartTooltipStyle(
                     incPoints[hoveredIncIndex].x,
                     incPoints[hoveredIncIndex].y,
@@ -779,36 +778,36 @@ export function SalaryAnalyticsCharts({
                     chartHeight
                   )}
                 >
-                  <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/60">
-                    <span className="font-semibold">{incPoints[hoveredIncIndex].data.fullLabel}</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded font-medium text-muted-foreground">
+                  <div className="flex items-center justify-between gap-3 pb-1 border-b border-slate-100">
+                    <span className="font-bold text-slate-800">{incPoints[hoveredIncIndex].data.fullLabel}</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-indigo-50 text-indigo-700">
                       {incPoints[hoveredIncIndex].data.growthPctFromStart > 0
                         ? `+${incPoints[hoveredIncIndex].data.growthPctFromStart}%`
                         : 'Starting base'}
                     </span>
                   </div>
                   <div className="flex justify-between items-baseline gap-3">
-                    <span className="text-muted-foreground text-[11px]">Base Salary</span>
-                    <span className="font-bold text-foreground text-sm">
+                    <span className="text-slate-500 text-[11px] font-medium">Base Salary</span>
+                    <span className="font-black text-slate-900 text-sm">
                       ₹{incPoints[hoveredIncIndex].data.salary.toLocaleString('en-IN')}
                     </span>
                   </div>
                   {incPoints[hoveredIncIndex].data.incrementFromPrev !== 0 ? (
                     <div className="flex justify-between items-center gap-3 text-[11px]">
-                      <span className="text-muted-foreground">Revision</span>
-                      <span className={`font-medium ${incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                      <span className="text-slate-500 font-medium">Revision</span>
+                      <span className={`font-bold ${incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
                         {incPoints[hoveredIncIndex].data.incrementFromPrev > 0 ? '+' : '-'}₹{Math.abs(incPoints[hoveredIncIndex].data.incrementFromPrev).toLocaleString('en-IN')}
                       </span>
                     </div>
                   ) : (
                     <div className="flex justify-between items-center gap-3 text-[11px]">
-                      <span className="text-muted-foreground">Status</span>
-                      <span className="text-muted-foreground font-medium">Unchanged</span>
+                      <span className="text-slate-500 font-medium">Status</span>
+                      <span className="text-slate-400 font-medium">Unchanged</span>
                     </div>
                   )}
-                  <div className="flex justify-between items-center gap-3 text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                  <div className="flex justify-between items-center gap-3 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                     <span>Since joining</span>
-                    <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                    <span className="font-black text-indigo-700">
                       +₹{incPoints[hoveredIncIndex].data.incrementFromStart.toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -817,24 +816,24 @@ export function SalaryAnalyticsCharts({
             </div>
 
             {/* Bottom Performance Footer */}
-            <div className="mt-3 pt-3 border-t border-border/40 grid grid-cols-3 gap-2 text-center text-xs">
-              <div>
-                <span className="text-[10px] text-muted-foreground block">Joining Rate</span>
-                <span className="font-bold text-foreground">₹{incrementStats.initialSalary.toLocaleString()}</span>
+            <div className="mt-4 pt-3.5 border-t border-slate-200/60 grid grid-cols-3 gap-2.5 text-center text-xs">
+              <div className="clay-pod py-2 px-1">
+                <span className="text-[10px] text-slate-500 block font-medium">Joining Rate</span>
+                <span className="font-black text-slate-900 text-sm">₹{incrementStats.initialSalary.toLocaleString()}</span>
               </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground block">Current Base</span>
-                <span className="font-bold text-foreground">₹{incrementStats.currentSalary.toLocaleString()}</span>
+              <div className="clay-pod py-2 px-1">
+                <span className="text-[10px] text-slate-500 block font-medium">Current Base</span>
+                <span className="font-black text-slate-900 text-sm">₹{incrementStats.currentSalary.toLocaleString()}</span>
               </div>
-              <div>
-                <span className="text-[10px] text-muted-foreground block">Total Increment</span>
-                <span className="font-bold text-indigo-600 dark:text-indigo-400">
+              <div className="clay-pod py-2 px-1">
+                <span className="text-[10px] text-slate-500 block font-medium">Total Increment</span>
+                <span className="font-black text-indigo-700 text-sm">
                   +₹{incrementStats.totalIncrement.toLocaleString()} (+{incrementStats.growthPct}%)
                 </span>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

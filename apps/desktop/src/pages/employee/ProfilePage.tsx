@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { employeesApi } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   MapPin, HeartPulse, 
   Mail, Calendar, Clock, IndianRupee, Phone
@@ -57,194 +56,221 @@ export function ProfilePage(): JSX.Element {
     : null;
 
   return (
-    <div className="space-y-5 w-full max-w-7xl mx-auto">
+    <div className="relative space-y-6 max-w-7xl mx-auto pb-10">
+      {/* Ambient background glow accents for rich claymorphism depth */}
+      <div className="absolute -top-12 -right-12 -z-10 w-96 h-96 bg-emerald-100/35 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-48 -left-12 -z-10 w-96 h-96 bg-sky-100/35 rounded-full blur-3xl pointer-events-none" />
+
       {/* Page Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-border/50">
-        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-          My Profile
-        </h2>
+      <div className="flex items-center justify-between pb-3 border-b border-slate-200/70">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+            My Profile
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">
+            Personal employee credentials, assigned shift details, and compensation.
+          </p>
+        </div>
       </div>
 
       {/* Profile Header Hero Card */}
-      <Card className="border border-border/60 shadow-xs rounded-2xl bg-card p-5 sm:p-6 overflow-hidden">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+      <div className="clay-card p-6 sm:p-7 relative overflow-hidden transition-all">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
           {/* Avatar Icon */}
-          <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-primary/10 text-primary flex items-center justify-center text-xl sm:text-2xl font-bold border border-primary/20 shrink-0 select-none">
+          <div className="clay-pod h-20 w-20 sm:h-24 sm:w-24 rounded-3xl flex items-center justify-center text-2xl sm:text-3xl font-black text-emerald-700 border-2 border-emerald-500/30 shrink-0 select-none shadow-[inset_0_2px_6px_rgba(255,255,255,0.9),0_6px_16px_rgba(16,185,129,0.12)]">
             {employee.firstName.charAt(0)}{employee.lastName.charAt(0)}
           </div>
 
           {/* Name, Role & Core Identifiers */}
-          <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex-1 min-w-0 space-y-2.5">
             <div className="flex flex-wrap items-center gap-3">
-              <h3 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight truncate">
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">
                 {employee.firstName} {employee.lastName}
               </h3>
               <StatusBadge status={employee.status} />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground font-medium">
-              <span>{employee.designation?.title ?? 'Staff'}</span>
-              <span>•</span>
-              <span>{employee.department?.name ?? 'General'}</span>
-              <span>•</span>
-              <span className="font-mono text-foreground font-semibold">ID: {employee.employeeCode}</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+              <span className="clay-pod px-3 py-1 text-slate-800 font-bold">{employee.designation?.title ?? 'Staff'}</span>
+              <span className="clay-pod px-3 py-1 text-slate-600">{employee.department?.name ?? 'General'}</span>
+              <span className="clay-pod px-3 py-1 font-mono text-emerald-700 font-bold border border-emerald-500/30">ID: {employee.employeeCode}</span>
             </div>
 
             {/* Quick Metadata Row */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-xs text-slate-600">
               <div className="flex items-center gap-1.5">
-                <Mail size={13} className="text-muted-foreground/70 shrink-0" />
-                <span className="text-foreground">{employee.email}</span>
+                <Mail size={14} className="text-slate-400 shrink-0" />
+                <span className="text-slate-800 font-semibold">{employee.email}</span>
               </div>
 
               {employee.phone && (
                 <div className="flex items-center gap-1.5">
-                  <Phone size={13} className="text-muted-foreground/70 shrink-0" />
-                  <span className="text-foreground">{employee.phone}</span>
+                  <Phone size={14} className="text-slate-400 shrink-0" />
+                  <span className="text-slate-800 font-semibold">{employee.phone}</span>
                 </div>
               )}
 
               {joinDate && (
                 <div className="flex items-center gap-1.5">
-                  <Calendar size={13} className="text-muted-foreground/70 shrink-0" />
-                  <span>Joined: <span className="text-foreground font-medium">{joinDate}</span></span>
+                  <Calendar size={14} className="text-slate-400 shrink-0" />
+                  <span className="text-slate-500">Joined: <span className="text-slate-900 font-bold">{joinDate}</span></span>
                 </div>
               )}
 
               {birthDate && (
                 <div className="flex items-center gap-1.5">
-                  <Calendar size={13} className="text-muted-foreground/70 shrink-0" />
-                  <span>DOB: <span className="text-foreground font-medium">{birthDate}</span></span>
+                  <Calendar size={14} className="text-slate-400 shrink-0" />
+                  <span className="text-slate-500">DOB: <span className="text-slate-900 font-bold">{birthDate}</span></span>
                 </div>
               )}
             </div>
           </div>
         </div>
-      </Card>
+      </div>
 
       {/* Profile Details 2-Column Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         {/* Card 1: Shift & Schedule */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
-          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
-            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
-              <Clock size={16} className="text-primary" />
-              <span>Shift & Working Hours</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+        <div className="clay-card p-5 sm:p-6 relative overflow-hidden transition-all border-t-2 border-t-emerald-500">
+          <div className="pb-4 border-b border-slate-200/60">
+            <div className="flex items-center gap-2.5">
+              <div className="clay-pod p-2 text-emerald-600 shrink-0">
+                <Clock size={18} />
+              </div>
+              <div>
+                <h4 className="text-sm sm:text-base font-bold text-slate-900">Shift & Working Hours</h4>
+                <span className="text-[10px] text-slate-500 block font-medium">Assigned work schedule and daily expectations</span>
+              </div>
+            </div>
+          </div>
+          <div className="pt-3 divide-y divide-slate-100 text-xs">
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Assigned Shift</span>
-              <span className="font-semibold text-foreground bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">
+              <span className="text-slate-500 font-medium">Assigned Shift</span>
+              <span className="clay-pod px-3 py-1 font-bold text-emerald-700">
                 {shiftInfo.shiftName}
               </span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Shift Timings</span>
-              <span className="font-semibold text-foreground">{to12h(shiftInfo.shiftStart)} – {to12h(shiftInfo.shiftEnd)}</span>
+              <span className="text-slate-500 font-medium">Shift Timings</span>
+              <span className="font-bold text-slate-800">{to12h(shiftInfo.shiftStart)} – {to12h(shiftInfo.shiftEnd)}</span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Required Working Hours</span>
-              <span className="font-semibold text-foreground">{shiftInfo.shiftHours} Hours / day</span>
+              <span className="text-slate-500 font-medium">Required Working Hours</span>
+              <span className="font-bold text-slate-800">{shiftInfo.shiftHours} Hours / day</span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Shift Type</span>
-              <span className="font-medium text-foreground">Fixed Hours</span>
+              <span className="text-slate-500 font-medium">Shift Type</span>
+              <span className="font-bold text-slate-700">Fixed Hours</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Card 2: Compensation Overview */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
-          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
-            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
-              <IndianRupee size={16} className="text-emerald-600" />
-              <span>Compensation & Pay Basis</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+        <div className="clay-card p-5 sm:p-6 relative overflow-hidden transition-all border-t-2 border-t-blue-500">
+          <div className="pb-4 border-b border-slate-200/60">
+            <div className="flex items-center gap-2.5">
+              <div className="clay-pod p-2 text-blue-600 shrink-0">
+                <IndianRupee size={18} />
+              </div>
+              <div>
+                <h4 className="text-sm sm:text-base font-bold text-slate-900">Compensation & Pay Basis</h4>
+                <span className="text-[10px] text-slate-500 block font-medium">Base rate structure and calculation basis</span>
+              </div>
+            </div>
+          </div>
+          <div className="pt-3 divide-y divide-slate-100 text-xs">
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Base Salary</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+              <span className="text-slate-500 font-medium">Base Salary</span>
+              <span className="font-black text-emerald-600 text-sm">
                 ₹{shiftInfo.monthlySalary.toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Approx. Per-Day Rate</span>
-              <span className="font-semibold text-foreground">₹{shiftInfo.perDaySalary}</span>
+              <span className="text-slate-500 font-medium">Approx. Per-Day Rate</span>
+              <span className="font-bold text-slate-800">₹{shiftInfo.perDaySalary}</span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Approx. Hourly Rate</span>
-              <span className="font-semibold text-foreground">₹{shiftInfo.hourRate} / hr</span>
+              <span className="text-slate-500 font-medium">Approx. Hourly Rate</span>
+              <span className="font-bold text-slate-800">₹{shiftInfo.hourRate} / hr</span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Pay Type</span>
-              <span className="font-semibold text-primary">{(employee as any).payType || 'MONTHLY'}</span>
+              <span className="text-slate-500 font-medium">Pay Type</span>
+              <span className="clay-pod px-3 py-1 font-bold text-blue-700">{(employee as any).payType || 'MONTHLY'}</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Card 3: Contact & Address */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
-          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
-            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
-              <MapPin size={16} className="text-primary" />
-              <span>Contact & Address</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+        <div className="clay-card p-5 sm:p-6 relative overflow-hidden transition-all border-t-2 border-t-amber-500">
+          <div className="pb-4 border-b border-slate-200/60">
+            <div className="flex items-center gap-2.5">
+              <div className="clay-pod p-2 text-amber-600 shrink-0">
+                <MapPin size={18} />
+              </div>
+              <div>
+                <h4 className="text-sm sm:text-base font-bold text-slate-900">Contact & Address</h4>
+                <span className="text-[10px] text-slate-500 block font-medium">Registered contact info and residential address</span>
+              </div>
+            </div>
+          </div>
+          <div className="pt-3 divide-y divide-slate-100 text-xs">
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Phone Number</span>
-              <span className="font-semibold text-foreground">
-                {employee.phone || <span className="text-muted-foreground italic">Not provided</span>}
+              <span className="text-slate-500 font-medium">Phone Number</span>
+              <span className="font-bold text-slate-800">
+                {employee.phone || <span className="text-slate-400 italic">Not provided</span>}
               </span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Email Address</span>
-              <span className="font-semibold text-foreground">{employee.email}</span>
+              <span className="text-slate-500 font-medium">Email Address</span>
+              <span className="font-bold text-slate-800">{employee.email}</span>
             </div>
             <div className="py-2.5">
-              <span className="text-muted-foreground font-medium block mb-1.5">Residential Address</span>
-              <div className="p-2.5 bg-muted/30 rounded-xl border border-border/40 text-foreground font-normal leading-relaxed">
+              <span className="text-slate-500 font-medium block mb-1.5">Residential Address</span>
+              <div className="clay-pod p-3 text-slate-800 font-medium leading-relaxed">
                 {employee.address ? (
                   employee.address
                 ) : (
-                  <span className="text-muted-foreground italic">No residential address recorded on file.</span>
+                  <span className="text-slate-400 italic">No residential address recorded on file.</span>
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Card 4: Emergency Contact */}
-        <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
-          <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/50">
-            <CardTitle className="text-sm sm:text-base font-bold text-foreground flex items-center gap-2">
-              <HeartPulse size={16} className="text-rose-500" />
-              <span>Emergency Contact</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-5 pt-2 divide-y divide-border/40 text-xs">
+        <div className="clay-card p-5 sm:p-6 relative overflow-hidden transition-all border-t-2 border-t-rose-500">
+          <div className="pb-4 border-b border-slate-200/60">
+            <div className="flex items-center gap-2.5">
+              <div className="clay-pod p-2 text-rose-600 shrink-0">
+                <HeartPulse size={18} />
+              </div>
+              <div>
+                <h4 className="text-sm sm:text-base font-bold text-slate-900">Emergency Contact</h4>
+                <span className="text-[10px] text-slate-500 block font-medium">Primary point of contact in case of urgency</span>
+              </div>
+            </div>
+          </div>
+          <div className="pt-3 divide-y divide-slate-100 text-xs">
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Contact Person</span>
-              <span className="font-semibold text-foreground">
-                {employee.emergencyContactName || <span className="text-muted-foreground italic">Not provided</span>}
+              <span className="text-slate-500 font-medium">Contact Person</span>
+              <span className="font-bold text-slate-800">
+                {employee.emergencyContactName || <span className="text-slate-400 italic">Not provided</span>}
               </span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Relationship</span>
-              <span className="font-semibold text-foreground">
-                {employee.emergencyContactRelation || <span className="text-muted-foreground italic">Not provided</span>}
+              <span className="text-slate-500 font-medium">Relationship</span>
+              <span className="font-bold text-slate-800">
+                {employee.emergencyContactRelation || <span className="text-slate-400 italic">Not provided</span>}
               </span>
             </div>
             <div className="flex justify-between items-center py-2.5">
-              <span className="text-muted-foreground font-medium">Emergency Phone</span>
-              <span className="font-semibold text-foreground">
-                {employee.emergencyContactPhone || <span className="text-muted-foreground italic">Not provided</span>}
+              <span className="text-slate-500 font-medium">Emergency Phone</span>
+              <span className="font-bold text-rose-600">
+                {employee.emergencyContactPhone || <span className="text-slate-400 italic">Not provided</span>}
               </span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

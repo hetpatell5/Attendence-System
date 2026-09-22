@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { dashboardApi, attendanceApi, announcementsApi, holidaysApi, employeesApi } from '@/lib/api';
 import { useAuthStore } from '@/state/auth-store';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -602,8 +601,14 @@ export function EmployeeDashboardPage(): JSX.Element {
     return <div className="p-12 text-center text-muted-foreground animate-pulse text-sm">Loading dashboard...</div>;
   }
 
-  const timeString = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-  const dateString = now.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const hours = String(now.getHours() % 12 || 12).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const ampm = now.getHours() >= 12 ? 'pm' : 'am';
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+  const formattedDate = `${dayNames[now.getDay()]}, ${now.getDate()} ${monthNamesShort[now.getMonth()]}, ${now.getFullYear()}`;
 
   const visibleAnnouncements = activeAnnouncements.filter((a) => {
     if (!a.isActive) return false;
@@ -618,7 +623,11 @@ export function EmployeeDashboardPage(): JSX.Element {
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="relative space-y-7 max-w-7xl mx-auto pb-8">
+      {/* Ambient background glow accents for rich claymorphism depth */}
+      <div className="absolute -top-12 -right-12 -z-10 w-96 h-96 bg-emerald-100/35 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-48 -left-12 -z-10 w-96 h-96 bg-sky-100/35 rounded-full blur-3xl pointer-events-none" />
+
       {/* Shutdown gate: blocks OS shutdown until employee punches out */}
       {showShutdownModal && (
         <ShutdownPunchOutModal onDone={() => setShowShutdownModal(false)} />
@@ -656,16 +665,16 @@ export function EmployeeDashboardPage(): JSX.Element {
           {visibleAnnouncements.map((a) => (
             <div
               key={a.id}
-              className="p-3.5 rounded-xl bg-primary/5 border border-primary/15 flex items-center gap-3 relative text-sm"
+              className="clay-card p-4 flex items-center gap-3 relative text-sm border border-emerald-500/20 bg-emerald-50/30"
             >
-              <Megaphone size={16} className="text-primary shrink-0" />
-              <div className="flex-1 pr-6 text-xs text-foreground">
-                <span className="font-semibold text-primary mr-2 uppercase tracking-wide text-[10px]">Announcement:</span>
+              <Megaphone size={16} className="text-emerald-600 shrink-0" />
+              <div className="flex-1 pr-6 text-xs text-slate-800">
+                <span className="font-bold text-emerald-700 mr-2 uppercase tracking-wide text-[10px]">Announcement:</span>
                 {a.message}
               </div>
               <button
                 onClick={() => handleDismissAnnouncement(a.id)}
-                className="text-muted-foreground hover:text-foreground p-1 transition-colors"
+                className="text-slate-400 hover:text-slate-700 p-1 transition-colors"
                 title="Dismiss"
               >
                 <X size={14} />
@@ -676,190 +685,227 @@ export function EmployeeDashboardPage(): JSX.Element {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-2 border-b border-border/50">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-slate-200/70">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">
             {greeting()}, {user?.name}
           </h2>
-          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-            <span>{employee?.department?.name || 'General'}</span>
+          <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 font-medium">
+            <span className="px-2.5 py-0.5 rounded-full clay-pill text-slate-600 font-semibold text-[11px]">{employee?.department?.name || 'General'}</span>
             <span>•</span>
             <span>{salaryMetrics.shiftName} ({fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)})</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Link to="/me/salary">
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs font-medium h-8 rounded-lg">
-              <IndianRupee size={13} /> Salary Slip
-            </Button>
+            <button className="clay-button-subtle px-4 py-2 text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+              <IndianRupee size={14} className="text-slate-500" />
+              <span>Salary Slip</span>
+            </button>
           </Link>
           <Link to="/me/attendance">
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs font-medium h-8 rounded-lg">
-              <CalendarDays size={13} /> Attendance Log
-            </Button>
+            <button className="clay-button-subtle px-4 py-2 text-xs font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+              <CalendarDays size={14} className="text-slate-500" />
+              <span>Attendance Log</span>
+            </button>
           </Link>
         </div>
       </div>
 
-      {/* Top Hero: Focused Horizontal Clock & Shift Action Card */}
-      <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 sm:p-6 relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          {/* Left: Status Badge, Digital Clock, Date & Shift Info */}
-          <div className="flex flex-col items-start gap-1.5 min-w-[260px]">
-            <div className="flex items-center gap-2">
+      {/* Top Hero: Focused Horizontal Claymorphic Clock & Shift Action Card */}
+      <div className="clay-card p-6 sm:p-7 relative overflow-hidden transition-all duration-300">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          {/* Left (4 cols): Status Badge, Digital Clock, Date & Shift Info */}
+          <div className="lg:col-span-4 flex flex-col items-start gap-1.5 min-w-0">
+            {/* Status Badge + Date */}
+            <div className="flex items-center gap-3">
               <div
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-semibold ${
                   isClockedIn
-                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
-                    : 'bg-muted/80 text-muted-foreground border-border/60'
+                    ? 'bg-emerald-50 text-emerald-700 shadow-[inset_0_2px_3px_rgba(255,255,255,0.9),inset_0_-1.5px_2px_rgba(5,150,105,0.15),0_2px_5px_rgba(16,185,129,0.1)] border border-emerald-400/30'
+                    : 'clay-pill text-slate-600'
                 }`}
               >
                 <span className="relative flex h-2 w-2">
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      isClockedIn ? 'bg-emerald-400' : 'bg-zinc-400'
-                    }`}
-                  />
-                  <span
-                    className={`relative inline-flex rounded-full h-2 w-2 ${
-                      isClockedIn ? 'bg-emerald-500' : 'bg-zinc-400'
-                    }`}
-                  />
+                  {isClockedIn ? (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </>
+                  ) : (
+                    <span className="inline-flex rounded-full h-2 w-2 bg-slate-400" />
+                  )}
                 </span>
                 <span>{isClockedIn ? 'Clocked In' : 'Clocked Out'}</span>
               </div>
-              <span className="text-xs font-medium text-muted-foreground">{dateString}</span>
+              <span className="text-xs sm:text-[13px] font-semibold text-slate-500 tracking-normal">
+                {formattedDate}
+              </span>
             </div>
 
-            <div className="text-4xl sm:text-5xl font-extrabold tracking-tight text-foreground font-mono tabular-nums mt-1">
-              {timeString}
+            {/* Digital Clock */}
+            <div className="flex items-baseline mt-1 font-sans">
+              <span className="text-4xl sm:text-5xl lg:text-[54px] font-extrabold tracking-tight text-slate-900 tabular-nums">
+                {hours} : {minutes} : {seconds}
+              </span>
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-800 ml-2 tracking-tight">
+                {ampm}
+              </span>
             </div>
 
-            <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5 mt-0.5">
-              <Clock size={12} className="text-muted-foreground shrink-0" />
+            {/* Subtitle with Shift info */}
+            <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+              <Clock size={13} className="text-slate-400 shrink-0" />
               <span>{salaryMetrics.shiftName} Shift</span>
               <span>•</span>
-              <span>
-                {fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)}
-              </span>
+              <span>{fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)}</span>
+              {firstClockIn && (
+                <>
+                  <span>•</span>
+                  <span>First: {fmt12h(firstClockIn)}</span>
+                </>
+              )}
             </p>
           </div>
 
-          {/* Middle: Shift Progress (if clocked in) or Today's Summary (if clocked out) */}
-          <div className="flex-1 w-full lg:max-w-md lg:px-6 lg:border-x border-border/50">
-            {isClockedIn && shiftCountdownInfo ? (
-              <div className="space-y-2.5 py-1">
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-muted-foreground">Shift Progress</span>
-                  <span className="font-bold text-foreground tabular-nums">
-                    {shiftCountdownInfo.isComplete
-                      ? 'Shift Completed'
-                      : `${shiftCountdownInfo.text} remaining`}
+          {/* Center (5 cols): Today's Shift Metrics & Progress Console */}
+          <div className="lg:col-span-5 flex flex-col gap-2.5 w-full">
+            {/* Top row: 2 Equal Metric Pods */}
+            <div className="grid grid-cols-2 gap-3 w-full">
+              {/* Pod 1: ACTIVE TIME TODAY */}
+              <div className="clay-pod p-3.5 flex flex-col justify-between h-[80px]">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <Clock size={13} className="text-slate-400 shrink-0" />
+                  <span className="truncate">Active Time Today</span>
+                </div>
+                <div className="text-2xl sm:text-[26px] font-extrabold text-slate-900 tracking-tight leading-none">
+                  {formatDuration(todayWorkedMinutes)}
+                </div>
+              </div>
+
+              {/* Pod 2: SHIFT TARGET */}
+              <div className="clay-pod p-3.5 flex flex-col justify-between h-[80px]">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <Activity size={13} className="text-slate-400 shrink-0" />
+                  <span className="truncate">Shift Target</span>
+                </div>
+                <div className="flex items-baseline leading-none">
+                  <span className="text-2xl sm:text-[26px] font-extrabold text-slate-900 tracking-tight">
+                    {salaryMetrics.shiftHours}
+                  </span>
+                  <span className="text-sm font-bold text-slate-500 ml-1.5">
+                    hrs
                   </span>
                 </div>
-                <div className="w-full bg-secondary/80 rounded-full h-2 overflow-hidden">
+              </div>
+            </div>
+
+            {/* Bottom row: Shift Progress Bar (when clocked in) */}
+            {isClockedIn && shiftCountdownInfo ? (
+              <div className="clay-pod px-4 py-2.5 w-full">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 mb-1.5">
+                  <span className="flex items-center gap-1.5 text-slate-700 font-bold">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Shift Progress</span>
+                  </span>
+                  <span className="font-bold text-emerald-600 tabular-nums">
+                    {shiftCountdownInfo.isComplete ? 'Shift Completed' : `${shiftCountdownInfo.text} left`}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden shadow-[inset_0_1.5px_2px_rgba(0,0,0,0.08)]">
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-1000 ease-linear"
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_2px_6px_rgba(16,185,129,0.4)] transition-all duration-1000 ease-linear"
                     style={{ width: `${shiftCountdownInfo.percent}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
-                  <span>First punch: {firstClockIn ? fmt12h(firstClockIn) : '—'}</span>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                    {shiftCountdownInfo.percent}% completed
-                  </span>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium mt-1.5">
+                  <span>{firstClockIn ? `Started at ${fmt12h(firstClockIn)}` : 'On track'}</span>
+                  <span className="font-bold text-slate-700">{shiftCountdownInfo.percent}% completed</span>
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 py-1">
-                <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                    <Clock size={11} className="text-primary" /> Active Time Today
-                  </span>
-                  <p className="text-lg font-bold text-foreground mt-0.5">
-                    {formatDuration(todayWorkedMinutes)}
-                  </p>
-                </div>
-                <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                    <Activity size={11} className="text-primary" /> Shift Target
-                  </span>
-                  <p className="text-lg font-bold text-foreground mt-0.5">
-                    {salaryMetrics.shiftHours} hrs
-                  </p>
-                </div>
+              <div className="clay-pod px-3.5 py-2 flex items-center justify-between text-xs text-slate-500 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <Clock size={12} className="text-slate-400" />
+                  <span>Scheduled Shift</span>
+                </span>
+                <span className="font-semibold text-slate-700">
+                  {fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)}
+                </span>
               </div>
             )}
           </div>
 
-          {/* Right: Big Focused Action Button & Punches Count */}
-          <div className="flex flex-col items-stretch sm:items-end w-full lg:w-auto shrink-0 gap-2">
-            {isClockedIn ? (
-              <Button
-                type="button"
-                size="lg"
-                variant="destructive"
-                className="w-full sm:w-52 h-12 sm:h-14 rounded-xl font-semibold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-sm hover:shadow transition-all active:scale-[0.98]"
-                onClick={() => setIsPunchOutConfirmOpen(true)}
-                disabled={punchOutMutation.isPending}
-              >
-                <LogOut size={18} />
-                <span>{punchOutMutation.isPending ? 'Processing...' : 'Clock Out'}</span>
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="lg"
-                className="w-full sm:w-52 h-12 sm:h-14 rounded-xl font-semibold text-sm sm:text-base bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2.5 shadow-sm hover:shadow transition-all active:scale-[0.98]"
-                onClick={() => setIsPunchInConfirmOpen(true)}
-                disabled={punchInMutation.isPending}
-              >
-                <LogIn size={18} />
-                <span>{punchInMutation.isPending ? 'Processing...' : 'Clock In'}</span>
-              </Button>
-            )}
+          {/* Right (3 cols): Action Column with Vertical Divider */}
+          <div className="lg:col-span-3 flex items-center justify-end gap-5">
+            {/* Divider */}
+            <div className="hidden lg:block w-[1.5px] h-20 bg-slate-200/80 rounded-full shrink-0" />
 
-            <div className="text-xs text-muted-foreground font-medium flex items-center justify-center sm:justify-end gap-1.5">
-              <span>
-                {punchCount} {punchCount === 1 ? 'punch' : 'punches'} recorded today
-              </span>
-              {punchTimeline.length > 0 && (
-                <>
-                  <span>•</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsTimelineModalOpen(true)}
-                    className="text-primary hover:underline font-semibold cursor-pointer"
-                  >
-                    View sequence
-                  </button>
-                </>
+            {/* Action Button + Punches Info */}
+            <div className="flex flex-col items-center sm:items-end w-full sm:w-auto">
+              {isClockedIn ? (
+                <button
+                  type="button"
+                  className="clay-btn-red w-full sm:w-52 h-14 font-bold text-base text-white flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_12px_24px_-6px_rgba(244,63,94,0.45)]"
+                  onClick={() => setIsPunchOutConfirmOpen(true)}
+                  disabled={punchOutMutation.isPending}
+                >
+                  <LogOut size={20} className="stroke-[2.5]" />
+                  <span>{punchOutMutation.isPending ? 'Processing...' : 'Clock Out'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="clay-btn-green w-full sm:w-52 h-14 font-bold text-base text-white flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_12px_24px_-6px_rgba(16,185,129,0.45)]"
+                  onClick={() => setIsPunchInConfirmOpen(true)}
+                  disabled={punchInMutation.isPending}
+                >
+                  <LogIn size={20} className="stroke-[2.5]" />
+                  <span>{punchInMutation.isPending ? 'Processing...' : 'Clock In'}</span>
+                </button>
               )}
+
+              <div className="text-xs text-slate-400 font-medium mt-2 flex items-center gap-1.5">
+                <span>
+                  {punchCount} {punchCount === 1 ? 'punch' : 'punches'} recorded today
+                </span>
+                {punchTimeline.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsTimelineModalOpen(true)}
+                      className="text-emerald-600 hover:text-emerald-700 font-semibold underline underline-offset-2 cursor-pointer"
+                    >
+                      View sequence
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </Card>
+      </div>
 
-      {/* ── Attendance Streak Banner ── */}
-      <div className={`relative rounded-2xl border p-5 sm:p-6 overflow-hidden transition-all duration-500 ${
+      {/* ── Attendance Streak & Monthly Breakdown Banner ── */}
+      <div className={`clay-card p-5 sm:p-6 relative overflow-hidden transition-all duration-500 ${
         streakData.tier >= 6
-          ? 'bg-gradient-to-br from-purple-500/10 via-violet-400/5 to-card border-purple-500/25 dark:from-purple-950/35 dark:via-violet-950/15'
+          ? 'bg-gradient-to-br from-purple-50/70 via-violet-50/40 to-white border-purple-200/50'
           : streakData.tier >= 5
-          ? 'bg-gradient-to-br from-blue-500/10 via-indigo-400/5 to-card border-blue-500/25 dark:from-blue-950/30'
+          ? 'bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-white border-blue-200/50'
           : streakData.tier >= 4
-          ? 'bg-gradient-to-br from-amber-500/10 via-yellow-400/5 to-card border-amber-500/25 dark:from-amber-950/30'
+          ? 'bg-gradient-to-br from-amber-50/70 via-yellow-50/40 to-white border-amber-200/50'
           : streakData.tier >= 3
-          ? 'bg-gradient-to-br from-yellow-500/10 via-amber-400/5 to-card border-yellow-500/25 dark:from-yellow-950/30'
+          ? 'bg-gradient-to-br from-yellow-50/70 via-amber-50/40 to-white border-yellow-200/50'
           : streakData.isActive
-          ? 'bg-gradient-to-br from-orange-500/10 via-amber-400/5 to-card border-orange-500/25 dark:from-orange-950/30 dark:via-amber-950/15'
-          : 'bg-card border-border/70'
+          ? 'bg-gradient-to-br from-orange-50/70 via-amber-50/40 to-white border-orange-200/50'
+          : 'bg-white/95 border-slate-200/60'
       }`}>
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-
-          {/* LEFT: Emoji + Streak Count + Milestone Label */}
-          <div className="flex items-center gap-4">
+        <div className="relative z-10 grid grid-cols-1 xl:grid-cols-12 gap-5 xl:gap-6 items-center">
+          {/* LEFT (3 cols): Emoji Pod + Streak Count + Milestone Label */}
+          <div className="xl:col-span-3 flex items-center gap-3.5 min-w-0">
             <div
-              className={`text-5xl sm:text-6xl select-none leading-none transition-all ${
+              className={`clay-pod w-16 h-16 sm:w-18 sm:h-18 flex items-center justify-center text-4xl sm:text-[42px] select-none shrink-0 ${
                 streakData.isActive ? '' : 'opacity-30 grayscale'
               }`}
               title={streakData.label}
@@ -867,82 +913,143 @@ export function EmployeeDashboardPage(): JSX.Element {
               {streakData.emoji}
             </div>
 
-            <div>
-              <div className="flex items-end gap-2">
-                <span className={`text-5xl sm:text-6xl font-black tabular-nums leading-none ${
-                  streakData.tier >= 6 ? 'text-purple-600 dark:text-purple-400'
-                  : streakData.tier >= 5 ? 'text-blue-600 dark:text-blue-400'
-                  : streakData.tier >= 4 ? 'text-amber-600 dark:text-amber-400'
-                  : streakData.tier >= 3 ? 'text-yellow-600 dark:text-yellow-400'
-                  : streakData.isActive ? 'text-orange-600 dark:text-orange-400'
-                  : 'text-muted-foreground/50'
+            <div className="min-w-0">
+              <div className="flex items-end gap-1.5">
+                <span className={`text-3xl sm:text-4xl font-black tabular-nums leading-none ${
+                  streakData.tier >= 6 ? 'text-purple-600'
+                  : streakData.tier >= 5 ? 'text-blue-600'
+                  : streakData.tier >= 4 ? 'text-amber-600'
+                  : streakData.tier >= 3 ? 'text-yellow-600'
+                  : streakData.isActive ? 'text-orange-600'
+                  : 'text-slate-400'
                 }`}>
                   {streakData.currentStreak}
                 </span>
-                <span className="text-sm font-semibold text-muted-foreground pb-1.5">
+                <span className="text-xs sm:text-sm font-bold text-slate-500 pb-0.5">
                   day{streakData.currentStreak !== 1 ? 's' : ''} streak
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 mt-2">
-                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
-                  streakData.tier >= 6 ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/25'
-                  : streakData.tier >= 5 ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/25'
-                  : streakData.tier >= 4 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/25'
-                  : streakData.tier >= 3 ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/25'
-                  : streakData.isActive ? 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/25'
-                  : 'bg-muted text-muted-foreground border-border/40'
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                  streakData.tier >= 6 ? 'bg-purple-100 text-purple-700 border border-purple-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                  : streakData.tier >= 5 ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                  : streakData.tier >= 4 ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                  : streakData.tier >= 3 ? 'bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                  : streakData.isActive ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                  : 'clay-pill text-slate-500'
                 }`}>
                   {streakData.label}
                 </span>
                 {!streakData.isActive && (
-                  <span className="text-xs text-muted-foreground">Come on, start today! 💪</span>
+                  <span className="text-xs text-slate-400 font-medium">Start today! 💪</span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* RIGHT: Best Streak + Next Milestone Progress */}
-          <div className="flex items-center gap-6 sm:gap-10">
+          {/* MIDDLE (6 cols): 4 Smart Attendance Stat Pods filling center space */}
+          <div className="xl:col-span-6 w-full">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 w-full">
+              {[
+                { 
+                  prefix: 'Weekday', 
+                  suffix: 'Present',
+                  value: data?.monthSummary?.present || 0, 
+                  icon: CheckCircle2, 
+                  color: 'text-emerald-600', 
+                  bg: 'bg-emerald-50 text-emerald-600' 
+                },
+                { 
+                  prefix: 'Weekday', 
+                  suffix: 'Absent',
+                  value: data?.monthSummary?.absent || 0, 
+                  icon: XCircle, 
+                  color: 'text-rose-600', 
+                  bg: 'bg-rose-50 text-rose-600' 
+                },
+                { 
+                  prefix: 'Sunday', 
+                  suffix: 'Present',
+                  value: data?.monthSummary?.sundayPresent || 0, 
+                  icon: CheckCircle2, 
+                  color: 'text-emerald-600', 
+                  bg: 'bg-emerald-50 text-emerald-600' 
+                },
+                { 
+                  prefix: 'Sunday', 
+                  suffix: 'Absent',
+                  value: data?.monthSummary?.sundayAbsent || 0, 
+                  icon: XCircle, 
+                  color: 'text-amber-600', 
+                  bg: 'bg-amber-50 text-amber-600' 
+                },
+              ].map((stat, i) => (
+                <div 
+                  key={i} 
+                  className="clay-pod p-3 flex flex-col justify-between h-[80px] hover:-translate-y-0.5 transition-transform duration-200"
+                >
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="flex flex-col leading-tight min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {stat.prefix}
+                      </span>
+                      <span className="text-[11px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-tight">
+                        {stat.suffix}
+                      </span>
+                    </div>
+                    <div className={`p-1 rounded-full clay-pill ${stat.bg} shrink-0 mt-0.5`}>
+                      <stat.icon size={13} className={stat.color} />
+                    </div>
+                  </div>
+                  <div className="text-2xl sm:text-[26px] font-extrabold tracking-tight text-slate-900 leading-none tabular-nums">
+                    {stat.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* RIGHT (3 cols): Best Streak + Next Milestone Progress */}
+          <div className="xl:col-span-3 flex items-center gap-4 justify-between xl:justify-end min-w-0">
             {/* Best streak */}
-            <div className="text-center">
-              <p className={`text-3xl font-black tabular-nums ${
-                streakData.isActive ? 'text-foreground' : 'text-muted-foreground/60'
+            <div className="clay-pod px-3.5 py-2.5 text-center min-w-[76px] shrink-0">
+              <p className={`text-2xl sm:text-3xl font-black tabular-nums ${
+                streakData.isActive ? 'text-slate-900' : 'text-slate-400'
               }`}>
                 {streakData.bestStreak}
               </p>
-              <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Best (60d)</p>
+              <p className="text-[10px] text-slate-500 font-bold mt-0.5 uppercase tracking-wide">Best (60d)</p>
             </div>
 
             {/* Next milestone progress bar */}
             {streakData.nextMilestone && streakData.isActive && (
-              <div className="hidden sm:block min-w-[130px]">
+              <div className="hidden sm:block min-w-[130px] max-w-[160px] flex-1 xl:flex-initial">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] text-muted-foreground font-medium">
+                  <span className="text-xs text-slate-600 font-semibold truncate">
                     Next: {streakData.nextMilestone.nextEmoji} {streakData.nextMilestone.nextLabel}
                   </span>
                 </div>
-                <div className="w-full h-2 bg-muted/40 rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.1)]">
                   <div
                     className={`h-full rounded-full transition-all duration-1000 ${
-                      streakData.tier >= 5 ? 'bg-gradient-to-r from-purple-500 to-violet-400'
-                      : streakData.tier >= 4 ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
-                      : streakData.tier >= 3 ? 'bg-gradient-to-r from-yellow-500 to-amber-400'
-                      : 'bg-gradient-to-r from-orange-500 to-amber-400'
+                      streakData.tier >= 5 ? 'bg-gradient-to-r from-purple-500 to-violet-400 shadow-[0_2px_6px_rgba(168,85,247,0.4)]'
+                      : streakData.tier >= 4 ? 'bg-gradient-to-r from-amber-500 to-yellow-400 shadow-[0_2px_6px_rgba(245,158,11,0.4)]'
+                      : streakData.tier >= 3 ? 'bg-gradient-to-r from-yellow-500 to-amber-400 shadow-[0_2px_6px_rgba(234,179,8,0.4)]'
+                      : 'bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_2px_6px_rgba(249,115,22,0.4)]'
                     }`}
                     style={{ width: `${streakData.nextMilestone.progress}%` }}
                   />
                 </div>
-                <p className="text-[10px] text-muted-foreground/70 mt-1 text-right">
+                <p className="text-[10px] text-slate-500 font-medium mt-1.5 text-right">
                   {streakData.nextMilestone.daysLeft} more day{streakData.nextMilestone.daysLeft !== 1 ? 's' : ''} to unlock
                 </p>
               </div>
             )}
 
-            {/* Already at max milestone */}
             {!streakData.nextMilestone && streakData.isActive && (
-              <div className="hidden sm:flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400">
-                <span>Max Milestone Reached!</span>
+              <div className="hidden sm:flex items-center gap-2 text-sm font-bold text-purple-600">
+                <span>Max Reached!</span>
                 <span className="text-xl">🎉</span>
               </div>
             )}
@@ -951,34 +1058,14 @@ export function EmployeeDashboardPage(): JSX.Element {
 
         {/* Decorative large background emoji */}
         {streakData.isActive && (
-          <div className="absolute -right-3 -bottom-4 text-[110px] sm:text-[140px] opacity-[0.04] select-none pointer-events-none leading-none">
+          <div className="absolute -right-3 -bottom-4 text-[120px] sm:text-[150px] opacity-[0.04] select-none pointer-events-none leading-none">
             {streakData.emoji}
           </div>
         )}
       </div>
 
-      {/* 4 Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Weekday Present', value: data?.monthSummary?.present || 0, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
-          { label: 'Weekday Absent', value: data?.monthSummary?.absent || 0, icon: XCircle, color: 'text-rose-600', bg: 'bg-rose-500/10' },
-          { label: 'Sunday Present', value: data?.monthSummary?.sundayPresent || 0, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
-          { label: 'Sunday Absent', value: data?.monthSummary?.sundayAbsent || 0, icon: XCircle, color: 'text-amber-600', bg: 'bg-amber-500/10' },
-        ].map((stat, i) => (
-          <Card key={i} className="p-4 border-border/70 shadow-sm flex flex-col justify-between h-28 hover:shadow-md transition-all">
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{stat.label}</span>
-              <div className={`p-1.5 rounded-lg ${stat.bg}`}>
-                <stat.icon size={16} className={stat.color} />
-              </div>
-            </div>
-            <div className="text-3xl font-bold tracking-tight mt-2 text-foreground">{stat.value}</div>
-          </Card>
-        ))}
-      </div>
-
       {/* Row 1: Attendance Calendar & Requests Subgrid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6 items-start">
         <AttendanceCalendarCard
           initialYear={currentYear}
           initialMonth={currentMonthNum}
@@ -987,27 +1074,27 @@ export function EmployeeDashboardPage(): JSX.Element {
         <RequestsStatusCard />
       </div>
 
-      {/* Row 2: Reimagined Weekly Activity & Today's Punch Timeline Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Left (7 cols): Reimagined Clean Weekly Activity Card */}
+      {/* Row 2: Claymorphic Weekly Activity & Today's Punch Timeline Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-stretch">
+        {/* Left (7 cols): Claymorphic Weekly Activity Card */}
         <div className="lg:col-span-7 flex flex-col">
-          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 sm:p-6 flex flex-col justify-between h-full">
+          <div className="clay-card p-6 sm:p-7 flex flex-col justify-between h-full">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/50">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-primary/10 rounded-xl text-primary shrink-0">
-                  <Activity size={18} />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 clay-pod text-emerald-600 shrink-0">
+                  <Activity size={20} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-foreground tracking-tight">
+                    <h3 className="text-sm font-bold text-slate-900 tracking-tight">
                       Weekly Activity
                     </h3>
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/50">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
                       Last 7 Days
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Logged working hours vs {salaryMetrics.shiftHours}h shift benchmark
                   </p>
                 </div>
@@ -1015,20 +1102,20 @@ export function EmployeeDashboardPage(): JSX.Element {
 
               {/* Quick Summary Badges */}
               <div className="flex items-center gap-2 text-xs">
-                <div className="px-3 py-1.5 rounded-xl bg-muted/40 border border-border/40 flex items-center gap-1.5">
-                  <span className="text-muted-foreground text-[11px]">Total:</span>
-                  <span className="font-bold text-foreground">{weeklyStats.totalHours} hrs</span>
+                <div className="px-3.5 py-1.5 rounded-xl clay-pod flex items-center gap-1.5">
+                  <span className="text-slate-500 text-[11px] font-medium">Total:</span>
+                  <span className="font-bold text-slate-900">{weeklyStats.totalHours} hrs</span>
                 </div>
-                <div className="px-3 py-1.5 rounded-xl bg-muted/40 border border-border/40 flex items-center gap-1.5">
-                  <span className="text-muted-foreground text-[11px]">Avg:</span>
-                  <span className="font-bold text-foreground">{weeklyStats.avgHours} h/d</span>
+                <div className="px-3.5 py-1.5 rounded-xl clay-pod flex items-center gap-1.5">
+                  <span className="text-slate-500 text-[11px] font-medium">Avg:</span>
+                  <span className="font-bold text-slate-900">{weeklyStats.avgHours} h/d</span>
                 </div>
               </div>
             </div>
 
             {/* 7-Day Chart Area */}
-            <div className="py-4 my-auto">
-              <div className="grid grid-cols-7 gap-2 sm:gap-3 items-end h-44 pb-2 pt-3">
+            <div className="py-5 my-auto">
+              <div className="grid grid-cols-7 gap-2 sm:gap-3.5 items-end h-44 pb-2 pt-3">
                 {weeklyDaysData.map((day, idx) => {
                   const isFull = day.percent >= 90;
                   const isPartial = day.hours > 0 && !isFull;
@@ -1036,49 +1123,49 @@ export function EmployeeDashboardPage(): JSX.Element {
                   return (
                     <div key={idx} className="flex flex-col items-center h-full justify-end group relative">
                       {/* Floating tooltip */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-9 bg-popover text-popover-foreground text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-md pointer-events-none whitespace-nowrap z-20 border border-border flex items-center gap-1.5">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-9 bg-slate-900 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-lg pointer-events-none whitespace-nowrap z-20 flex items-center gap-1.5">
                         <span>{day.dayLabel}, {day.dateNum}:</span>
-                        <span className="font-bold text-foreground">{day.hours}h</span>
-                        {day.isSunday && <span className="text-muted-foreground text-[10px]">(Sunday)</span>}
+                        <span className="font-bold text-emerald-400">{day.hours}h</span>
+                        {day.isSunday && <span className="text-slate-400 text-[10px]">(Sunday)</span>}
                       </div>
 
                       {/* Bar Track */}
                       <div
-                        className={`w-full max-w-[36px] sm:max-w-[42px] h-full flex flex-col justify-end p-1 rounded-xl transition-all ${
+                        className={`w-full max-w-[38px] sm:max-w-[44px] h-full flex flex-col justify-end p-1 rounded-2xl transition-all ${
                           day.isToday
-                            ? 'bg-primary/5 ring-2 ring-primary/25'
-                            : 'bg-muted/30 hover:bg-muted/50'
+                            ? 'bg-emerald-50/80 ring-2 ring-emerald-500/30 shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)]'
+                            : 'bg-slate-100/80 hover:bg-slate-200/60 shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.05)]'
                         }`}
                       >
                         {/* Bar Fill */}
                         <div
-                          className={`w-full rounded-lg transition-all duration-700 ${
+                          className={`w-full rounded-xl transition-all duration-700 shadow-sm ${
                             day.isToday
-                              ? 'bg-primary shadow-sm'
+                              ? 'bg-gradient-to-t from-emerald-600 to-emerald-400'
                               : isFull
-                              ? 'bg-emerald-500 hover:bg-emerald-600'
+                              ? 'bg-gradient-to-t from-emerald-500 to-teal-400'
                               : isPartial
-                              ? 'bg-teal-400/85 hover:bg-teal-500'
+                              ? 'bg-gradient-to-t from-teal-400 to-cyan-300'
                               : day.isSunday
-                              ? 'bg-zinc-300 dark:bg-zinc-700'
-                              : 'bg-muted-foreground/20'
+                              ? 'bg-slate-300'
+                              : 'bg-slate-200'
                           }`}
-                          style={{ height: `${Math.max(6, Math.min(100, day.percent))}%` }}
+                          style={{ height: `${Math.max(8, Math.min(100, day.percent))}%` }}
                         />
                       </div>
 
                       {/* Day Label & Hours */}
-                      <div className="text-center mt-2 space-y-0.5">
+                      <div className="text-center mt-2.5 space-y-0.5">
                         <div
                           className={`text-[11px] font-bold ${
-                            day.isToday ? 'text-primary' : 'text-foreground'
+                            day.isToday ? 'text-emerald-600' : 'text-slate-800'
                           }`}
                         >
                           {day.dayLabel}
                         </div>
                         <div
-                          className={`text-[10px] tabular-nums font-medium ${
-                            day.hours > 0 ? 'text-muted-foreground' : 'text-muted-foreground/50'
+                          className={`text-[10px] tabular-nums font-semibold ${
+                            day.hours > 0 ? 'text-slate-500' : 'text-slate-400'
                           }`}
                         >
                           {day.hours > 0 ? `${day.hours}h` : '—'}
@@ -1091,53 +1178,53 @@ export function EmployeeDashboardPage(): JSX.Element {
             </div>
 
             {/* Footer Summary */}
-            <div className="pt-3 border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="pt-3.5 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
               <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0" />
                 <span>
-                  Shift Target Met: <strong className="text-foreground font-semibold">{weeklyStats.targetMetDays} / 7 days</strong>
+                  Shift Target Met: <strong className="text-slate-900 font-bold">{weeklyStats.targetMetDays} / 7 days</strong>
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-primary shrink-0" />
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.5)] shrink-0" />
                 <span>
-                  Today: <strong className="text-foreground font-semibold">{formatDuration(todayWorkedMinutes)}</strong>
+                  Today: <strong className="text-slate-900 font-bold">{formatDuration(todayWorkedMinutes)}</strong>
                 </span>
               </div>
             </div>
-          </Card>
+          </div>
         </div>
 
-        {/* Right (5 cols): Today's Punch Timeline & Sequence Card */}
+        {/* Right (5 cols): Claymorphic Today's Punch Timeline & Sequence Card */}
         <div className="lg:col-span-5 flex flex-col">
-          <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 sm:p-6 flex flex-col justify-between h-full">
+          <div className="clay-card p-6 sm:p-7 flex flex-col justify-between h-full">
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-border/50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-600 shrink-0">
-                  <Clock size={16} />
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-200/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 clay-pod text-emerald-600 shrink-0">
+                  <Clock size={18} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground tracking-tight">
+                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">
                     Today's Punch Timeline
                   </h3>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[11px] text-slate-500 font-medium">
                     {punchTimeline.length} {punchTimeline.length === 1 ? 'event' : 'events'} recorded today
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-muted text-muted-foreground">
+              <span className="text-xs font-bold px-3 py-1 rounded-xl clay-pod text-slate-700">
                 {formatDuration(todayWorkedMinutes)} Active
               </span>
             </div>
 
             {/* Punch Sequence List */}
-            <div className="flex-1 py-3 my-auto min-h-[160px] flex flex-col justify-center">
+            <div className="flex-1 py-3.5 my-auto min-h-[160px] flex flex-col justify-center">
               {punchTimeline.length === 0 ? (
                 <div className="text-center py-6">
-                  <Clock size={28} className="mx-auto text-muted-foreground/40 mb-2" />
-                  <p className="text-xs font-medium text-muted-foreground">No punches recorded today yet</p>
-                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                  <Clock size={32} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs font-bold text-slate-600">No punches recorded today yet</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
                     Click Clock In above to begin tracking your work shift
                   </p>
                 </div>
@@ -1146,40 +1233,40 @@ export function EmployeeDashboardPage(): JSX.Element {
                   {punchTimeline.map((item, index) => {
                     const isLast = index === punchTimeline.length - 1;
                     return (
-                      <div key={item.id || index} className="flex items-start gap-3 relative pb-3 group">
+                      <div key={item.id || index} className="flex items-start gap-3 relative pb-3.5 group">
                         {!isLast && (
-                          <div className="absolute left-[11px] top-6 bottom-0 w-[2px] bg-border/60" />
+                          <div className="absolute left-[13px] top-6 bottom-0 w-[2px] bg-slate-200" />
                         )}
                         <div
-                          className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                          className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 shadow-sm ${
                             item.type === 'IN'
-                              ? 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30'
-                              : 'bg-rose-500/15 text-rose-600 border border-rose-500/30'
+                              ? 'bg-emerald-50 text-emerald-600 border border-emerald-300 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                              : 'bg-rose-50 text-rose-600 border border-rose-300 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
                           }`}
                         >
-                          {item.type === 'IN' ? <LogIn size={11} /> : <LogOut size={11} />}
+                          {item.type === 'IN' ? <LogIn size={12} /> : <LogOut size={12} />}
                         </div>
                         <div className="flex-1 flex items-center justify-between text-xs min-w-0 pt-0.5">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-foreground">Punch #{item.num}</span>
+                            <span className="font-bold text-slate-800">Punch #{item.num}</span>
                             <span
-                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
                                 item.type === 'IN'
-                                  ? 'bg-emerald-500/10 text-emerald-600'
-                                  : 'bg-rose-500/10 text-rose-600'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-rose-100 text-rose-700'
                               }`}
                             >
                               {item.type === 'IN' ? 'IN' : 'OUT'}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-medium text-foreground/90">{fmt12h(item.time)}</span>
+                            <span className="font-sans font-bold text-slate-700">{fmt12h(item.time)}</span>
                             {item.sessionText && (
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                className={`text-[10px] px-2 py-0.5 rounded-md font-semibold ${
                                   item.isCurrentlyActive
-                                    ? 'bg-emerald-500/15 text-emerald-600 animate-pulse font-semibold'
-                                    : 'bg-muted text-muted-foreground'
+                                    ? 'bg-emerald-100 text-emerald-700 animate-pulse'
+                                    : 'clay-pill text-slate-600'
                                 }`}
                               >
                                 {item.sessionText}
@@ -1195,11 +1282,11 @@ export function EmployeeDashboardPage(): JSX.Element {
             </div>
 
             {/* Footer */}
-            <div className="pt-3 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
+            <div className="pt-3.5 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500 font-medium">
               <span>Shift: {salaryMetrics.shiftName} ({fmt12h(salaryMetrics.shiftStart)} – {fmt12h(salaryMetrics.shiftEnd)})</span>
               <span>Rate: ₹{salaryMetrics.hourRate}/hr</span>
             </div>
-          </Card>
+          </div>
         </div>
       </div>
 

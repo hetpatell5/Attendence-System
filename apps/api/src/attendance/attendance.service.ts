@@ -778,8 +778,13 @@ export class AttendanceService {
     type PunchPair = { punchInAt: Date; punchOutAt: Date | null };
     const allPairs: PunchPair[] = [];
 
-    // If punchPairs array provided, use that exclusively (it already contains all entries)
-    if (dto.punchPairs && dto.punchPairs.length > 0) {
+    // Marking a day ABSENT clears every punch. Without this the legacy single-pair path below
+    // falls back to the punches already on the record, so the day kept its times and every view
+    // (which treats "has a punch-in" as present) still showed it as present.
+    if (dto.status === 'ABSENT') {
+      // no pairs
+    } else if (dto.punchPairs && dto.punchPairs.length > 0) {
+      // If punchPairs array provided, use that exclusively (it already contains all entries)
       for (const p of dto.punchPairs) {
         allPairs.push({
           punchInAt:  new Date(p.punchInAt),

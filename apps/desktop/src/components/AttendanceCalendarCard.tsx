@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceApi, holidaysApi, leaveApi } from '@/lib/api';
-import { Card } from '@/components/ui/card';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface AttendanceCalendarCardProps {
@@ -141,7 +140,7 @@ export function AttendanceCalendarCard({
   }, [viewYear, viewMonth, totalDaysInMonth, holidayMap, attendanceMap, approvedLeaveDates, todayStr]);
 
   return (
-    <Card className="rounded-2xl border border-border/70 shadow-sm bg-card p-5 flex flex-col justify-between">
+    <div className="clay-card p-5 sm:p-6 flex flex-col justify-between h-full">
       {/* Calendar Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
@@ -219,38 +218,42 @@ export function AttendanceCalendarCard({
             // 3. Present -> Green
             // 4. Sundays -> Gray
             // 5. Today (if not present) -> Distinct highlighted capsule (Indigo/Purple as in Image 1)
-            let cellStyle = 'text-foreground/85 hover:bg-muted/60';
+            let cellStyle = 'bg-transparent text-slate-500 hover:bg-slate-100/60 border border-transparent';
             let tooltipText = `${dateStr}`;
 
             if (isToday) {
               if (isPresent) {
-                cellStyle = 'bg-emerald-400 text-slate-900 font-bold shadow-sm ring-2 ring-emerald-500/50';
+                cellStyle = 'bg-emerald-50/50 border-2 border-emerald-600 text-slate-900 font-black shadow-sm ring-2 ring-emerald-400/40';
                 tooltipText = `Today: Present`;
               } else {
-                cellStyle = 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-400/40 shadow-sm';
+                cellStyle = 'bg-indigo-50/50 border-2 border-indigo-600 text-slate-900 font-black shadow-sm ring-2 ring-indigo-400/40';
                 tooltipText = `Today: In Progress`;
               }
             } else if (isHoliday) {
-              // Holiday in orange
-              cellStyle = 'bg-orange-500 hover:bg-orange-600 text-white font-semibold shadow-sm';
+              // Holiday in orange border
+              cellStyle = 'bg-white hover:bg-orange-50/40 border-2 border-orange-500 text-slate-800 font-bold shadow-[0_2px_6px_rgba(249,115,22,0.12)]';
               tooltipText = `Holiday: ${holidayName}`;
             } else if (isPresent) {
-              // Present in green (mint green as in Image 1)
-              cellStyle = 'bg-emerald-400 hover:bg-emerald-500 text-slate-900 font-semibold shadow-sm';
+              // Present in green border
+              cellStyle = 'bg-white hover:bg-emerald-50/40 border-2 border-emerald-500 text-slate-800 font-bold shadow-[0_2px_6px_rgba(16,185,129,0.12)]';
               const duration = att?.workedMinutes ? ` (${Math.floor(att.workedMinutes / 60)}h ${att.workedMinutes % 60}m)` : '';
               tooltipText = `Present${duration}`;
             } else if (isAbsent) {
-              // Absent in red
-              cellStyle = 'bg-rose-500 hover:bg-rose-600 text-white font-semibold shadow-sm';
+              // Absent in red border
+              cellStyle = 'bg-white hover:bg-rose-50/40 border-2 border-rose-500 text-slate-800 font-bold shadow-[0_2px_6px_rgba(244,63,94,0.12)]';
               tooltipText = `Absent`;
             } else if (isLeave) {
-              // Leave
-              cellStyle = 'bg-blue-500 hover:bg-blue-600 text-white font-semibold shadow-sm';
+              // Leave in blue border
+              cellStyle = 'bg-white hover:bg-blue-50/40 border-2 border-blue-500 text-slate-800 font-bold shadow-[0_2px_6px_rgba(59,130,246,0.12)]';
               tooltipText = `Approved Leave`;
             } else if (isSunday) {
-              // Sundays in gray (as in Image 1)
-              cellStyle = 'bg-slate-100 dark:bg-zinc-800/80 text-slate-400 dark:text-zinc-500 font-medium';
+              // Sundays in subtle gray
+              cellStyle = 'bg-slate-50/70 border border-slate-200/80 text-slate-400 font-medium';
               tooltipText = `Sunday (Weekly Off)`;
+            } else if (isPast) {
+              cellStyle = 'bg-white border border-slate-200/60 text-slate-600 font-medium';
+            } else {
+              cellStyle = 'bg-transparent text-slate-400 border border-transparent';
             }
 
             return (
@@ -292,6 +295,6 @@ export function AttendanceCalendarCard({
           <span>{summaryCounts.holiday} Holiday</span>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { CompanySettings } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -103,6 +104,35 @@ function toIdempotentUpsert(stmt: string): string {
   return `${withoutTrailingSemicolon} ON DUPLICATE KEY UPDATE ${updateClause}`;
 }
 
+/**
+ * Records which attendance_log rows a dump contains. The old system's admin "edit
+ * punches" (admin/view_attendance.php) does DELETE ... WHERE employee_id=? AND date=?
+ * followed by fresh INSERTs with NEW ids — so an edited day's old rows no longer exist
+ * at the source. Our import only ever adds/updates, so without knowing what the dump
+ * contains those deleted rows sit next to their replacements forever (doubled punches).
+ */
+function collectAttendanceLogSnapshot(
+  stmt: string,
+  snapshot: { ids: Set<number>; pairs: Set<string>; fullTable: boolean },
+): void {
+  if (/^\s*CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?[`"]?attendance_log[`"]?/i.test(stmt)) {
+    snapshot.fullTable = true;
+    return;
+  }
+  const insert = /^\s*(?:INSERT|REPLACE)\s+(?:IGNORE\s+)?INTO\s+[`"]?attendance_log[`"]?\s*\(([^)]+)\)/i.exec(stmt);
+  if (!insert) return;
+  const columns = insert[1]!.split(',').map((c) => c.trim().replace(/[`"]/g, '').toLowerCase());
+  // The tuple pattern below assumes the dump's usual leading columns; bail out (and so
+  // prune nothing) rather than guess if a dump ever orders them differently.
+  if (columns[0] !== 'id' || columns[1] !== 'employee_id' || columns[2] !== 'date') return;
+  const rowRe = /\(\s*(\d+)\s*,\s*(\d+)\s*,\s*'(\d{4}-\d{2}-\d{2})'/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(stmt)) !== null) {
+    snapshot.ids.add(Number(m[1]));
+    snapshot.pairs.add(`${m[2]}:${m[3]}`);
+  }
+}
+
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
@@ -172,7 +202,12 @@ export class SettingsService {
       );
     });
 
+    // What the dump says attendance_log contains, so rows the old system has since deleted
+    // can be removed from our mirror afterwards (see pruneStaleAttendanceLog).
+    const logSnapshot = { ids: new Set<number>(), pairs: new Set<string>(), fullTable: false };
+
     for (const stmt of allowed) {
+      collectAttendanceLogSnapshot(stmt, logSnapshot);
       try {
         // Re-importing a fresher dump of the SAME legacy row ids (e.g. re-exporting
         // attendance_log after new punches were corrected on the live phpMyAdmin system)
@@ -182,7 +217,13 @@ export class SettingsService {
         // Upsert on every column via ON DUPLICATE KEY UPDATE fixes that; only fall back
         // to IGNORE when the statement has no explicit column list to build the
         // UPDATE clause from (can't know the columns without a schema lookup).
-        const safe = toIdempotentUpsert(stmt);
+        let safe = toIdempotentUpsert(stmt);
+        // Dumps exported from MySQL 8 name collations (utf8mb4_0900_ai_ci, ...) that
+        // MariaDB / older MySQL don't know ("Unknown collation", error 1273), failing
+        // the whole CREATE TABLE. Only schema statements are rewritten — never row data.
+        if (/^\s*(CREATE|ALTER)\s/i.test(safe)) {
+          safe = safe.replace(/utf8mb4_0900_[a-z0-9_]+/gi, 'utf8mb4_general_ci');
+        }
         await this.prisma.$executeRawUnsafe(safe);
         result.successCount++;
       } catch (err: any) {
@@ -205,6 +246,13 @@ export class SettingsService {
 
     this.logger.log(`SQL Import: ${result.successCount} ok, ${result.errorCount} errors`);
 
+    try {
+      const pruned = await this.pruneStaleAttendanceLog(logSnapshot);
+      if (pruned > 0) this.logger.log(`attendance_log: removed ${pruned} punch row(s) deleted at the source`);
+    } catch (err: any) {
+      this.logger.warn(`attendance_log prune failed (import itself still succeeded): ${err?.message ?? err}`);
+    }
+
     // The legacy `attendance` table (unlike attendance_log/salary_history/employees) has
     // no primary or unique key at all in the source system's own dump — not even its `id`
     // column is reliable (the authentic dump itself contains byte-identical duplicate rows
@@ -222,7 +270,257 @@ export class SettingsService {
       this.logger.warn(`attendance dedup self-heal failed (import itself still succeeded): ${err?.message ?? err}`);
     }
 
+    // Salary raises recorded on the old system land in the legacy `salary_history` table,
+    // but the salary pages read `app_salary_history`. Nothing copied one to the other, so
+    // every fresh import left new raises (e.g. an August 17k -> 18k) invisible until
+    // someone remembered to run a repair script by hand. Best-effort for the same reason
+    // as the dedup above: the import itself already succeeded.
+    try {
+      const synced = await this.syncSalaryHistoryFromLegacy();
+      this.logger.log(
+        `Salary history sync: ${synced.upserted} month(s) upserted, ${synced.baseSalaryUpdated} employee base salary(ies) updated`,
+      );
+    } catch (err: any) {
+      this.logger.warn(`salary history sync failed (import itself still succeeded): ${err?.message ?? err}`);
+    }
+
+    // Same reasoning for the commission / advance / remarks typed into the old system's
+    // salary sheet: they live in `salary_details` but the salary pages read them off
+    // `SalaryRecord`, which only ever copied them once at creation.
+    try {
+      const synced = await this.syncSalaryRecordInputsFromLegacy();
+      this.logger.log(`Salary record sync: ${synced.updated} record(s) reconciled with legacy salary_details`);
+    } catch (err: any) {
+      this.logger.warn(`salary record sync failed (import itself still succeeded): ${err?.message ?? err}`);
+    }
+
     return result;
+  }
+
+  /**
+   * Reconciles the admin-entered inputs (commission, advance, remarks) of existing
+   * SalaryRecords with legacy `salary_details`. A record only picks these up when it is
+   * first created from the legacy row; one created any other way (regenerated after being
+   * deleted, or created before the legacy row was current) kept commission 0 forever, so
+   * e.g. a ₹3,323 August commission never showed. Rules:
+   *  - legacy row PAID: the old system's figures are final, so they are mirrored exactly;
+   *  - legacy row still pending: only blanks are filled (a 0 commission/advance or empty
+   *    remark), so nothing typed in this system is overwritten.
+   * netSalary moves by the same delta so the stored slip stays consistent with its inputs.
+   * Basic/Sunday-holiday pay is untouched. Never writes to the legacy tables.
+   */
+  private async syncSalaryRecordInputsFromLegacy(): Promise<{ updated: number }> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        employee_id: number;
+        month_year: string;
+        commission: string | null;
+        advance_amount: string | null;
+        remarks: string | null;
+        status: string | null;
+        final_salary: string | null;
+      }>
+    >(
+      `SELECT employee_id, month_year, CAST(commission AS CHAR) AS commission,
+              CAST(advance_amount AS CHAR) AS advance_amount, remarks, status,
+              CAST(final_salary AS CHAR) AS final_salary
+       FROM salary_details`,
+    );
+
+    const employees = await this.prisma.employee.findMany({
+      where: { legacySourceId: { not: null } },
+      select: { id: true, legacySourceId: true },
+    });
+    const employeeByLegacyId = new Map(employees.map((e) => [e.legacySourceId!, e.id]));
+
+    const records = await this.prisma.salaryRecord.findMany({
+      where: { employeeId: { in: employees.map((e) => e.id) } },
+      select: {
+        id: true,
+        employeeId: true,
+        month: true,
+        commissionAmount: true,
+        advanceDeducted: true,
+        remarks: true,
+        netSalary: true,
+      },
+    });
+    const recordByKey = new Map(
+      records.map((r) => [`${r.employeeId}:${r.month.toISOString().slice(0, 7)}`, r]),
+    );
+
+    let updated = 0;
+    const CONCURRENCY = 10;
+    const pending: Array<() => Promise<unknown>> = [];
+    for (const row of rows) {
+      if (!/^\d{4}-\d{2}$/.test(String(row.month_year))) continue;
+      if (Number(row.final_salary ?? 0) === 0) continue; // legacy stub row, nothing real yet
+      const employeeId = employeeByLegacyId.get(Number(row.employee_id));
+      const record = employeeId ? recordByKey.get(`${employeeId}:${row.month_year}`) : undefined;
+      if (!record) continue;
+
+      const isPaid = (row.status ?? '').toLowerCase() === 'paid';
+      const legacyCommission = new Prisma.Decimal(row.commission ?? 0);
+      const legacyAdvance = new Prisma.Decimal(row.advance_amount ?? 0);
+      const legacyRemarks = (row.remarks ?? '').trim();
+
+      const commission = isPaid || record.commissionAmount.isZero() ? legacyCommission : record.commissionAmount;
+      const advance = isPaid || record.advanceDeducted.isZero() ? legacyAdvance : record.advanceDeducted;
+      const remarks = isPaid || !(record.remarks ?? '').trim() ? legacyRemarks || record.remarks : record.remarks;
+
+      if (
+        commission.equals(record.commissionAmount) &&
+        advance.equals(record.advanceDeducted) &&
+        remarks === record.remarks
+      ) {
+        continue;
+      }
+
+      const netSalary = record.netSalary
+        .plus(commission.minus(record.commissionAmount))
+        .minus(advance.minus(record.advanceDeducted));
+      pending.push(() =>
+        this.prisma.salaryRecord.update({
+          where: { id: record.id },
+          data: { commissionAmount: commission, advanceDeducted: advance, remarks, netSalary },
+        }),
+      );
+    }
+
+    for (let i = 0; i < pending.length; i += CONCURRENCY) {
+      await Promise.all(pending.slice(i, i + CONCURRENCY).map((fn) => fn()));
+      updated += Math.min(CONCURRENCY, pending.length - i);
+    }
+    return { updated };
+  }
+
+  /**
+   * Removes attendance_log rows that no longer exist at the source. A dump that includes
+   * the table's CREATE TABLE is a full snapshot, so any local id absent from it is stale;
+   * otherwise only rows on employee+dates the dump does cover are pruned (mirrors the old
+   * system's own delete-by-employee-and-date). Refuses to act if it would remove a large
+   * share of the table, which signals a truncated dump rather than real deletions.
+   */
+  private async pruneStaleAttendanceLog(snapshot: {
+    ids: Set<number>;
+    pairs: Set<string>;
+    fullTable: boolean;
+  }): Promise<number> {
+    if (snapshot.ids.size === 0) return 0;
+
+    const local = await this.prisma.$queryRawUnsafe<Array<{ id: number; employee_id: number; date: string }>>(
+      `SELECT id, employee_id, CAST(date AS CHAR) AS date FROM attendance_log`,
+    );
+    const stale = local
+      .filter((r) => !snapshot.ids.has(Number(r.id)))
+      .filter((r) => snapshot.fullTable || snapshot.pairs.has(`${r.employee_id}:${String(r.date).slice(0, 10)}`));
+    if (stale.length === 0) return 0;
+
+    if (stale.length > local.length * 0.25) {
+      this.logger.warn(
+        `attendance_log prune skipped: ${stale.length} of ${local.length} rows look stale, too many to be real deletions (partial dump?)`,
+      );
+      return 0;
+    }
+
+    for (let i = 0; i < stale.length; i += 500) {
+      const chunk = stale.slice(i, i + 500).map((r) => Number(r.id));
+      await this.prisma.$executeRawUnsafe(`DELETE FROM attendance_log WHERE id IN (${chunk.join(',')})`);
+    }
+    return stale.length;
+  }
+
+  /**
+   * Mirrors the legacy `salary_history` table into `app_salary_history`, matching how the
+   * old system resolved it: per employee + month the most recently inserted row (highest
+   * id) wins, since a correction was inserted as a new row rather than editing the old
+   * one. Also refreshes `Employee.baseSalary` to the latest amount already in effect, so
+   * the Employee Details page doesn't keep showing a pre-raise figure. Idempotent — only
+   * rows that actually differ are written. Never touches the legacy tables.
+   */
+  private async syncSalaryHistoryFromLegacy(): Promise<{ upserted: number; baseSalaryUpdated: number }> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ id: number; employee_id: number; amount: string; effective_from: string }>
+    >(
+      `SELECT id, employee_id, CAST(amount AS CHAR) AS amount, CAST(effective_from AS CHAR) AS effective_from
+       FROM salary_history ORDER BY id ASC`,
+    );
+
+    const latestByKey = new Map<string, { employeeLegacyId: number; monthKey: string; amount: string }>();
+    for (const row of rows) {
+      const monthKey = String(row.effective_from).slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(monthKey) || monthKey < '2000-01') continue;
+      latestByKey.set(`${row.employee_id}:${monthKey}`, {
+        employeeLegacyId: Number(row.employee_id),
+        monthKey,
+        amount: String(row.amount),
+      });
+    }
+
+    const employees = await this.prisma.employee.findMany({
+      where: { legacySourceId: { not: null } },
+      select: { id: true, legacySourceId: true, baseSalary: true },
+    });
+    const employeeByLegacyId = new Map(employees.map((e) => [e.legacySourceId!, e]));
+
+    const existing = await this.prisma.salaryHistory.findMany({
+      where: { employeeId: { in: employees.map((e) => e.id) } },
+      select: { employeeId: true, effectiveFrom: true, amount: true },
+    });
+    const existingAmount = new Map(
+      existing.map((h) => [`${h.employeeId}:${h.effectiveFrom.toISOString().slice(0, 7)}`, h.amount]),
+    );
+
+    const changes: Array<{ employeeId: string; effectiveFrom: Date; amount: Prisma.Decimal }> = [];
+    for (const entry of latestByKey.values()) {
+      const employee = employeeByLegacyId.get(entry.employeeLegacyId);
+      if (!employee) continue;
+      const amount = new Prisma.Decimal(entry.amount);
+      const current = existingAmount.get(`${employee.id}:${entry.monthKey}`);
+      if (current && current.equals(amount)) continue;
+      const [year, month] = entry.monthKey.split('-').map(Number);
+      changes.push({ employeeId: employee.id, effectiveFrom: new Date(Date.UTC(year!, month! - 1, 1)), amount });
+    }
+
+    const CONCURRENCY = 10;
+    for (let i = 0; i < changes.length; i += CONCURRENCY) {
+      await Promise.all(
+        changes.slice(i, i + CONCURRENCY).map((c) =>
+          this.prisma.salaryHistory.upsert({
+            where: { employeeId_effectiveFrom: { employeeId: c.employeeId, effectiveFrom: c.effectiveFrom } },
+            create: {
+              employeeId: c.employeeId,
+              effectiveFrom: c.effectiveFrom,
+              amount: c.amount,
+              note: 'Synced from legacy salary_history',
+            },
+            update: { amount: c.amount, note: 'Synced from legacy salary_history' },
+          }),
+        ),
+      );
+    }
+
+    // Base salary = latest amount already in effect (a future-dated raise must not apply yet).
+    const inEffect = await this.prisma.salaryHistory.findMany({
+      where: { employeeId: { in: employees.map((e) => e.id) }, effectiveFrom: { lte: new Date() } },
+      orderBy: { effectiveFrom: 'desc' },
+      select: { employeeId: true, amount: true },
+    });
+    const latestInEffect = new Map<string, Prisma.Decimal>();
+    for (const h of inEffect) {
+      if (!latestInEffect.has(h.employeeId)) latestInEffect.set(h.employeeId, h.amount);
+    }
+
+    let baseSalaryUpdated = 0;
+    for (const employee of employees) {
+      const latest = latestInEffect.get(employee.id);
+      if (latest && !latest.equals(employee.baseSalary)) {
+        await this.prisma.employee.update({ where: { id: employee.id }, data: { baseSalary: latest } });
+        baseSalaryUpdated++;
+      }
+    }
+
+    return { upserted: changes.length, baseSalaryUpdated };
   }
 
   /**
@@ -448,6 +746,32 @@ export class SettingsService {
     result.attendanceImported += res2a;
     this.logger.log(`Step 2a (attendance_log punches): ${res2a} employee-days upserted`);
 
+    // Drop days migrated from punches that have since been deleted at the source. Only rows
+    // this step itself creates are eligible (LEGACY_IMPORT + PRESENT + a punchPairs array);
+    // step 2b's punch-less summary rows, live punches and manual/admin edits are left alone.
+    try {
+      const legacyIdByEmployeeId = new Map(employees.map((e) => [e.id, e.legacySourceId!]));
+      const migrated = await this.prisma.attendance.findMany({
+        where: { source: 'LEGACY_IMPORT', status: 'PRESENT' },
+        select: { id: true, employeeId: true, attendanceDate: true, punchPairs: true },
+      });
+      const orphanIds = migrated
+        .filter((a) => Array.isArray(a.punchPairs) && a.punchPairs.length > 0)
+        .filter((a) => {
+          const legacyId = legacyIdByEmployeeId.get(a.employeeId);
+          return legacyId !== undefined && !byEmployeeDate.has(`${legacyId}:${a.attendanceDate.toISOString().slice(0, 10)}`);
+        })
+        .map((a) => a.id);
+      if (orphanIds.length > 0 && orphanIds.length <= migrated.length * 0.25) {
+        for (let i = 0; i < orphanIds.length; i += 500) {
+          await this.prisma.attendance.deleteMany({ where: { id: { in: orphanIds.slice(i, i + 500) } } });
+        }
+        this.logger.log(`Step 2a cleanup: removed ${orphanIds.length} migrated day(s) whose punches no longer exist`);
+      }
+    } catch (err: any) {
+      result.errors.push(`Stale attendance cleanup: ${err?.message ?? err}`);
+    }
+
     // 2b: `attendance` (the separate legacy daily-summary table) only fills in days that
     // have NO attendance_log punches at all — e.g. an explicit ABSENT/LEAVE/HALF_DAY/HOLIDAY
     // marking with no punches to back it. It must never run for a date attendance_log already
@@ -526,6 +850,25 @@ export class SettingsService {
     `;
     const res2c = await this.prisma.$executeRawUnsafe(sqlHolidayBackfill);
     this.logger.log(`Step 2c (holiday backfill): ${res2c} attendance rows marked as HOLIDAY`);
+
+    // Step 3: salary history — runs after the employee import above so brand-new
+    // employees get their history mapped too.
+    try {
+      const synced = await this.syncSalaryHistoryFromLegacy();
+      this.logger.log(
+        `Step 3 (salary history): ${synced.upserted} month(s) upserted, ${synced.baseSalaryUpdated} base salary(ies) updated`,
+      );
+    } catch (err: any) {
+      result.errors.push(`Salary history sync: ${err?.message ?? err}`);
+    }
+
+    // Step 4: commission / advance / remarks on existing salary records.
+    try {
+      const synced = await this.syncSalaryRecordInputsFromLegacy();
+      this.logger.log(`Step 4 (salary record inputs): ${synced.updated} record(s) reconciled`);
+    } catch (err: any) {
+      result.errors.push(`Salary record sync: ${err?.message ?? err}`);
+    }
 
     this.logger.log(
       `Migration done: ${result.employeesImported} employees imported, ` +

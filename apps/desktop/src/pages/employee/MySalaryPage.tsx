@@ -5,8 +5,6 @@ import { salaryApi, employeesApi, holidaysApi, attendanceApi, settingsApi } from
 import { useAuthStore } from '@/state/auth-store';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   Download, CalendarDays, 
   Eye, FileText, X, Loader2 
@@ -396,32 +394,36 @@ export function MySalaryPage(): JSX.Element {
       key: 'actions',
       header: '',
       render: (r) => (
-        <Button
-          variant="outline"
-          size="sm"
+        <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); setSelected(r); }}
-          className="h-7 text-xs px-2.5 rounded-lg border-border/70 hover:border-primary/50 text-foreground gap-1.5 font-medium hover:bg-muted/60 transition-colors"
+          className="clay-button-subtle h-8 px-3 rounded-xl flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-emerald-700 transition-all cursor-pointer shadow-xs active:scale-95"
           title="View Salary Slip"
         >
-          <Eye size={13} className="text-muted-foreground" />
+          <Eye size={13} className="text-slate-500" />
           <span>View Slip</span>
-        </Button>
+        </button>
       )
     }
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="relative space-y-6 max-w-7xl mx-auto pb-10">
+      {/* Ambient background glow accents for rich claymorphism depth */}
+      <div className="absolute -top-12 -right-12 -z-10 w-96 h-96 bg-emerald-100/35 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-48 -left-12 -z-10 w-96 h-96 bg-sky-100/35 rounded-full blur-3xl pointer-events-none" />
+
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/70">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
             Salary Analytics & Visual Tracking
           </h2>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">
+            Visual earnings trajectory, career progression, and past salary slips.
+          </p>
         </div>
       </div>
-
-
 
       {/* Visual Analytics Suite: Modern Charts & Graphs */}
       <SalaryAnalyticsCharts
@@ -435,12 +437,17 @@ export function MySalaryPage(): JSX.Element {
       />
 
       {/* Finalized Salary History */}
-      <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden">
-        <CardHeader className="p-4 sm:px-6 sm:py-4 border-b border-border/50">
-          <CardTitle className="text-base font-bold text-foreground">Salary History & Slips</CardTitle>
-          <CardDescription className="text-xs text-muted-foreground mt-0.5">Past finalized salary records and slips</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <div className="clay-card p-6 sm:p-7 relative overflow-hidden transition-all">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-200/60">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <CalendarDays size={18} className="text-emerald-600" />
+              <span>Salary History & Slips</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">Past finalized salary records and official payslips</p>
+          </div>
+        </div>
+        <div className="pt-3">
           <DataTable
             columns={columns}
             rows={rows}
@@ -448,36 +455,40 @@ export function MySalaryPage(): JSX.Element {
             isLoading={isLoading}
             onRowClick={setSelected}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Salary Slip Modal (Exact 1:1 Legacy Slip matching Admin Preview) */}
       {selected && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity" onClick={() => setSelected(null)} />
-          <div className="relative z-10 bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="flex justify-between items-center px-5 py-3.5 border-b border-slate-200 bg-slate-50 shrink-0">
+          <div className="relative z-10 bg-white/95 backdrop-blur-xl w-full max-w-3xl rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2),0_10px_20px_rgba(0,0,0,0.1)] border border-white/60 overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200/70 bg-slate-50/80 backdrop-blur-md shrink-0">
               <div className="flex items-center gap-2 text-slate-800 font-bold text-sm sm:text-base">
-                <FileText size={16} className="text-primary" />
+                <FileText size={17} className="text-emerald-600" />
                 <span>Salary Slip Document Preview</span>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
+                <button
+                  type="button"
                   onClick={() => handleDownloadPdf(selected)}
-                  className="h-8 gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs rounded-lg shadow-xs"
                   disabled={downloading}
+                  className="clay-btn-green h-9 px-4 text-xs text-white font-bold flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
                 >
                   {downloading ? (
-                    <Loader2 size={13} className="animate-spin" />
+                    <Loader2 size={14} className="animate-spin" />
                   ) : (
-                    <Download size={13} />
+                    <Download size={14} />
                   )}
                   <span>Download Official PDF</span>
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelected(null)} className="h-8 w-8 p-0 rounded-lg text-slate-500 hover:text-slate-800">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="clay-button-subtle h-8 w-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 cursor-pointer"
+                >
                   <X size={16} />
-                </Button>
+                </button>
               </div>
             </div>
 

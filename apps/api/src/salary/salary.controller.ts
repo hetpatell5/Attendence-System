@@ -112,6 +112,12 @@ export class SalaryController {
   }
 
   @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Get('last-pending')
+  getLastPending(@Query('month') month: string): Promise<Record<string, number>> {
+    return this.salaryService.getLastMonthPendingForMonth(month);
+  }
+
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
   @Get('effective-rates')
   getEffectiveRates(@Query('month') month: string): Promise<Record<string, number>> {
     return this.salaryService.getEffectiveRatesForMonth(month);

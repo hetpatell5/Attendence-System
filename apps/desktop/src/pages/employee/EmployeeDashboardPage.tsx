@@ -534,21 +534,6 @@ export function EmployeeDashboardPage(): JSX.Element {
       else { break; } // absent → streak ends
     }
 
-    // Walk forward to find best streak over the 62-day window
-    let bestStreak = 0;
-    let running = 0;
-    for (let i = 62; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dStr = d.toLocaleDateString('en-CA');
-      if (dStr > todayStr || !isWorkingDay(dStr)) continue;
-      const result = getDayResult(dStr);
-      if (result === 'present') { running++; if (running > bestStreak) bestStreak = running; }
-      else if (result === 'leave') { /* transparent */ }
-      else { running = 0; }
-    }
-    bestStreak = Math.max(bestStreak, currentStreak);
-
     // Tier classification
     const tier =
       currentStreak === 0 ? 0
@@ -588,7 +573,6 @@ export function EmployeeDashboardPage(): JSX.Element {
 
     return {
       currentStreak,
-      bestStreak,
       tier,
       emoji: currentTier.emoji,
       label: currentTier.label,
@@ -712,10 +696,10 @@ export function EmployeeDashboardPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Top Hero: Focused Horizontal Claymorphic Clock & Shift Action Card */}
-      <div className="clay-card p-6 sm:p-7 relative overflow-hidden transition-all duration-300">
+      {/* Top Hero: Focused Claymorphic Clock, 3 Metric Pods & Circular Action Button Sticked on Wall */}
+      <div className="relative py-2 transition-all duration-300">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          {/* Left (4 cols): Status Badge, Digital Clock, Date & Shift Info */}
+          {/* Left (4 cols): Status Badge, Digital Clock, Date & Shift Info (Sticked on Wall) */}
           <div className="lg:col-span-4 flex flex-col items-start gap-1.5 min-w-0">
             {/* Status Badge + Date */}
             <div className="flex items-center gap-3">
@@ -768,12 +752,12 @@ export function EmployeeDashboardPage(): JSX.Element {
             </p>
           </div>
 
-          {/* Center (5 cols): Today's Shift Metrics & Progress Console */}
+          {/* Center (5 cols): The 3 Middle Boxes (Sticked on Wall) */}
           <div className="lg:col-span-5 flex flex-col gap-2.5 w-full">
             {/* Top row: 2 Equal Metric Pods */}
             <div className="grid grid-cols-2 gap-3 w-full">
-              {/* Pod 1: ACTIVE TIME TODAY */}
-              <div className="clay-pod p-3.5 flex flex-col justify-between h-[80px]">
+              {/* Box 1: ACTIVE TIME TODAY */}
+              <div className="clay-pod p-3.5 flex flex-col justify-between h-[82px]">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   <Clock size={13} className="text-slate-400 shrink-0" />
                   <span className="truncate">Active Time Today</span>
@@ -783,8 +767,8 @@ export function EmployeeDashboardPage(): JSX.Element {
                 </div>
               </div>
 
-              {/* Pod 2: SHIFT TARGET */}
-              <div className="clay-pod p-3.5 flex flex-col justify-between h-[80px]">
+              {/* Box 2: SHIFT TARGET */}
+              <div className="clay-pod p-3.5 flex flex-col justify-between h-[82px]">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   <Activity size={13} className="text-slate-400 shrink-0" />
                   <span className="truncate">Shift Target</span>
@@ -800,7 +784,7 @@ export function EmployeeDashboardPage(): JSX.Element {
               </div>
             </div>
 
-            {/* Bottom row: Shift Progress Bar (when clocked in) */}
+            {/* Box 3: Shift Progress Bar (when clocked in) or Scheduled Shift */}
             {isClockedIn && shiftCountdownInfo ? (
               <div className="clay-pod px-4 py-2.5 w-full">
                 <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 mb-1.5">
@@ -824,7 +808,7 @@ export function EmployeeDashboardPage(): JSX.Element {
                 </div>
               </div>
             ) : (
-              <div className="clay-pod px-3.5 py-2 flex items-center justify-between text-xs text-slate-500 font-medium">
+              <div className="clay-pod px-3.5 py-2.5 flex items-center justify-between text-xs text-slate-500 font-medium">
                 <span className="flex items-center gap-1.5">
                   <Clock size={12} className="text-slate-400" />
                   <span>Scheduled Shift</span>
@@ -836,52 +820,52 @@ export function EmployeeDashboardPage(): JSX.Element {
             )}
           </div>
 
-          {/* Right (3 cols): Action Column with Vertical Divider */}
-          <div className="lg:col-span-3 flex items-center justify-end gap-5">
-            {/* Divider */}
-            <div className="hidden lg:block w-[1.5px] h-20 bg-slate-200/80 rounded-full shrink-0" />
-
-            {/* Action Button + Punches Info */}
-            <div className="flex flex-col items-center sm:items-end w-full sm:w-auto">
-              {isClockedIn ? (
-                <button
-                  type="button"
-                  className="clay-btn-red w-full sm:w-52 h-14 font-bold text-base text-white flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_12px_24px_-6px_rgba(244,63,94,0.45)]"
-                  onClick={() => setIsPunchOutConfirmOpen(true)}
-                  disabled={punchOutMutation.isPending}
-                >
-                  <LogOut size={20} className="stroke-[2.5]" />
-                  <span>{punchOutMutation.isPending ? 'Processing...' : 'Clock Out'}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="clay-btn-green w-full sm:w-52 h-14 font-bold text-base text-white flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_12px_24px_-6px_rgba(16,185,129,0.45)]"
-                  onClick={() => setIsPunchInConfirmOpen(true)}
-                  disabled={punchInMutation.isPending}
-                >
-                  <LogIn size={20} className="stroke-[2.5]" />
-                  <span>{punchInMutation.isPending ? 'Processing...' : 'Clock In'}</span>
-                </button>
-              )}
-
-              <div className="text-xs text-slate-400 font-medium mt-2 flex items-center gap-1.5">
-                <span>
-                  {punchCount} {punchCount === 1 ? 'punch' : 'punches'} recorded today
+          {/* Right (3 cols): Independent Circular Clay Button Sticked on Wall */}
+          <div className="lg:col-span-3 flex flex-col items-center justify-center">
+            {isClockedIn ? (
+              <button
+                type="button"
+                className="clay-btn-circle-red w-28 h-28 sm:w-32 sm:h-32 text-white flex flex-col items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none"
+                onClick={() => setIsPunchOutConfirmOpen(true)}
+                disabled={punchOutMutation.isPending}
+                title="Click to Clock Out"
+              >
+                <LogOut size={28} className="stroke-[2.5]" />
+                <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
+                  {punchOutMutation.isPending ? 'Saving...' : 'Clock Out'}
                 </span>
-                {punchTimeline.length > 0 && (
-                  <>
-                    <span>•</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsTimelineModalOpen(true)}
-                      className="text-emerald-600 hover:text-emerald-700 font-semibold underline underline-offset-2 cursor-pointer"
-                    >
-                      View sequence
-                    </button>
-                  </>
-                )}
-              </div>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="clay-btn-circle-green w-28 h-28 sm:w-32 sm:h-32 text-white flex flex-col items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none"
+                onClick={() => setIsPunchInConfirmOpen(true)}
+                disabled={punchInMutation.isPending}
+                title="Click to Clock In"
+              >
+                <LogIn size={28} className="stroke-[2.5]" />
+                <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
+                  {punchInMutation.isPending ? 'Saving...' : 'Clock In'}
+                </span>
+              </button>
+            )}
+
+            <div className="text-xs text-slate-400 font-medium mt-2.5 flex items-center gap-1.5">
+              <span>
+                {punchCount} {punchCount === 1 ? 'punch' : 'punches'} recorded today
+              </span>
+              {punchTimeline.length > 0 && (
+                <>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTimelineModalOpen(true)}
+                    className="text-emerald-600 hover:text-emerald-700 font-semibold underline underline-offset-2 cursor-pointer"
+                  >
+                    View sequence
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -902,54 +886,89 @@ export function EmployeeDashboardPage(): JSX.Element {
           : 'bg-white/95 border-slate-200/60'
       }`}>
         <div className="relative z-10 grid grid-cols-1 xl:grid-cols-12 gap-5 xl:gap-6 items-center">
-          {/* LEFT (3 cols): Emoji Pod + Streak Count + Milestone Label */}
-          <div className="xl:col-span-3 flex items-center gap-3.5 min-w-0">
-            <div
-              className={`clay-pod w-16 h-16 sm:w-18 sm:h-18 flex items-center justify-center text-4xl sm:text-[42px] select-none shrink-0 ${
-                streakData.isActive ? '' : 'opacity-30 grayscale'
-              }`}
-              title={streakData.label}
-            >
-              {streakData.emoji}
-            </div>
-
-            <div className="min-w-0">
-              <div className="flex items-end gap-1.5">
-                <span className={`text-3xl sm:text-4xl font-black tabular-nums leading-none ${
-                  streakData.tier >= 6 ? 'text-purple-600'
-                  : streakData.tier >= 5 ? 'text-blue-600'
-                  : streakData.tier >= 4 ? 'text-amber-600'
-                  : streakData.tier >= 3 ? 'text-yellow-600'
-                  : streakData.isActive ? 'text-orange-600'
-                  : 'text-slate-400'
-                }`}>
-                  {streakData.currentStreak}
-                </span>
-                <span className="text-xs sm:text-sm font-bold text-slate-500 pb-0.5">
-                  day{streakData.currentStreak !== 1 ? 's' : ''} streak
-                </span>
+          {/* LEFT (4 cols): Emoji Pod + Streak Count + Milestone Label & Progress Bar below */}
+          <div className="xl:col-span-4 flex flex-col justify-center min-w-0 pr-0 xl:pr-3">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div
+                className={`clay-pod w-16 h-16 sm:w-18 sm:h-18 flex items-center justify-center text-4xl sm:text-[42px] select-none shrink-0 ${
+                  streakData.isActive ? '' : 'opacity-30 grayscale'
+                }`}
+                title={streakData.label}
+              >
+                {streakData.emoji}
               </div>
 
-              <div className="flex items-center gap-2 mt-1.5">
-                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                  streakData.tier >= 6 ? 'bg-purple-100 text-purple-700 border border-purple-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                  : streakData.tier >= 5 ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                  : streakData.tier >= 4 ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                  : streakData.tier >= 3 ? 'bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                  : streakData.isActive ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                  : 'clay-pill text-slate-500'
-                }`}>
-                  {streakData.label}
-                </span>
-                {!streakData.isActive && (
-                  <span className="text-xs text-slate-400 font-medium">Start today! 💪</span>
-                )}
+              <div className="min-w-0">
+                <div className="flex items-end gap-1.5">
+                  <span className={`text-3xl sm:text-4xl font-black tabular-nums leading-none ${
+                    streakData.tier >= 6 ? 'text-purple-600'
+                    : streakData.tier >= 5 ? 'text-blue-600'
+                    : streakData.tier >= 4 ? 'text-amber-600'
+                    : streakData.tier >= 3 ? 'text-yellow-600'
+                    : streakData.isActive ? 'text-orange-600'
+                    : 'text-slate-400'
+                  }`}>
+                    {streakData.currentStreak}
+                  </span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-500 pb-0.5">
+                    day{streakData.currentStreak !== 1 ? 's' : ''} streak
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                    streakData.tier >= 6 ? 'bg-purple-100 text-purple-700 border border-purple-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : streakData.tier >= 5 ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : streakData.tier >= 4 ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : streakData.tier >= 3 ? 'bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : streakData.isActive ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : 'clay-pill text-slate-500'
+                  }`}>
+                    {streakData.label}
+                  </span>
+                  {!streakData.isActive && (
+                    <span className="text-xs text-slate-400 font-medium">Start today! 💪</span>
+                  )}
+                </div>
               </div>
             </div>
+
+            {/* Next milestone progress bar (Below streak info) */}
+            {streakData.nextMilestone && streakData.isActive && (
+              <div className="mt-3 w-full max-w-[270px]">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 mb-1">
+                  <span className="flex items-center gap-1">
+                    <span>Next:</span>
+                    <span>{streakData.nextMilestone.nextEmoji}</span>
+                    <span className="font-bold text-slate-700">{streakData.nextMilestone.nextLabel}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {streakData.nextMilestone.daysLeft} more day{streakData.nextMilestone.daysLeft !== 1 ? 's' : ''} to unlock
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden shadow-[inset_0_1.5px_2px_rgba(0,0,0,0.08)]">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      streakData.tier >= 5 ? 'bg-gradient-to-r from-purple-500 to-violet-400 shadow-[0_2px_6px_rgba(168,85,247,0.4)]'
+                      : streakData.tier >= 4 ? 'bg-gradient-to-r from-amber-500 to-yellow-400 shadow-[0_2px_6px_rgba(245,158,11,0.4)]'
+                      : streakData.tier >= 3 ? 'bg-gradient-to-r from-yellow-500 to-amber-400 shadow-[0_2px_6px_rgba(234,179,8,0.4)]'
+                      : 'bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_2px_6px_rgba(249,115,22,0.4)]'
+                    }`}
+                    style={{ width: `${streakData.nextMilestone.progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {!streakData.nextMilestone && streakData.isActive && (
+              <div className="mt-2.5 flex items-center gap-1.5 text-xs font-bold text-purple-600">
+                <span>Maximum Tier Unlocked!</span>
+                <span className="text-base">👑</span>
+              </div>
+            )}
           </div>
 
-          {/* MIDDLE (6 cols): 4 Smart Attendance Stat Pods filling center space */}
-          <div className="xl:col-span-6 w-full">
+          {/* RIGHT (8 cols): 4 Smart Attendance Stat Pods + Sunday & Holiday Earned Strip */}
+          <div className="xl:col-span-8 w-full">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 w-full">
               {[
                 { 
@@ -989,16 +1008,16 @@ export function EmployeeDashboardPage(): JSX.Element {
                   key={i} 
                   className="clay-pod p-3 flex flex-col justify-between h-[80px] hover:-translate-y-0.5 transition-transform duration-200"
                 >
-                  <div className="flex items-start justify-between gap-1.5">
-                    <div className="flex flex-col leading-tight min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
                         {stat.prefix}
                       </span>
-                      <span className="text-[11px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-tight">
+                      <span className="text-[11px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-tight whitespace-nowrap">
                         {stat.suffix}
                       </span>
                     </div>
-                    <div className={`p-1 rounded-full clay-pill ${stat.bg} shrink-0 mt-0.5`}>
+                    <div className={`p-1 rounded-full clay-pill ${stat.bg} shrink-0`}>
                       <stat.icon size={13} className={stat.color} />
                     </div>
                   </div>
@@ -1093,51 +1112,6 @@ export function EmployeeDashboardPage(): JSX.Element {
                 </div>
               );
             })()}
-          </div>
-
-          {/* RIGHT (3 cols): Best Streak + Next Milestone Progress */}
-          <div className="xl:col-span-3 flex items-center gap-4 justify-between xl:justify-end min-w-0">
-            {/* Best streak */}
-            <div className="clay-pod px-3.5 py-2.5 text-center min-w-[76px] shrink-0">
-              <p className={`text-2xl sm:text-3xl font-black tabular-nums ${
-                streakData.isActive ? 'text-slate-900' : 'text-slate-400'
-              }`}>
-                {streakData.bestStreak}
-              </p>
-              <p className="text-[10px] text-slate-500 font-bold mt-0.5 uppercase tracking-wide">Best (60d)</p>
-            </div>
-
-            {/* Next milestone progress bar */}
-            {streakData.nextMilestone && streakData.isActive && (
-              <div className="hidden sm:block min-w-[130px] max-w-[160px] flex-1 xl:flex-initial">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs text-slate-600 font-semibold truncate">
-                    Next: {streakData.nextMilestone.nextEmoji} {streakData.nextMilestone.nextLabel}
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.1)]">
-                  <div
-                    className={`h-full rounded-full transition-all duration-1000 ${
-                      streakData.tier >= 5 ? 'bg-gradient-to-r from-purple-500 to-violet-400 shadow-[0_2px_6px_rgba(168,85,247,0.4)]'
-                      : streakData.tier >= 4 ? 'bg-gradient-to-r from-amber-500 to-yellow-400 shadow-[0_2px_6px_rgba(245,158,11,0.4)]'
-                      : streakData.tier >= 3 ? 'bg-gradient-to-r from-yellow-500 to-amber-400 shadow-[0_2px_6px_rgba(234,179,8,0.4)]'
-                      : 'bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_2px_6px_rgba(249,115,22,0.4)]'
-                    }`}
-                    style={{ width: `${streakData.nextMilestone.progress}%` }}
-                  />
-                </div>
-                <p className="text-[10px] text-slate-500 font-medium mt-1.5 text-right">
-                  {streakData.nextMilestone.daysLeft} more day{streakData.nextMilestone.daysLeft !== 1 ? 's' : ''} to unlock
-                </p>
-              </div>
-            )}
-
-            {!streakData.nextMilestone && streakData.isActive && (
-              <div className="hidden sm:flex items-center gap-2 text-sm font-bold text-purple-600">
-                <span>Max Reached!</span>
-                <span className="text-xl">🎉</span>
-              </div>
-            )}
           </div>
         </div>
 

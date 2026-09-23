@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { dashboardApi, attendanceApi, leaveApi, salaryApi, announcementsApi, holidaysApi, attendanceRequestsApi, type AttendanceRequestItem } from '@/lib/api';
+import { dashboardApi, leaveApi, salaryApi, announcementsApi, holidaysApi, attendanceRequestsApi, type AttendanceRequestItem } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/StatusBadge';
-import { DataTable } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -42,6 +41,10 @@ interface StatTileProps {
   to?: string;
   onClick?: () => void;
   indicatorColor?: string;
+  topAction?: {
+    label: string;
+    to: string;
+  };
 }
 
 function StatTile({
@@ -53,24 +56,39 @@ function StatTile({
   to,
   onClick,
   indicatorColor,
+  topAction,
 }: StatTileProps): JSX.Element {
   const content = (
     <div className="relative h-full flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 group/card select-none cursor-pointer overflow-hidden">
       {/* Top subtle accent line on hover */}
       <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-primary/0 to-transparent group-hover/card:via-primary/70 transition-all duration-300" />
 
-      {/* Top Row: Label & Icon */}
-      <div className="flex items-center justify-between gap-1.5 mb-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 truncate" title={label}>
+      {/* Top Row: Label & Icon / Top Action */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 whitespace-nowrap" title={label}>
           {label}
         </span>
-        <div
-          className={cn(
-            'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all duration-200 group-hover/card:scale-110 shadow-2xs',
-            colorClass,
+        <div className="flex items-center gap-1.5 shrink-0">
+          {topAction ? (
+            <Link
+              to={topAction.to}
+              onClick={(e) => e.stopPropagation()}
+              className="text-[10.5px] text-primary hover:text-primary font-semibold flex items-center gap-1 bg-primary/10 hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all duration-200 hover:shadow-2xs"
+              title={topAction.label}
+            >
+              <span>{topAction.label}</span>
+              <ArrowUpRight size={11} />
+            </Link>
+          ) : (
+            <div
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-xl transition-all duration-200 group-hover/card:scale-110 shadow-2xs',
+                colorClass,
+              )}
+            >
+              {icon}
+            </div>
           )}
-        >
-          {icon}
         </div>
       </div>
 
@@ -163,27 +181,25 @@ export function AdminDashboardPage(): JSX.Element {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const [todayStr, setTodayStr] = useState('');
   const [activeModal, setActiveModal] = useState<'present' | 'absent' | 'late' | 'early' | 'birthdays' | 'paid' | 'unpaid' | null>(null);
 
   const now = useMemo(() => new Date(), []);
   const currentYear = now.getFullYear();
-  const currentMonthNum = now.getMonth() + 1;
-  const currentMonthStr = String(currentMonthNum).padStart(2, '0');
   const todayFormatted = now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
-  // Salary month/year filter state (defaults to current month and year)
-  const [salaryYear, setSalaryYear] = useState(String(currentYear));
-  const [salaryMonth, setSalaryMonth] = useState(currentMonthStr);
+  // Salary month/year filter state (defaults to PREVIOUS month)
+  const prevMonthDate = useMemo(() => {
+    const d = new Date(now);
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return d;
+  }, [now]);
+  const [salaryYear, setSalaryYear] = useState(String(prevMonthDate.getFullYear()));
+  const [salaryMonth, setSalaryMonth] = useState(String(prevMonthDate.getMonth() + 1).padStart(2, '0'));
 
   const salaryMonthIso = `${salaryYear}-${salaryMonth}-01`;
   const salaryMonthLabel = MONTH_OPTIONS.find((m) => m.value === salaryMonth)?.label || 'Month';
   const salaryMonthName = `${salaryMonthLabel} ${salaryYear}`;
-
-  useEffect(() => {
-    const d = new Date();
-    setTodayStr(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-  }, []);
 
   // 1. Core Dashboard Data
   const { data, isLoading } = useQuery({
@@ -191,14 +207,7 @@ export function AdminDashboardPage(): JSX.Element {
     queryFn: dashboardApi.admin,
   });
 
-  // 2. Today's Attendance Logs
-  const { data: todayAttendance, isLoading: isAttendanceLoading } = useQuery({
-    queryKey: ['attendance', 'today', todayStr],
-    queryFn: () => attendanceApi.listAll({ from: todayStr, to: todayStr, pageSize: '50' }),
-    enabled: !!todayStr,
-  });
-
-  // 3. Salary Data (Server-calculated exact figures matching SalaryManagementPage)
+  // 2. Salary Data (Server-calculated exact figures matching SalaryManagementPage)
   const { data: salarySummary, isLoading: isSalaryLoading } = useQuery({
     queryKey: ['salary', 'summary', salaryMonthIso],
     queryFn: () => salaryApi.summary(salaryMonthIso),
@@ -377,14 +386,26 @@ export function AdminDashboardPage(): JSX.Element {
       <Dialog open={activeModal !== null} onOpenChange={(open) => !open && setActiveModal(null)}>
         <DialogContent className="sm:max-w-[450px] rounded-2xl p-6 max-h-[80vh] flex flex-col">
           <DialogHeader className="pb-3 border-b border-border/40 shrink-0">
-            <DialogTitle className="text-base font-semibold text-foreground flex items-center gap-2">
-              {activeModal === 'present' && <><CheckCircle2 className="text-emerald-500" size={18} /> Present Staff Today</>}
-              {activeModal === 'absent' && <><XCircle className="text-rose-500" size={18} /> Absent Staff Today</>}
-              {activeModal === 'late' && <><Clock className="text-amber-500" size={18} /> Late Arrivals Today</>}
-              {activeModal === 'birthdays' && <><Gift className="text-pink-500" size={18} /> Birthdays Today</>}
-              {activeModal === 'paid' && <><IndianRupee className="text-emerald-500" size={18} /> Paid Staff ({salaryMonthLabel.slice(0, 3)})</>}
-              {activeModal === 'unpaid' && <><IndianRupee className="text-amber-500" size={18} /> Unpaid Staff</>}
-            </DialogTitle>
+            <div className="flex items-center justify-between w-full pr-6">
+              <DialogTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+                {activeModal === 'present' && <><CheckCircle2 className="text-emerald-500" size={18} /> Present Staff Today</>}
+                {activeModal === 'absent' && <><XCircle className="text-rose-500" size={18} /> Absent Staff Today</>}
+                {activeModal === 'late' && <><Clock className="text-amber-500" size={18} /> Late Arrivals Today</>}
+                {activeModal === 'birthdays' && <><Gift className="text-pink-500" size={18} /> Birthdays Today</>}
+                {activeModal === 'paid' && <><IndianRupee className="text-emerald-500" size={18} /> Paid Staff ({salaryMonthLabel.slice(0, 3)})</>}
+                {activeModal === 'unpaid' && <><IndianRupee className="text-amber-500" size={18} /> Unpaid Staff</>}
+              </DialogTitle>
+              {activeModal === 'present' && (
+                <Link
+                  to="/admin/reports"
+                  onClick={() => setActiveModal(null)}
+                  className="text-xs text-primary font-medium hover:underline flex items-center gap-1 group shrink-0"
+                >
+                  <span>View Report</span>
+                  <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              )}
+            </div>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0 pt-4 pb-2 space-y-2 pr-1">
             {activeModal === 'present' && (
@@ -439,12 +460,22 @@ export function AdminDashboardPage(): JSX.Element {
             )}
             {activeModal === 'unpaid' && (
               (salaryOverview as any).unpaidEmployees?.length > 0 ? (salaryOverview as any).unpaidEmployees.map((emp: any) => (
-                <div key={emp.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/40 border border-transparent hover:border-border/50">
+                <div
+                  key={emp.id}
+                  className="flex justify-between items-center p-2 rounded-lg hover:bg-amber-50/60 dark:hover:bg-amber-950/20 border border-transparent hover:border-amber-300/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setActiveModal(null);
+                    navigate(`/admin/salary?month=${salaryMonth}&year=${salaryYear}&employeeId=${emp.id}`);
+                  }}
+                >
                   <div>
                     <div className="text-sm font-semibold">{emp.firstName} {emp.lastName}</div>
                     {emp.employeeCode && <div className="text-[11px] text-muted-foreground">{emp.employeeCode}</div>}
                   </div>
-                  <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs font-bold text-amber-500">₹{emp.netSalary?.toLocaleString('en-IN')}</div>
+                    <ArrowUpRight size={13} className="text-amber-500" />
+                  </div>
                 </div>
               )) : <div className="text-center text-sm text-muted-foreground py-6">No unpaid staff found for this month.</div>
             )}
@@ -471,6 +502,10 @@ export function AdminDashboardPage(): JSX.Element {
           colorClass="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400"
           indicatorColor="bg-emerald-500"
           onClick={() => setActiveModal('present')}
+          topAction={{
+            label: 'View Report',
+            to: '/admin/reports',
+          }}
         />
         <StatTile
           label="Absent"
@@ -753,100 +788,233 @@ export function AdminDashboardPage(): JSX.Element {
         </Card>
       </div>
 
-      {/* Row 3: Today's Attendance Table (7 cols) + Recent Leaves (5 cols) */}
+      {/* Row 3: Attendance Punch Requests (7 cols) + Recent Leaves (5 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Today's Live Attendance Table */}
-        <Card className="lg:col-span-7 rounded-2xl border border-border/70 shadow-sm flex flex-col justify-between">
-          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border/40">
-            <div>
-              <CardTitle className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <Clock size={16} className="text-primary" />
-                <span>Today's Live Attendance</span>
-              </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Staff punch in/out timestamps and recorded duration for today
-              </p>
+        {/* Attendance Punch Requests Widget */}
+        <Card className="lg:col-span-7 rounded-2xl border border-border/70 shadow-sm overflow-hidden bg-card flex flex-col justify-between">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-border/40 gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <Clock size={18} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base font-semibold tracking-tight text-foreground">
+                    Attendance Punch Requests
+                  </CardTitle>
+                  <Badge
+                    className={cn(
+                      "text-xs font-semibold px-2 py-0.5 border",
+                      pendingRequests.length > 0
+                        ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                        : "bg-muted text-muted-foreground border-border/60"
+                    )}
+                  >
+                    {pendingRequests.length} Pending
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Staff punch corrections requiring review and automatic database update
+                </p>
+              </div>
             </div>
-            <Link
-              to="/admin/reports"
-              className="text-xs text-primary font-medium hover:underline flex items-center gap-1 group"
-            >
-              <span>View All</span>
-              <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
-            </Link>
+
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handleApproveAllRequests}
+                disabled={pendingRequests.length === 0 || bulkApproveMutation.isPending}
+                className="gap-1.5 text-xs font-medium h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50"
+              >
+                <CheckCheck size={14} />
+                <span>{bulkApproveMutation.isPending ? 'Approving All...' : `Approve All (${pendingRequests.length})`}</span>
+              </Button>
+            </div>
           </CardHeader>
 
           <CardContent className="p-0 flex-1 overflow-auto max-h-[340px]">
-            <DataTable
-              columns={[
-                {
-                  key: 'employee',
-                  header: 'Employee',
-                  render: (r) => (
-                    <div
-                      className="cursor-pointer hover:text-primary transition-colors py-0.5"
-                      onClick={() => navigate('/admin/reports')}
-                    >
-                      <div className="font-semibold text-sm text-foreground">
-                        {r.employee.firstName} {r.employee.lastName}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {r.employee.employeeCode || 'EMP'}
-                      </div>
-                    </div>
-                  ),
-                },
-                {
-                  key: 'punchInAt',
-                  header: 'Punch-In',
-                  render: (r) => (
-                    <span className="text-xs font-medium text-foreground">
-                      {r.punchInAt
-                        ? new Date(r.punchInAt).toLocaleTimeString('en-IN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                          })
-                        : '--'}
-                    </span>
-                  ),
-                },
-                {
-                  key: 'punchOutAt',
-                  header: 'Punch-Out',
-                  render: (r) => (
-                    <span className="text-xs font-medium text-foreground">
-                      {r.punchOutAt
-                        ? new Date(r.punchOutAt).toLocaleTimeString('en-IN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                          })
-                        : '--'}
-                    </span>
-                  ),
-                },
-                {
-                  key: 'workedMinutes',
-                  header: 'Worked',
-                  render: (r) => (
-                    <span className="text-xs text-muted-foreground">
-                      {r.workedMinutes
-                        ? `${Math.floor(r.workedMinutes / 60)}h ${r.workedMinutes % 60}m`
-                        : '--'}
-                    </span>
-                  ),
-                },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  render: (r) => <StatusBadge status={r.status} />,
-                },
-              ]}
-              rows={todayAttendance?.items ?? []}
-              getRowKey={(r) => r.id}
-              isLoading={isAttendanceLoading}
-            />
+            {isRequestsLoading ? (
+              <div className="py-8 text-center text-xs text-muted-foreground animate-pulse">
+                Loading attendance punch requests...
+              </div>
+            ) : pendingRequests.length === 0 ? (
+              <div className="py-7 text-center flex flex-col items-center justify-center">
+                <div className="h-10 w-10 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-2">
+                  <CheckCircle2 size={20} />
+                </div>
+                <p className="text-xs font-semibold text-foreground">All Caught Up!</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  No pending punch correction requests. All employee attendance punches are up to date.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-muted/40 text-muted-foreground uppercase text-[10px] font-semibold border-b border-border/60">
+                    <tr>
+                      <th className="px-3.5 py-3">Employee</th>
+                      <th className="px-3.5 py-3">Date</th>
+                      <th className="px-3.5 py-3">Requested In</th>
+                      <th className="px-3.5 py-3">Requested Out</th>
+                      <th className="px-3.5 py-3">Original In / Out</th>
+                      <th className="px-3.5 py-3">Reason / Note</th>
+                      <th className="px-3.5 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {pendingRequests.map((r) => {
+                      const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim() || 'Employee';
+                      const dObj = new Date(r.attendanceDate);
+                      const dateStr = dObj.toLocaleDateString('en-IN', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      });
+
+                      const formatTime = (iso?: string | null) => {
+                        if (!iso) return '--:--';
+                        return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                      };
+
+                      return (
+                        <tr key={r.id} className="hover:bg-muted/15 transition-colors">
+                          {/* Employee */}
+                          <td className="px-3.5 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="h-7 w-7 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center border border-primary/20 shrink-0">
+                                {r.employee?.firstName?.charAt(0) || 'E'}{r.employee?.lastName?.charAt(0) || ''}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-xs text-foreground leading-tight">
+                                  {empName}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground mt-0.5">
+                                  {r.employee?.employeeCode || 'EMP'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Date */}
+                          <td className="px-3.5 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                              <Calendar size={13} className="text-primary shrink-0" />
+                              <span>{dateStr}</span>
+                            </div>
+                          </td>
+
+                          {/* Requested Punch In */}
+                          <td className="px-3.5 py-3 whitespace-nowrap">
+                            {Array.isArray(r.punchPairs) && r.punchPairs.length > 0 ? (
+                              <div className="flex flex-col gap-1 py-0.5">
+                                {r.punchPairs.map((p, idx) => (
+                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                                    <Clock size={11} className="text-emerald-600 shrink-0" />
+                                    <span>{formatTime(p.punchInAt)}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : r.punchInAt ? (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                                <Clock size={12} className="text-emerald-600 shrink-0" />
+                                {formatTime(r.punchInAt)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground font-mono">--:--</span>
+                            )}
+                          </td>
+
+                          {/* Requested Punch Out */}
+                          <td className="px-3.5 py-3 whitespace-nowrap">
+                            {Array.isArray(r.punchPairs) && r.punchPairs.length > 0 ? (
+                              <div className="flex flex-col gap-1 py-0.5">
+                                {r.punchPairs.map((p, idx) => (
+                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
+                                    <Clock size={11} className="text-orange-600 shrink-0" />
+                                    <span>{formatTime(p.punchOutAt)}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : r.punchOutAt ? (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
+                                <Clock size={12} className="text-orange-600 shrink-0" />
+                                {formatTime(r.punchOutAt)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground font-mono">--:--</span>
+                            )}
+                          </td>
+
+                          {/* Original In / Out */}
+                          <td className="px-3.5 py-3 whitespace-nowrap">
+                            {Array.isArray(r.originalPairs) && r.originalPairs.length > 0 ? (
+                              <div className="text-[11px] text-muted-foreground space-y-0.5">
+                                {r.originalPairs.map((op, idx) => (
+                                  <div key={idx} className="line-through decoration-muted-foreground/60">
+                                    #{idx + 1}: {formatTime(op.punchInAt)} – {formatTime(op.punchOutAt)}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (r.originalPunchIn || r.originalPunchOut) ? (
+                              <div className="text-[11px] text-muted-foreground space-y-0.5">
+                                {r.originalPunchIn && (
+                                  <div className="line-through decoration-muted-foreground/60">
+                                    In: {formatTime(r.originalPunchIn)}
+                                  </div>
+                                )}
+                                {r.originalPunchOut && (
+                                  <div className="line-through decoration-muted-foreground/60">
+                                    Out: {formatTime(r.originalPunchOut)}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground italic">No prior punch</span>
+                            )}
+                          </td>
+
+                          {/* Reason / Note */}
+                          <td className="px-3.5 py-3 max-w-[130px]">
+                            {r.reason ? (
+                              <span className="text-[11px] text-foreground/80 italic line-clamp-2" title={r.reason}>
+                                “{r.reason}”
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground/60 italic">No reason provided</span>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-3.5 py-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRejectRequest(r)}
+                                disabled={rejectRequestMutation.isPending || approveRequestMutation.isPending}
+                                className="h-7 text-xs px-2 rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10 font-medium"
+                              >
+                                Reject
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleApproveRequest(r)}
+                                disabled={approveRequestMutation.isPending || rejectRequestMutation.isPending}
+                                className="h-7 text-xs px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1 shadow-xs"
+                              >
+                                <CheckCircle2 size={12} />
+                                <span>Approve</span>
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -924,244 +1092,6 @@ export function AdminDashboardPage(): JSX.Element {
           </CardContent>
         </Card>
       </div>
-
-      {/* Row 3.5: Attendance Punch Requests Widget */}
-      <Card className="rounded-2xl border border-border/70 shadow-sm overflow-hidden bg-card">
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-border/40 gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <Clock size={18} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-base font-semibold tracking-tight text-foreground">
-                  Attendance Punch Requests
-                </CardTitle>
-                <Badge
-                  className={cn(
-                    "text-xs font-semibold px-2 py-0.5 border",
-                    pendingRequests.length > 0
-                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                      : "bg-muted text-muted-foreground border-border/60"
-                  )}
-                >
-                  {pendingRequests.length} Pending
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Staff punch corrections requiring review and automatic database update
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={handleApproveAllRequests}
-              disabled={pendingRequests.length === 0 || bulkApproveMutation.isPending}
-              className="gap-1.5 text-xs font-medium h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50"
-            >
-              <CheckCheck size={14} />
-              <span>{bulkApproveMutation.isPending ? 'Approving All...' : `Approve All (${pendingRequests.length})`}</span>
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-4">
-          {isRequestsLoading ? (
-            <div className="py-8 text-center text-xs text-muted-foreground animate-pulse">
-              Loading attendance punch requests...
-            </div>
-          ) : pendingRequests.length === 0 ? (
-            <div className="py-7 text-center flex flex-col items-center justify-center">
-              <div className="h-10 w-10 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-2">
-                <CheckCircle2 size={20} />
-              </div>
-              <p className="text-xs font-semibold text-foreground">All Caught Up!</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                No pending punch correction requests. All employee attendance punches are up to date.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-border/60 bg-card">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-muted/40 text-muted-foreground uppercase text-[10px] font-semibold border-b border-border/60">
-                  <tr>
-                    <th className="px-4 py-3">Employee</th>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Requested In</th>
-                    <th className="px-4 py-3">Requested Out</th>
-                    <th className="px-4 py-3">Original In / Out</th>
-                    <th className="px-4 py-3">Reason / Note</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {pendingRequests.map((r) => {
-                    const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim() || 'Employee';
-                    const dObj = new Date(r.attendanceDate);
-                    const dateStr = dObj.toLocaleDateString('en-IN', {
-                      weekday: 'short',
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    });
-
-                    const formatTime = (iso?: string | null) => {
-                      if (!iso) return '--:--';
-                      return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                    };
-
-                    return (
-                      <tr key={r.id} className="hover:bg-muted/15 transition-colors">
-                        {/* Employee */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="h-8 w-8 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center border border-primary/20 shrink-0">
-                              {r.employee?.firstName?.charAt(0) || 'E'}{r.employee?.lastName?.charAt(0) || ''}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-xs text-foreground leading-tight">
-                                {empName}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground mt-0.5">
-                                {r.employee?.employeeCode || 'EMP'} • {r.employee?.designation?.title || r.employee?.department?.name || 'Staff'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Date */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                            <Calendar size={13} className="text-primary shrink-0" />
-                            <span>{dateStr}</span>
-                          </div>
-                        </td>
-
-                        {/* Requested Punch In */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {Array.isArray(r.punchPairs) && r.punchPairs.length > 0 ? (
-                            <div className="flex flex-col gap-1 py-0.5">
-                              {r.punchPairs.map((p, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                                  <Clock size={11} className="text-emerald-600 shrink-0" />
-                                  <span>{formatTime(p.punchInAt)}</span>
-                                  {r.punchPairs!.length > 1 && (
-                                    <span className="text-[9px] px-1 rounded bg-emerald-600 text-white font-mono font-bold">
-                                      #{idx + 1}
-                                    </span>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
-                          ) : r.punchInAt ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                              <Clock size={12} className="text-emerald-600 shrink-0" />
-                              {formatTime(r.punchInAt)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground font-mono">--:--</span>
-                          )}
-                        </td>
-
-                        {/* Requested Punch Out */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {Array.isArray(r.punchPairs) && r.punchPairs.length > 0 ? (
-                            <div className="flex flex-col gap-1 py-0.5">
-                              {r.punchPairs.map((p, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
-                                  <Clock size={11} className="text-orange-600 shrink-0" />
-                                  <span>{formatTime(p.punchOutAt)}</span>
-                                  {r.punchPairs!.length > 1 && (
-                                    <span className="text-[9px] px-1 rounded bg-orange-600 text-white font-mono font-bold">
-                                      #{idx + 1}
-                                    </span>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
-                          ) : r.punchOutAt ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
-                              <Clock size={12} className="text-orange-600 shrink-0" />
-                              {formatTime(r.punchOutAt)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground font-mono">--:--</span>
-                          )}
-                        </td>
-
-                        {/* Original In / Out */}
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {Array.isArray(r.originalPairs) && r.originalPairs.length > 0 ? (
-                            <div className="text-[11px] text-muted-foreground space-y-0.5">
-                              {r.originalPairs.map((op, idx) => (
-                                <div key={idx} className="line-through decoration-muted-foreground/60">
-                                  #{idx + 1}: {formatTime(op.punchInAt)} – {formatTime(op.punchOutAt)}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (r.originalPunchIn || r.originalPunchOut) ? (
-                            <div className="text-[11px] text-muted-foreground space-y-0.5">
-                              {r.originalPunchIn && (
-                                <div className="line-through decoration-muted-foreground/60">
-                                  In: {formatTime(r.originalPunchIn)}
-                                </div>
-                              )}
-                              {r.originalPunchOut && (
-                                <div className="line-through decoration-muted-foreground/60">
-                                  Out: {formatTime(r.originalPunchOut)}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground italic">No prior punch</span>
-                          )}
-                        </td>
-
-                        {/* Reason / Note */}
-                        <td className="px-4 py-3 max-w-xs">
-                          {r.reason ? (
-                            <span className="text-[11px] text-foreground/80 italic line-clamp-2" title={r.reason}>
-                              “{r.reason}”
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground/60 italic">No reason provided</span>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRejectRequest(r)}
-                              disabled={rejectRequestMutation.isPending || approveRequestMutation.isPending}
-                              className="h-7 text-xs px-2.5 rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10 font-medium"
-                            >
-                              Reject
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handleApproveRequest(r)}
-                              disabled={approveRequestMutation.isPending || rejectRequestMutation.isPending}
-                              className="h-7 text-xs px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1 shadow-xs"
-                            >
-                              <CheckCircle2 size={12} />
-                              <span>Approve</span>
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Row 4: Announcements (50%) & Current Year Holidays (50%) Side-by-Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">

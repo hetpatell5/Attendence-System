@@ -48,6 +48,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Unauthenticated JSON request — for endpoints that must work before login
+ * (health check, the hidden admin password-recovery flow). Unlike the plain
+ * `request` above, this supports a method/body and parses the server's error
+ * message out of a non-2xx response instead of just reporting the status code.
+ */
+async function publicRequest<T>(
+  path: string,
+  init?: { method?: string; body?: unknown },
+): Promise<T> {
+  const baseUrl = getApiBaseUrl();
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: init?.method ?? 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    });
+  } catch {
+    throw new ApiError('Unable to reach the server. Check your network connection.');
+  }
+
+  if (!response.ok) {
+    let msg = `Request to ${path} failed`;
+    try {
+      const err = await response.json();
+      if (err?.message) msg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
+    } catch {}
+    throw new ApiError(msg, response.status);
+  }
+
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
 async function authenticatedRequest<T>(
   path: string,
   init?: { method?: string; body?: unknown },
@@ -97,4 +132,5 @@ async function authenticatedRequest<T>(
 export const apiClient = {
   getHealth: (): Promise<{ status: string }> => request<{ status: string }>('/health'),
   authenticatedRequest,
+  publicRequest,
 };

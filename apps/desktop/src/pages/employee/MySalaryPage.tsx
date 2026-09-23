@@ -33,10 +33,24 @@ export function MySalaryPage(): JSX.Element {
   const lastDay = new Date(currentYear, currentMonthNum, 0).getDate();
   const toDate = `${currentMonthStr}-${String(lastDay).padStart(2, '0')}`;
 
+  // Previous completed month boundary (strictly show finalized data up to previous month)
+  const prevMonthDate = new Date(currentYear, currentMonthNum - 2, 1);
+  const prevMonthYear = prevMonthDate.getFullYear();
+  const prevMonthNum = prevMonthDate.getMonth() + 1;
+  const prevMonthKey = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}`;
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['salary', 'me'],
     queryFn: salaryApi.mine,
   });
+
+  const pastFinalizedRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (!r.month) return false;
+      const rKey = new Date(r.month).toISOString().slice(0, 7);
+      return rKey <= prevMonthKey;
+    });
+  }, [rows, prevMonthKey]);
 
   const { data: employee } = useQuery({
     queryKey: ['employee', 'me'],
@@ -298,7 +312,7 @@ export function MySalaryPage(): JSX.Element {
       net_salary: sm.netSalary.toLocaleString('en-IN'),
       paid_on: isPaid && record.paymentDate
         ? new Date(record.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-        : isPaid ? new Date().toLocaleDateString('en-IN') : 'Pending',
+        : isPaid ? new Date().toLocaleDateString('en-GB') : 'Pending',
       remarks: record.remarks || '',
     };
 
@@ -427,7 +441,7 @@ export function MySalaryPage(): JSX.Element {
 
       {/* Visual Analytics Suite: Modern Charts & Graphs */}
       <SalaryAnalyticsCharts
-        pastRecords={rows}
+        pastRecords={pastFinalizedRows}
         currentMetrics={currentMonthMetrics}
         monthAttendance={monthAttendance}
         holidaysList={holidaysList}
@@ -450,7 +464,7 @@ export function MySalaryPage(): JSX.Element {
         <div className="pt-3">
           <DataTable
             columns={columns}
-            rows={rows}
+            rows={pastFinalizedRows}
             getRowKey={(r) => r.id}
             isLoading={isLoading}
             onRowClick={setSelected}
@@ -513,25 +527,27 @@ export function MySalaryPage(): JSX.Element {
                 return (
                   <div className="bg-white w-full max-w-[660px] rounded-2xl shadow-xl border border-slate-200 overflow-hidden mb-6 font-sans text-[13px]">
                     {/* Header: solid blue, logo + company on left, SALARY SLIP label on right */}
-                    <div className="bg-[#0f4c81] px-6 py-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={(settings as any)?.companyLogo || defaultCompanyLogo}
-                          alt="Logo"
-                          className="h-16 w-16 rounded-xl object-contain bg-white p-1.5 shrink-0 shadow-sm"
-                        />
-                        <div>
-                          <div className="text-base font-bold text-white leading-tight">
+                    <div className="bg-[#0f4c81] pl-5 pr-3.5 sm:pl-6 sm:pr-4 py-4 sm:py-5 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="bg-white rounded-xl px-2.5 py-1.5 shrink-0 shadow-sm flex items-center justify-center">
+                          <img
+                            src={(settings as any)?.companyLogo || defaultCompanyLogo}
+                            alt="Logo"
+                            className="h-11 sm:h-12 w-auto max-w-[150px] sm:max-w-[180px] object-contain block"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-base font-bold text-white leading-tight truncate">
                             {settings?.companyName || 'BMAP Pvt Ltd'}
                           </div>
-                          <div className="text-[10px] text-blue-100 mt-0.5 leading-snug max-w-[280px]">
+                          <div className="text-[10px] text-blue-100 mt-0.5 leading-snug line-clamp-3">
                             {(settings as any)?.companyAddress || '206 Sunrise Commercial Complex, Mota Varachha, Surat – 394105'}
                           </div>
                         </div>
                       </div>
-                      <div className="text-right shrink-0 ml-4">
-                        <div className="text-[11px] font-bold tracking-widest uppercase text-white/80">Salary Slip</div>
-                        <div className="text-[11px] font-semibold text-blue-200 mt-0.5">
+                      <div className="text-right shrink-0 ml-auto pr-0.5">
+                        <div className="text-[11px] sm:text-xs font-bold tracking-widest uppercase text-white/90">Salary Slip</div>
+                        <div className="text-[11px] sm:text-xs font-semibold text-blue-100 mt-0.5">
                           {monthLabel}
                         </div>
                       </div>

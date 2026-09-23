@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { TrendingUp, ArrowUpRight, Award, Sparkles } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import type { SalaryRecord } from '@attendance/shared';
 
 interface SalaryAnalyticsChartsProps {
@@ -29,22 +30,22 @@ function getSmartTooltipStyle(x: number, y: number, chartWidth: number, chartHei
   const xRatio = x / chartWidth;
   const yRatio = y / chartHeight;
 
-  // Horizontal translation:
-  // If point is on the right (> 68%), anchor right side to prevent overflowing right edge
-  // If point is on the left (< 32%), anchor left side to prevent overflowing left edge
-  // Otherwise center
-  const translateX = xRatio > 0.68 ? '-92%' : xRatio < 0.32 ? '-8%' : '-50%';
+  // Horizontal anchoring to prevent overflowing container on mobile / small screens:
+  // If point is on the right half, anchor strictly to the right with 10px margin.
+  // If point is on the left half, anchor strictly to the left with 10px margin.
+  const isRight = xRatio > 0.48;
 
-  // Vertical translation:
-  // If point is near top (< 28%), show tooltip below the point to prevent top clipping
-  const isNearTop = yRatio < 0.28;
-  const translateY = isNearTop ? '15px' : '-100%';
-  const topPercent = (y / chartHeight) * 100 + (isNearTop ? 4 : -8);
+  // Vertical positioning:
+  // If point is in the upper half of the chart (< 50%), show tooltip BELOW the point
+  // to avoid colliding with or clipping into the card header. Otherwise show ABOVE.
+  const isUpperHalf = yRatio < 0.50;
+  const translateY = isUpperHalf ? '14px' : 'calc(-100% - 14px)';
 
   return {
-    left: `${xRatio * 100}%`,
-    top: `${topPercent}%`,
-    transform: `translate(${translateX}, ${translateY})`,
+    ...(isRight ? { right: '10px', left: 'auto' } : { left: '10px', right: 'auto' }),
+    top: `${(y / chartHeight) * 100}%`,
+    transform: `translateY(${translateY})`,
+    maxWidth: 'min(240px, calc(100% - 20px))',
   };
 }
 
@@ -53,6 +54,7 @@ export function SalaryAnalyticsCharts({
   currentMetrics,
   employee,
 }: SalaryAnalyticsChartsProps): JSX.Element {
+  const [range, setRange] = useState<'6m' | 'alltime'>('6m');
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
   const [hoveredIncIndex, setHoveredIncIndex] = useState<number | null>(null);
 
@@ -60,9 +62,17 @@ export function SalaryAnalyticsCharts({
   // 1. Continuous Chronological Month Calendar Range (Never skips any month)
   // ---------------------------------------------------------------------------
   const allMonthsSequence = useMemo(() => {
-    // Determine start month from joiningDate or earliest past record
+    // Current date and previous completed month (strictly the upper limit for historical analytics)
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const prevMonthDate = new Date(curYear, curMonth - 2, 1);
+    const endYear = prevMonthDate.getFullYear();
+    const endMonth = prevMonthDate.getMonth() + 1;
+
+    // Determine start month: prioritize employee joiningDate, then earliest pastRecord, fallback June 2025
     let startYear = 2025;
-    let startMonth = 12; // default Dec 2025
+    let startMonth = 6;
 
     if (employee?.joiningDate) {
       const jDate = new Date(employee.joiningDate);
@@ -81,23 +91,10 @@ export function SalaryAnalyticsCharts({
       }
     }
 
-    // Determine end month (August 2026 or latest past record)
-    let endYear = 2026;
-    let endMonth = 8; // August 2026
-
-    if (pastRecords.length > 0) {
-      const latest = [...pastRecords].sort(
-        (a, b) => new Date(b.month).getTime() - new Date(a.month).getTime()
-      )[0];
-      if (latest) {
-        const lDate = new Date(latest.month);
-        const lY = lDate.getFullYear();
-        const lM = lDate.getMonth() + 1;
-        if (lY > endYear || (lY === endYear && lM > endMonth)) {
-          endYear = lY;
-          endMonth = lM;
-        }
-      }
+    // Ensure start is not after end
+    if (startYear > endYear || (startYear === endYear && startMonth > endMonth)) {
+      startYear = endYear;
+      startMonth = endMonth;
     }
 
     const months: Array<{
@@ -134,6 +131,22 @@ export function SalaryAnalyticsCharts({
     return months;
   }, [employee?.joiningDate, pastRecords]);
 
+  // Active chronological sequence based on selected range (6m vs alltime)
+  const activeMonthsSequence = useMemo(() => {
+    if (range === '6m') {
+      return allMonthsSequence.slice(-6);
+    }
+    return allMonthsSequence;
+  }, [allMonthsSequence, range]);
+
+  const rangeSubtitle = useMemo(() => {
+    if (activeMonthsSequence.length === 0) return 'No payout cycles';
+    const first = activeMonthsSequence[0];
+    const last = activeMonthsSequence[activeMonthsSequence.length - 1];
+    if (!first || !last) return '';
+    return `${first.shortLabel} ${first.year} – ${last.shortLabel} ${last.year}`;
+  }, [activeMonthsSequence]);
+
   // ---------------------------------------------------------------------------
   // 2. Continuous Net Salary Trajectory Data (Month-by-month, No skipped months)
   // ---------------------------------------------------------------------------
@@ -144,7 +157,7 @@ export function SalaryAnalyticsCharts({
       recordMap.set(key, r);
     });
 
-    return allMonthsSequence.map((m) => {
+    return activeMonthsSequence.map((m) => {
       const r = recordMap.get(m.key);
       const netPay = r ? Number(r.netSalary || 0) : 0;
       const basicPay = r ? Number(r.basicSalary || 0) : 0;
@@ -165,10 +178,10 @@ export function SalaryAnalyticsCharts({
         isRecorded,
       };
     }).filter((d) => d.isRecorded || d.netPay > 0);
-  }, [allMonthsSequence, pastRecords]);
+  }, [activeMonthsSequence, pastRecords]);
 
   // ---------------------------------------------------------------------------
-  // 3. Continuous Salary Increment & Growth Data (Dec through Aug, No skipped months)
+  // 3. Continuous Salary Increment & Growth Data (No skipped months)
   // ---------------------------------------------------------------------------
   const incrementData = useMemo(() => {
     const rawHistory = ((employee?.salaryHistory || []) as Array<{
@@ -188,7 +201,7 @@ export function SalaryAnalyticsCharts({
 
     let runningBaseSalary = initialStartingSalary;
 
-    return allMonthsSequence.map((m, index) => {
+    return activeMonthsSequence.map((m, index) => {
       // Find latest salaryHistory record effective on or before the end of this month
       const endOfThisMonth = new Date(m.year, m.month, 0, 23, 59, 59);
       const applicableEntries = rawHistory.filter((h) => h.effectiveDate <= endOfThisMonth);
@@ -228,7 +241,7 @@ export function SalaryAnalyticsCharts({
         revisionNote,
       };
     });
-  }, [allMonthsSequence, employee, currentMetrics.monthlySalary]);
+  }, [activeMonthsSequence, employee, currentMetrics.monthlySalary]);
 
   const incrementStats = useMemo(() => {
     if (incrementData.length === 0) {
@@ -425,7 +438,31 @@ export function SalaryAnalyticsCharts({
         </div>
       </div>
 
-      {/* Balanced 2-Column Analytics Suite (Dec through Aug with May, Jul, Aug included) */}
+      {/* Analytics Toolbar: Section Title & Range Toggle */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+        <div>
+          <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">Earnings Analytics</h3>
+          <p className="text-xs text-slate-500 font-medium">Historical payouts and compensation growth up to previous month</p>
+        </div>
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-card p-1 rounded-xl border border-slate-200 dark:border-border/60 self-start sm:self-auto">
+          {(['6m', 'alltime'] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={cn(
+                'px-3.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer',
+                range === r
+                  ? 'bg-white dark:bg-accent text-slate-900 dark:text-foreground shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-foreground'
+              )}
+            >
+              {r === '6m' ? 'Past 6 Months' : 'All Time'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Balanced 2-Column Analytics Suite */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         {/* ── Chart 1: Net Salary Trajectory ────────────────────────────── */}
         <div className="clay-card p-5 sm:p-6 relative flex flex-col justify-between overflow-visible transition-all">
@@ -440,14 +477,14 @@ export function SalaryAnalyticsCharts({
                     Net Salary Trajectory
                   </h4>
                   <span className="text-[10px] text-slate-500 block font-medium">
-                    All completed payout cycles (Dec – Aug)
+                    All completed payout cycles ({rangeSubtitle})
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="clay-pod px-3 py-1 text-[11px] font-bold text-emerald-700">
-                  ₹{(trendData[trendData.length - 1]?.netPay || 0).toLocaleString('en-IN')} (Aug)
+                  ₹{(trendData[trendData.length - 1]?.netPay || 0).toLocaleString('en-IN')} ({trendData[trendData.length - 1]?.label || 'Latest'})
                 </span>
               </div>
             </div>
@@ -648,7 +685,7 @@ export function SalaryAnalyticsCharts({
                     Salary Increment & Growth
                   </h4>
                   <span className="text-[10px] text-slate-500 block font-medium">
-                    Base pay progression: Dec, Jan, Feb, Mar, Apr, May, Jun, Jul, Aug
+                    Base pay progression ({rangeSubtitle})
                   </span>
                 </div>
               </div>

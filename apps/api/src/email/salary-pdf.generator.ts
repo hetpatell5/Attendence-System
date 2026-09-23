@@ -123,21 +123,21 @@ export function generateSalarySlipPdf(vars: SalaryTemplateVariables): Promise<Bu
       }
     }
 
-    const logoBoxSize = 64;
-    const logoPad = 10;
-    const logoX = cardX + 18;
-    const logoY = y + (headerH - logoBoxSize) / 2;
+    const logoW = 120;
+    const logoH = 46;
+    const logoPadX = 8;
+    const logoPadY = 6;
+    const logoX = cardX + 16;
+    const logoY = y + (headerH - logoH) / 2;
 
     if (logoBuffer) {
       try {
-        // Solid white plate behind the logo — most company logos are designed for a white
-        // background, so a translucent navy tint (the old rgba() background) makes them
-        // muddy. A crisp white rounded plate matches how logos usually read.
+        // Solid white plate behind the logo - independent width for horizontal logos
         doc.save();
-        doc.roundedRect(logoX, logoY, logoBoxSize, logoBoxSize, 8).fillColor('#ffffff').fill();
+        doc.roundedRect(logoX, logoY, logoW, logoH, 6).fillColor('#ffffff').fill();
         doc.restore();
-        doc.image(logoBuffer, logoX + logoPad / 2, logoY + logoPad / 2, {
-          fit: [logoBoxSize - logoPad, logoBoxSize - logoPad],
+        doc.image(logoBuffer, logoX + logoPadX / 2, logoY + logoPadY / 2, {
+          fit: [logoW - logoPadX, logoH - logoPadY],
           align: 'center',
           valign: 'center',
         });
@@ -145,28 +145,28 @@ export function generateSalarySlipPdf(vars: SalaryTemplateVariables): Promise<Bu
     }
 
     // Company name + address (right of logo)
-    const textX = logoBuffer ? logoX + logoBoxSize + 14 : cardX + 18;
+    const textX = logoBuffer ? logoX + logoW + 12 : cardX + 16;
     doc.font(FONT_BOLD)
       .fontSize(16)
       .fillColor('#ffffff')
-      .text(vars.company_name || 'BMAP Pvt Ltd', textX, y + 20, { width: cardW - (textX - cardX) - 110 });
+      .text(vars.company_name || 'BMAP Pvt Ltd', textX, y + 20, { width: cardW - (textX - cardX) - 95 });
 
     const address = vars.company_address || '';
     doc.font(FONT_REGULAR)
       .fontSize(7.5)
       .fillColor('#dcebff')
-      .text(address, textX, y + 40, { width: cardW - (textX - cardX) - 110, lineGap: 1 });
+      .text(address, textX, y + 40, { width: cardW - (textX - cardX) - 95, lineGap: 1 });
 
-    // "SALARY SLIP" pill (right of header)
-    const pillW = 100;
-    const pillH = 24;
-    const pillX = cardX + cardW - pillW - 18;
+    // "SALARY SLIP" pill (right of header) - pushed closer to right edge
+    const pillW = 92;
+    const pillH = 22;
+    const pillX = cardX + cardW - pillW - 10;
     const pillY = y + (headerH - pillH) / 2;
-    fillTranslucent(doc, pillX, pillY, pillW, pillH, '#ffffff', 0.16, 12);
+    fillTranslucent(doc, pillX, pillY, pillW, pillH, '#ffffff', 0.16, 11);
     doc.font(FONT_BOLD)
-      .fontSize(9)
+      .fontSize(8.5)
       .fillColor('#ffffff')
-      .text('SALARY SLIP', pillX, pillY + 8, { width: pillW, align: 'center' });
+      .text('SALARY SLIP', pillX, pillY + 7, { width: pillW, align: 'center' });
 
     y += headerH + 4;
 

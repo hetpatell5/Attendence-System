@@ -4,6 +4,24 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
 import { NotificationEventBus } from './notification-event-bus.service';
 
+/**
+ * Notification types that are only ever meant for the employee they were created for
+ * (a leave decision, a salary update, their own attendance being adjusted, a company-wide
+ * announcement). Admin views — both the SSE toast stream and the notification bell/list —
+ * must exclude these, otherwise an admin sees "Salary paid" / "Attendance Correction
+ * Approved" toasts that were addressed to an employee, not them.
+ */
+export const EMPLOYEE_ONLY_NOTIFICATION_TYPES: NotificationType[] = [
+  'LEAVE_APPROVED',
+  'LEAVE_REJECTED',
+  'LEAVE_CANCELLED',
+  'SALARY_PAID',
+  'SALARY_GENERATED',
+  'SALARY_INCREMENT',
+  'ATTENDANCE_ADJUSTED',
+  'ANNOUNCEMENT_PUBLISHED',
+];
+
 export interface CreateNotificationInput {
   employeeId: string;
   type: NotificationType;
@@ -109,8 +127,10 @@ export class NotificationsService {
     const employee = await this.employeesService.findByUserId(userId);
 
     if (isAdmin) {
-      // Admins see all admin events + all system events
+      // Admins see admin-relevant events (new leave requests, punch-in/out alerts,
+      // correction requests) but not events addressed to a specific employee.
       return this.prisma.notification.findMany({
+        where: { type: { notIn: EMPLOYEE_ONLY_NOTIFICATION_TYPES } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -148,7 +168,7 @@ export class NotificationsService {
 
     if (isAdmin) {
       return this.prisma.notification.count({
-        where: { readAt: null },
+        where: { readAt: null, type: { notIn: EMPLOYEE_ONLY_NOTIFICATION_TYPES } },
       });
     }
 
@@ -178,7 +198,7 @@ export class NotificationsService {
 
     if (isAdmin) {
       await this.prisma.notification.updateMany({
-        where: { id, readAt: null },
+        where: { id, readAt: null, type: { notIn: EMPLOYEE_ONLY_NOTIFICATION_TYPES } },
         data: { readAt: new Date() },
       });
       return;
@@ -197,8 +217,10 @@ export class NotificationsService {
     const employee = await this.employeesService.findByUserId(userId);
 
     if (isAdmin) {
+      // Only admin-visible events — must not silently mark an employee's own
+      // unseen notifications as read just because an admin hit "mark all read".
       await this.prisma.notification.updateMany({
-        where: { readAt: null },
+        where: { readAt: null, type: { notIn: EMPLOYEE_ONLY_NOTIFICATION_TYPES } },
         data: { readAt: new Date() },
       });
       return;
@@ -217,7 +239,11 @@ export class NotificationsService {
     const employee = await this.employeesService.findByUserId(userId);
 
     if (isAdmin) {
-      await this.prisma.notification.deleteMany({});
+      // Only clear what the admin can actually see — an employee's own notifications
+      // (leave decisions, salary updates, …) must survive an admin clearing their bell.
+      await this.prisma.notification.deleteMany({
+        where: { type: { notIn: EMPLOYEE_ONLY_NOTIFICATION_TYPES } },
+      });
       return;
     }
 

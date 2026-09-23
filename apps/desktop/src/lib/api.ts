@@ -210,6 +210,22 @@ export const notificationsApi = {
   remove: (id: string) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
 };
 
+/** Hidden admin password-recovery flow (Ctrl+F on the login page). Unauthenticated by design. */
+export const recoveryApi = {
+  requestOtp: (username: string) =>
+    apiClient.publicRequest<void>('/auth/recovery/request', { method: 'POST', body: { username } }),
+  verifyOtp: (username: string, code: string) =>
+    apiClient.publicRequest<{ resetToken: string }>('/auth/recovery/verify', {
+      method: 'POST',
+      body: { username, code },
+    }),
+  resetPassword: (resetToken: string, newPassword: string) =>
+    apiClient.publicRequest<void>('/auth/recovery/reset', {
+      method: 'POST',
+      body: { resetToken, newPassword },
+    }),
+};
+
 export const dashboardApi = {
   employee: () => request<EmployeeDashboardPayload>('/dashboard/employee'),
   admin: () => request<AdminDashboardPayload>('/dashboard/admin'),
@@ -298,6 +314,8 @@ export interface PerformanceMonthlyAttendance {
   absents: number;
   leaves: number;
   halfDays: number;
+  expectedHours?: number;
+  workedHours?: number;
   isBeforeJoin: boolean;
   isFutureMonth: boolean;
   isActive: boolean;

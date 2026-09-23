@@ -88,6 +88,9 @@ export class DashboardService {
     const endOfMonth = new Date(startOfMonth);
     endOfMonth.setUTCMonth(endOfMonth.getUTCMonth() + 1);
 
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+
     const [
       activeEmployees,
       todayAttendanceRows,
@@ -96,6 +99,7 @@ export class DashboardService {
       paidSalaryCount,
       totalShifts,
       holidaysThisMonth,
+      trendHolidays,
       recentLeaveRequests,
       recentAudit,
     ] = await Promise.all([
@@ -111,6 +115,10 @@ export class DashboardService {
       this.prisma.holiday.findMany({
         where: { date: { gte: startOfMonth, lt: endOfMonth } },
         orderBy: { date: 'asc' }
+      }),
+      this.prisma.holiday.findMany({
+        where: { date: { gte: sevenDaysAgo, lte: today } },
+        select: { date: true },
       }),
       this.prisma.leaveRequest.findMany({
         orderBy: { createdAt: 'desc' },
@@ -138,8 +146,7 @@ export class DashboardService {
       return emp.dateOfBirth.getUTCMonth() === currentMonth;
     });
 
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+    const trendHolidayKeys = new Set(trendHolidays.map((h) => h.date.toISOString().slice(0, 10)));
     const trendRows = await this.prisma.attendance.findMany({
       where: { attendanceDate: { gte: sevenDaysAgo, lte: today } },
       select: { attendanceDate: true, status: true },
@@ -147,11 +154,26 @@ export class DashboardService {
     const trend: { date: string; present: number; absent: number }[] = [];
     for (let d = new Date(sevenDaysAgo); d.getTime() <= today.getTime(); d.setUTCDate(d.getUTCDate() + 1)) {
       const dateKey = d.toISOString().slice(0, 10);
+      const isSunday = d.getUTCDay() === 0;
+      const isHoliday = trendHolidayKeys.has(dateKey);
       const dayRows = trendRows.filter((r) => r.attendanceDate.toISOString().slice(0, 10) === dateKey);
+
+      const present = dayRows.filter((r) => r.status === 'PRESENT' || r.status === 'HALF_DAY').length;
+      const onLeave = dayRows.filter((r) => r.status === 'LEAVE').length;
+      const explicitAbsent = dayRows.filter((r) => r.status === 'ABSENT').length;
+
+      const eligibleCount = activeEmployees.filter(
+        (emp) => !emp.joiningDate || new Date(emp.joiningDate).toISOString().slice(0, 10) <= dateKey,
+      ).length;
+
+      const absent = isSunday || isHoliday
+        ? 0
+        : Math.max(explicitAbsent, Math.max(0, eligibleCount - present - onLeave));
+
       trend.push({
         date: dateKey,
-        present: dayRows.filter((r) => r.status === 'PRESENT').length,
-        absent: dayRows.filter((r) => r.status === 'ABSENT').length,
+        present,
+        absent,
       });
     }
 

@@ -338,7 +338,7 @@ function HolidaysTab(): JSX.Element {
 
   const columns: DataTableColumn<Holiday>[] = [
     { key: 'name', header: 'Holiday Name', render: (h) => <span className="font-medium">{h.name}</span> },
-    { key: 'date', header: 'Date', render: (h) => new Date(h.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) },
+    { key: 'date', header: 'Date', render: (h) => new Date(h.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) },
     {
       key: 'actions',
       header: '',

@@ -57,8 +57,9 @@ export function EmployeeDetailPage(): JSX.Element {
         departmentId: employee.departmentId || '',
         designationId: employee.designationId || '',
         shiftId: (employee as any).employeeShifts?.[0]?.shiftId ?? '',
-        username: currentUsername,
-        password: '',
+        emergencyContactName: (employee as any).emergencyContactName || '',
+        emergencyContactPhone: (employee as any).emergencyContactPhone || '',
+        emergencyContactRelation: (employee as any).emergencyContactRelation || '',
       });
       setUsernameForm(currentUsername);
     }
@@ -95,8 +96,6 @@ export function EmployeeDetailPage(): JSX.Element {
   const updateMutation = useMutation({
     mutationFn: async () => {
       const payload = { ...editForm };
-      const usernameToUpdate = payload.username;
-      const passwordToUpdate = payload.password;
       delete payload.username;
       delete payload.password;
 
@@ -108,16 +107,7 @@ export function EmployeeDetailPage(): JSX.Element {
       if (payload.monthlyIncrement !== undefined) payload.monthlyIncrement = Number(payload.monthlyIncrement);
       if (payload.incrementInterval !== undefined) payload.incrementInterval = Number(payload.incrementInterval);
       
-      const res = await employeesApi.update(id!, payload);
-
-      if (usernameToUpdate || passwordToUpdate) {
-        await employeesApi.updateAccount(id!, { 
-          username: usernameToUpdate || undefined, 
-          password: passwordToUpdate || undefined 
-        });
-      }
-
-      return res;
+      return employeesApi.update(id!, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employee', id] });
@@ -145,7 +135,7 @@ export function EmployeeDetailPage(): JSX.Element {
   }
 
   const attendanceColumns: DataTableColumn<Attendance>[] = [
-    { key: 'attendanceDate', header: 'Date', render: (r) => new Date(r.attendanceDate).toLocaleDateString() },
+    { key: 'attendanceDate', header: 'Date', render: (r) => new Date(r.attendanceDate).toLocaleDateString('en-GB') },
     { key: 'punchIn', header: 'Punch-In', render: (r) => r.punchInAt ? new Date(r.punchInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--' },
     { key: 'punchOut', header: 'Punch-Out', render: (r) => r.punchOutAt ? new Date(r.punchOutAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--' },
     { key: 'workedMinutes', header: 'Worked', render: (r) => r.workedMinutes ? `${Math.floor(r.workedMinutes/60)}h ${r.workedMinutes%60}m` : '--' },
@@ -154,8 +144,8 @@ export function EmployeeDetailPage(): JSX.Element {
 
   const leaveColumns: DataTableColumn<LeaveRequest & any>[] = [
     { key: 'type', header: 'Type', render: (r) => r.leaveType?.name ?? '—' },
-    { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString() },
-    { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString() },
+    { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString('en-GB') },
+    { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString('en-GB') },
     { key: 'days', header: 'Days', render: (r) => r.totalDays },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
   ];
@@ -201,7 +191,7 @@ export function EmployeeDetailPage(): JSX.Element {
               <div><span className="text-muted-foreground">Code:</span> <span className="font-medium">{employee.employeeCode}</span></div>
               <div><span className="text-muted-foreground">Email:</span> <span className="font-medium">{employee.email}</span></div>
               <div className="font-medium">{(employee as any).shift?.name ?? '—'}</div>
-              <div><span className="text-muted-foreground">Joined:</span> <span className="font-medium">{new Date(employee.joiningDate).toLocaleDateString()}</span></div>
+              <div><span className="text-muted-foreground">Joined:</span> <span className="font-medium">{new Date(employee.joiningDate).toLocaleDateString('en-GB')}</span></div>
             </div>
           </div>
           <div className="flex flex-col gap-2 shrink-0">
@@ -308,7 +298,7 @@ export function EmployeeDetailPage(): JSX.Element {
                       <Input type="date" value={editForm.dateOfBirth} onChange={e => setEditForm({...editForm, dateOfBirth: e.target.value})} />
                     ) : (
                       <div className="p-2 bg-muted/30 rounded-md border text-sm">
-                        {employee.dateOfBirth ? new Date(employee.dateOfBirth).toLocaleDateString() : '—'}
+                        {employee.dateOfBirth ? new Date(employee.dateOfBirth).toLocaleDateString('en-GB') : '—'}
                       </div>
                     )}
                   </div>
@@ -318,7 +308,7 @@ export function EmployeeDetailPage(): JSX.Element {
                       <Input type="date" value={editForm.joiningDate} onChange={e => setEditForm({...editForm, joiningDate: e.target.value})} />
                     ) : (
                       <div className="p-2 bg-muted/30 rounded-md border text-sm">
-                        {employee.joiningDate ? new Date(employee.joiningDate).toLocaleDateString() : '—'}
+                        {employee.joiningDate ? new Date(employee.joiningDate).toLocaleDateString('en-GB') : '—'}
                       </div>
                     )}
                   </div>
@@ -425,40 +415,44 @@ export function EmployeeDetailPage(): JSX.Element {
                     )}
                   </div>
 
-                  {/* Account Login Credentials */}
-                  <div className="col-span-1 sm:col-span-2 mt-4 pt-4 border-t space-y-4">
-                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                      <Key className="w-4 h-4 text-primary" /> Login Credentials
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Emergency Contact */}
+                  <div className="col-span-1 sm:col-span-2 mt-4 pt-4 border-t space-y-3">
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Emergency Contact</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-2">
-                        <Label>Username (Login ID)</Label>
+                        <Label>Contact Name</Label>
                         {isEditing ? (
-                          <Input 
-                            type="text"
-                            value={editForm.username ?? ''} 
-                            onChange={e => setEditForm({...editForm, username: e.target.value})} 
-                            placeholder="e.g. rahul"
+                          <Input
+                            value={editForm.emergencyContactName ?? ''}
+                            onChange={e => setEditForm({...editForm, emergencyContactName: e.target.value})}
+                            placeholder="Full name"
                           />
                         ) : (
-                          <div className="p-2 bg-muted/30 rounded-md border text-sm font-mono">
-                            {(employee as any).user?.username || (employee as any).user?.email || '— No account'}
-                          </div>
+                          <div className="p-2 bg-muted/30 rounded-md border text-sm">{(employee as any).emergencyContactName || '—'}</div>
                         )}
                       </div>
                       <div className="space-y-2">
-                        <Label>Password</Label>
+                        <Label>Contact Phone</Label>
                         {isEditing ? (
-                          <Input 
-                            type="text"
-                            value={editForm.password ?? ''} 
-                            onChange={e => setEditForm({...editForm, password: e.target.value})} 
-                            placeholder="Leave blank to keep old password"
+                          <Input
+                            value={editForm.emergencyContactPhone ?? ''}
+                            onChange={e => setEditForm({...editForm, emergencyContactPhone: e.target.value.replace(/\D/g, '').slice(0, 15)})}
+                            placeholder="Phone number"
                           />
                         ) : (
-                          <div className="p-2 bg-muted/30 rounded-md border text-sm text-muted-foreground">
-                            ••••••••
-                          </div>
+                          <div className="p-2 bg-muted/30 rounded-md border text-sm">{(employee as any).emergencyContactPhone || '—'}</div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Relation</Label>
+                        {isEditing ? (
+                          <Input
+                            value={editForm.emergencyContactRelation ?? ''}
+                            onChange={e => setEditForm({...editForm, emergencyContactRelation: e.target.value})}
+                            placeholder="e.g. Spouse, Parent"
+                          />
+                        ) : (
+                          <div className="p-2 bg-muted/30 rounded-md border text-sm">{(employee as any).emergencyContactRelation || '—'}</div>
                         )}
                       </div>
                     </div>

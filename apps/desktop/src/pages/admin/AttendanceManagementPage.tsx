@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendanceApi, employeesApi, holidaysApi } from '@/lib/api';
 import { Select } from '@/components/ui/select';
@@ -92,7 +92,7 @@ function SearchableEmployeeSelect({ employees, value, onChange }: SearchableEmpl
   const displayLabel = value === 'all'
     ? 'All Employees View'
     : selectedEmployee
-      ? `${selectedEmployee.firstName} ${selectedEmployee.lastName} (${selectedEmployee.employeeCode})`
+      ? `${selectedEmployee.firstName} ${selectedEmployee.lastName}`
       : 'Select Employee';
 
   return (
@@ -183,13 +183,6 @@ function SearchableEmployeeSelect({ employees, value, onChange }: SearchableEmpl
                     }}
                   >
                     <span className="truncate">{emp.firstName} {emp.lastName}</span>
-                    <span
-                      className={`text-[11px] font-mono shrink-0 ml-2 ${
-                        isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {emp.employeeCode}
-                    </span>
                   </div>
                 );
               })
@@ -219,6 +212,19 @@ export function AttendanceManagementPage(): JSX.Element {
   const [selectedMonth, setSelectedMonth] = useState(initialMonth);
   const [selectedYear, setSelectedYear] = useState(initialYear);
   const [cardSearch, setCardSearch] = useState('');
+
+  // Dates to highlight with blow animation (set when redirected from Salary page)
+  const location = useLocation();
+  const locationState = location.state as { highlightIncompleteDates?: string[]; fromSalaryPage?: boolean } | null;
+  const [highlightedDates, setHighlightedDates] = useState<string[]>(
+    locationState?.highlightIncompleteDates ?? [],
+  );
+  // Clear highlight automatically after 4.5 s (enough for 3 animation cycles)
+  useEffect(() => {
+    if (highlightedDates.length === 0) return;
+    const t = setTimeout(() => setHighlightedDates([]), 4500);
+    return () => clearTimeout(t);
+  }, [highlightedDates]);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
@@ -740,15 +746,18 @@ export function AttendanceManagementPage(): JSX.Element {
         <div
           key={day}
           onClick={() => openEditModal(dateStr, record, isFuture)}
-          className={`p-2.5 border rounded-xl flex flex-col min-h-[110px] transition-all ${
+          className={`relative p-2.5 border rounded-xl flex flex-col min-h-[110px] transition-all ${
             !isFuture ? 'cursor-pointer' : ''
-          } ${cardBg}`}
+          } ${cardBg} ${highlightedDates.includes(dateStr) ? 'incomplete-punch-glow' : ''}`}
         >
           <div className="flex items-center justify-between">
             <span className="font-bold text-sm text-slate-800">{day}</span>
             {badge}
           </div>
           {bodyEl}
+          {highlightedDates.includes(dateStr) && (
+            <span className="absolute inset-0 rounded-xl pointer-events-none incomplete-punch-ring" />
+          )}
         </div>
       );
     });
@@ -779,6 +788,31 @@ export function AttendanceManagementPage(): JSX.Element {
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Keyframe styles for the "blow" / pulse-glow animation on incomplete punch dates */}
+      <style>{`
+        @keyframes incompletePunchBlow {
+          0%   { box-shadow: 0 0 0 0 rgba(251,146,60,0.0), 0 0 0 0 rgba(239,68,68,0.0); transform: scale(1); }
+          20%  { box-shadow: 0 0 0 6px rgba(251,146,60,0.55), 0 0 16px 4px rgba(239,68,68,0.25); transform: scale(1.025); }
+          50%  { box-shadow: 0 0 0 10px rgba(251,146,60,0.2), 0 0 28px 6px rgba(239,68,68,0.10); transform: scale(1.01); }
+          100% { box-shadow: 0 0 0 0 rgba(251,146,60,0.0), 0 0 0 0 rgba(239,68,68,0.0); transform: scale(1); }
+        }
+        .incomplete-punch-glow {
+          animation: incompletePunchBlow 1.1s ease-in-out 3;
+          border-color: #f97316 !important;
+          background-color: rgba(255,237,213,0.55) !important;
+          z-index: 1;
+        }
+        @keyframes incompletePunchRing {
+          0%   { opacity: 0; box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
+          30%  { opacity: 1; box-shadow: 0 0 0 5px rgba(239,68,68,0.3); }
+          70%  { opacity: 0.6; box-shadow: 0 0 0 9px rgba(239,68,68,0.1); }
+          100% { opacity: 0; box-shadow: 0 0 0 12px rgba(239,68,68,0.0); }
+        }
+        .incomplete-punch-ring {
+          animation: incompletePunchRing 1.1s ease-in-out 3;
+          border-radius: 0.75rem;
+        }
+      `}</style>
       <Card className="bg-card shadow-sm border-border">
         <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -884,7 +918,7 @@ export function AttendanceManagementPage(): JSX.Element {
             
             <div className="p-6 space-y-6">
               <div className="text-sky-500 font-semibold text-sm">
-                {new Date(editTarget.dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' })}
+                {new Date(editTarget.dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
               </div>
               
               <div className="grid grid-cols-2 gap-4">

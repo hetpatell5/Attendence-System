@@ -34,6 +34,8 @@ enum AuditEventType {
   LOGOUT
   TOKEN_REFRESH
   TOKEN_REUSE_DETECTED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
 
   EMPLOYEE_CREATED
   EMPLOYEE_UPDATED
@@ -175,12 +177,33 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
-  employee      Employee?
+  refreshTokens     RefreshToken[]
+  auditLogs         AuditLog[]
+  employee          Employee?
+  passwordResetOtps PasswordResetOtp[]
 
   @@index([role])
   @@map("users")
+}
+
+// Hidden admin recovery flow (Ctrl+F on the login page): a 6-digit code emailed to
+// `CompanySettings.recoveryEmail`, tied to the specific admin username typed into the
+// recovery dialog, then a short-lived one-time token that authorizes setting a new
+// password for that user. Never stores the raw code or the raw token.
+model PasswordResetOtp {
+  id                  String    @id @default(uuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash            String
+  codeExpiresAt       DateTime
+  attempts            Int       @default(0)
+  consumedAt          DateTime?
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
+  createdAt           DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_otps")
 }
 
 model RefreshToken {
@@ -256,6 +279,10 @@ model CompanySettings {
   fromName             String?
   fromEmail            String?
   adminEmail           String?
+  // Destination for the hidden admin password-reset OTP (Ctrl+F on the login page).
+  // Global, matching the old system: one recovery inbox, used to reset whichever
+  // admin username is typed into the recovery dialog. Never used for login itself.
+  recoveryEmail        String?
 
   // Custom Templates (HTML + CSS)
   mailFormat           String?  @db.Text

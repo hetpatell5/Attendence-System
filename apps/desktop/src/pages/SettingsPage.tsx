@@ -15,14 +15,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Building2, Shield, Settings, Info, Mail, Upload, Download,
+  Building2, Settings, Info, Mail, Upload, Download,
   Database, ArrowRightLeft, Lock, User, Eye, EyeOff, CheckCircle2,
   AlertTriangle, X, Image as ImageIcon, FileCode, RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import defaultCompanyLogo from '@/assets/logo.png';
 
-type Tab = 'company' | 'security' | 'smtp' | 'templates' | 'import-export' | 'sql' | 'migration' | 'system';
+type Tab = 'company' | 'smtp' | 'templates' | 'sql' | 'migration' | 'system';
 
 // ── Default Templates (1:1 Legacy System) ──────────────────────────────────
 const DEFAULT_EMAIL_TEMPLATE = `<p>Hello {{employee_name}},</p>
@@ -694,104 +694,7 @@ function TemplatesSection() {
   );
 }
 
-// ── Import/Export Section ─────────────────────────────────────────────────────
-function ImportExportSection() {
-  const { toast, showSuccess, showError, clear } = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [exporting, setExporting] = useState(false);
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      showSuccess('Export initiated. The ZIP will download shortly.');
-      await new Promise(r => setTimeout(r, 1000));
-      showSuccess('Export complete. attendance_system_backup.zip downloaded.');
-    } catch {
-      showError('Export failed. Please try again.');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.endsWith('.zip')) { showError('Please select a .zip file.'); return; }
-    setImporting(true);
-    try {
-      await new Promise(r => setTimeout(r, 1500));
-      showSuccess('Backup restored successfully from ' + file.name);
-    } catch {
-      showError('Import failed. Check the file and try again.');
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
-
-  return (
-    <>
-      {toast && <Toast type={toast.type} message={toast.message} onClose={clear} />}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Import */}
-        <Card className="flex flex-col">
-          <CardHeader>
-            <div className="text-sky-500 text-4xl text-center mb-2">
-              <Upload className="mx-auto" size={40} />
-            </div>
-            <CardTitle className="text-center">Import Backup</CardTitle>
-            <CardDescription className="text-center">
-              Restore the system from a previous backup ZIP file
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="mt-auto space-y-4">
-            <div className="space-y-1.5">
-              <Label>Select ZIP File</Label>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".zip"
-                onChange={handleImport}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 cursor-pointer file:mr-3 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100"
-              />
-            </div>
-            <Button
-              disabled={importing}
-              onClick={() => fileRef.current?.click()}
-              className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold"
-            >
-              {importing ? 'Restoring...' : '⬆️ Import Backup'}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Export */}
-        <Card className="flex flex-col">
-          <CardHeader>
-            <div className="text-sky-500 text-4xl text-center mb-2">
-              <Download className="mx-auto" size={40} />
-            </div>
-            <CardTitle className="text-center">Export Backup</CardTitle>
-            <CardDescription className="text-center">
-              Download a complete ZIP backup of all system files
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="mt-auto">
-            <Button
-              onClick={handleExport}
-              disabled={exporting}
-              variant="outline"
-              className="w-full font-bold border-2 border-slate-300 text-slate-700 hover:bg-slate-50"
-            >
-              {exporting ? 'Exporting...' : '⬇️ Download ZIP'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    </>
-  );
-}
+// ── Import/Export Section removed (was unused placeholder logic) ──────────────
 
 // ── SQL Import/Export Section ─────────────────────────────────────────────────
 function SqlSection() {
@@ -1066,7 +969,6 @@ export function SettingsPage(): JSX.Element {
     companyAddress: '',
     timezone: '',
     currencyCode: '',
-    allowedIps: '',
   });
 
   useEffect(() => {
@@ -1077,7 +979,6 @@ export function SettingsPage(): JSX.Element {
         companyAddress: (settings as any).companyAddress || '',
         timezone: settings.timezone || '',
         currencyCode: settings.currencyCode || '',
-        allowedIps: Array.isArray((settings as any).allowedIps) ? (settings as any).allowedIps.join(', ') : ((settings as any).allowedIps || ''),
       });
     }
   }, [settings]);
@@ -1115,10 +1016,6 @@ export function SettingsPage(): JSX.Element {
         companyAddress: companyForm.companyAddress,
         timezone: companyForm.timezone,
         currencyCode: companyForm.currencyCode,
-        allowedIps: companyForm.allowedIps
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -1130,20 +1027,33 @@ export function SettingsPage(): JSX.Element {
   // ── Admin Profile ──
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: meApi.profile });
   const [profileForm, setProfileForm] = useState({ name: '', email: '' });
-  const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [showPwd, setShowPwd] = useState({ current: false, new: false, confirm: false });
+  const [pwdForm, setPwdForm] = useState({ newPassword: '', confirmPassword: '' });
+  const [showPwd, setShowPwd] = useState({ new: false, confirm: false });
+  const [recoveryEmail, setRecoveryEmail] = useState('');
 
   useEffect(() => {
     if (me) setProfileForm({ name: me.name || '', email: me.email || '' });
   }, [me]);
 
-  const updateProfileMutation = useMutation({
-    mutationFn: () => meApi.updateProfile({ name: profileForm.name, email: profileForm.email }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['me'] });
-      showSuccess('Profile updated successfully!');
+  useEffect(() => {
+    if (settings) setRecoveryEmail((settings as any).recoveryEmail || '');
+  }, [settings]);
+
+  const saveRecoveryEmailMutation = useMutation({
+    mutationFn: () => {
+      const trimmed = recoveryEmail.trim();
+      // Catch a typo (e.g. a missing "@") here — the server also rejects it, but that
+      // only surfaces once the OTP send fails later with a bare "No recipients defined".
+      if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        throw new Error('Enter a valid email address (e.g. name@example.com).');
+      }
+      return settingsApi.update({ recoveryEmail: trimmed });
     },
-    onError: () => showError('Failed to update profile.'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showSuccess('Recovery email saved.');
+    },
+    onError: (err: any) => showError(err?.message || 'Failed to save recovery email.'),
   });
 
   const changePasswordMutation = useMutation({
@@ -1155,16 +1065,16 @@ export function SettingsPage(): JSX.Element {
         throw new Error('New password must be at least 6 characters');
       }
       return meApi.changePassword({
-        currentPassword: pwdForm.currentPassword,
+        currentPassword: '',
         newPassword: pwdForm.newPassword,
       });
     },
     onSuccess: () => {
       showSuccess('Password changed successfully!');
-      setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPwdForm({ newPassword: '', confirmPassword: '' });
     },
     onError: (err: any) => {
-      showError(err?.message || 'Failed to change password. Check current password.');
+      showError(err?.message || 'Failed to change password.');
     },
   });
 
@@ -1189,10 +1099,8 @@ export function SettingsPage(): JSX.Element {
 
   const tabs = [
     { id: 'company', label: 'Company Profile', icon: <Building2 size={15} /> },
-    { id: 'security', label: 'Security & WiFi', icon: <Shield size={15} /> },
     { id: 'smtp', label: 'SMTP Settings', icon: <Mail size={15} /> },
     { id: 'templates', label: 'Salary & Email Templates', icon: <FileCode size={15} /> },
-    { id: 'import-export', label: 'Import / Export', icon: <Upload size={15} /> },
     { id: 'sql', label: 'SQL Import / Export', icon: <Database size={15} /> },
     { id: 'migration', label: 'Data Migration', icon: <ArrowRightLeft size={15} /> },
     { id: 'system', label: 'System', icon: <Settings size={15} /> },
@@ -1347,36 +1255,19 @@ export function SettingsPage(): JSX.Element {
               <CardTitle className="flex items-center gap-2">
                 <User size={18} className="text-sky-500" /> Admin Profile Update
               </CardTitle>
-              <CardDescription>Update your administrator username and password</CardDescription>
+              <CardDescription>Update your administrator password and recovery email</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {/* Display Name */}
-              <div className="space-y-2">
-                <Label htmlFor="adminName">Display Name</Label>
-                <Input
-                  id="adminName"
-                  value={profileForm.name}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="Admin Name"
-                />
-              </div>
-              {/* Username / Login ID */}
+              {/* Username / Login ID (read-only — changed by re-provisioning the account) */}
               <div className="space-y-2">
                 <Label htmlFor="adminEmail">Username (Login ID)</Label>
                 <Input
                   id="adminEmail"
                   value={profileForm.email ?? ''}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="admin"
+                  disabled
+                  className="bg-slate-50 text-slate-500"
                 />
               </div>
-              <Button
-                onClick={() => updateProfileMutation.mutate()}
-                disabled={updateProfileMutation.isPending}
-                className="bg-sky-600 hover:bg-sky-700 text-white font-bold"
-              >
-                {updateProfileMutation.isPending ? 'Saving...' : 'Update Profile'}
-              </Button>
 
               <hr className="border-slate-100" />
 
@@ -1386,26 +1277,6 @@ export function SettingsPage(): JSX.Element {
                   <Lock size={15} className="text-slate-500" />
                   Change Password
                 </h4>
-
-                <div className="space-y-2">
-                  <Label>Current Password</Label>
-                  <div className="relative">
-                    <Input
-                      type={showPwd.current ? 'text' : 'password'}
-                      value={pwdForm.currentPassword}
-                      onChange={(e) => setPwdForm((p) => ({ ...p, currentPassword: e.target.value }))}
-                      placeholder="••••••••"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPwd((p) => ({ ...p, current: !p.current }))}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      {showPwd.current ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
 
                 <div className="space-y-2">
                   <Label>
@@ -1455,46 +1326,38 @@ export function SettingsPage(): JSX.Element {
 
                 <Button
                   onClick={() => changePasswordMutation.mutate()}
-                  disabled={changePasswordMutation.isPending || !pwdForm.currentPassword || !pwdForm.newPassword}
+                  disabled={changePasswordMutation.isPending || !pwdForm.newPassword}
                   className="bg-slate-800 hover:bg-slate-900 text-white font-bold"
                 >
                   {changePasswordMutation.isPending ? 'Changing...' : '🔐 Change Password'}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
-      {/* ── Security & WiFi ── */}
-      {tab === 'security' && (
-        <div className="max-w-3xl">
-          <Card>
-            <CardHeader>
-              <CardTitle>Network Restrictions</CardTitle>
-              <CardDescription>Restrict punch-in/out to specific office WiFi networks</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+              <hr className="border-slate-100" />
+
+              {/* Recovery Email (hidden password-reset OTP) */}
               <div className="space-y-2">
-                <Label htmlFor="allowedIps">Allowed WiFi IP Addresses</Label>
-                <Textarea
-                  id="allowedIps"
-                  value={companyForm.allowedIps}
-                  onChange={(e) => setCompanyForm({ ...companyForm, allowedIps: e.target.value })}
-                  placeholder="203.0.113.1, 203.0.113.2"
-                  rows={4}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Comma-separated list of allowed public IPs. Leave empty to allow punch-in from any network.
+                <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <Mail size={15} className="text-slate-500" />
+                  Recovery Email
+                </h4>
+                <p className="text-xs text-slate-400">
+                  If you ever get locked out, press <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-slate-50 font-mono text-[11px]">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-slate-50 font-mono text-[11px]">F</kbd> on the login screen to reset an admin password via a one-time code sent to this address.
                 </p>
+                <Input
+                  type="email"
+                  value={recoveryEmail}
+                  onChange={(e) => setRecoveryEmail(e.target.value)}
+                  placeholder="recovery@example.com"
+                />
+                <Button
+                  onClick={() => saveRecoveryEmailMutation.mutate()}
+                  disabled={saveRecoveryEmailMutation.isPending}
+                  className="bg-sky-600 hover:bg-sky-700 text-white font-bold"
+                >
+                  {saveRecoveryEmailMutation.isPending ? 'Saving...' : 'Save Recovery Email'}
+                </Button>
               </div>
-              <Button
-                onClick={() => updateSettingsMutation.mutate()}
-                disabled={updateSettingsMutation.isPending}
-                className="bg-sky-600 hover:bg-sky-700 text-white font-bold"
-              >
-                {updateSettingsMutation.isPending ? 'Saving...' : 'Save Network Settings'}
-              </Button>
             </CardContent>
           </Card>
         </div>
@@ -1505,9 +1368,6 @@ export function SettingsPage(): JSX.Element {
 
       {/* ── Templates (Salary Slip & Email Formats) ── */}
       {tab === 'templates' && <TemplatesSection />}
-
-      {/* ── Import/Export ── */}
-      {tab === 'import-export' && <ImportExportSection />}
 
       {/* ── SQL ── */}
       {tab === 'sql' && (

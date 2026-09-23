@@ -434,7 +434,7 @@ export function EmployeeDashboardPage(): JSX.Element {
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
-      const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayLabel = d.toLocaleDateString('en-GB', { weekday: 'short' });
       const isToday = i === 0;
       const isSunday = d.getDay() === 0;
 
@@ -1008,6 +1008,91 @@ export function EmployeeDashboardPage(): JSX.Element {
                 </div>
               ))}
             </div>
+
+            {/* ── Sunday & Holiday Earned Strip ── */}
+            {(() => {
+              const { presentRegularDays, paidSundays, paidHolidays, sundaysCount, holidaysCount } = salaryMetrics;
+              const totalPaidOff = paidSundays + paidHolidays;
+              const totalAvailOff = sundaysCount + holidaysCount;
+
+              // Tier labels matching old system: ≥18 → all, 12-17 → 2, 5-11 → 1, <5 → 0
+              const tierLabel =
+                presentRegularDays >= 18 ? 'All earned 🎉'
+                : presentRegularDays >= 12 ? '2 days earned'
+                : presentRegularDays >= 5  ? '1 day earned'
+                : 'None yet';
+
+              const nextThreshold =
+                presentRegularDays < 5  ? 5
+                : presentRegularDays < 12 ? 12
+                : presentRegularDays < 18 ? 18
+                : null;
+
+              const prevThreshold =
+                presentRegularDays < 5  ? 0
+                : presentRegularDays < 12 ? 5
+                : presentRegularDays < 18 ? 12
+                : 18;
+
+              const progressPct = nextThreshold !== null
+                ? Math.round(((presentRegularDays - prevThreshold) / (nextThreshold - prevThreshold)) * 100)
+                : 100;
+
+              const isFullyEarned = nextThreshold === null;
+
+              const accentColor = isFullyEarned
+                ? 'text-emerald-600'
+                : presentRegularDays >= 12 ? 'text-amber-600'
+                : presentRegularDays >= 5  ? 'text-orange-500'
+                : 'text-slate-400';
+
+              const barColor = isFullyEarned
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                : presentRegularDays >= 12 ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                : presentRegularDays >= 5  ? 'bg-gradient-to-r from-orange-400 to-amber-300'
+                : 'bg-slate-300';
+
+              const moodIcon = isFullyEarned ? '🏖️' : presentRegularDays >= 12 ? '🌤️' : presentRegularDays >= 5 ? '⛅' : '🌧️';
+
+              return (
+                <div className="mt-2.5 clay-pod px-3.5 py-2.5 flex items-center gap-3">
+                  <div className={`text-xl shrink-0 leading-none ${isFullyEarned ? '' : 'opacity-75'}`}>
+                    {moodIcon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
+                          Sunday &amp; Holiday Earned
+                        </span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 whitespace-nowrap ${accentColor}`}>
+                          {tierLabel}
+                        </span>
+                      </div>
+                      <span className={`text-sm font-extrabold tabular-nums shrink-0 ${accentColor}`}>
+                        {totalPaidOff}
+                        <span className="text-[11px] font-bold text-slate-400">/{totalAvailOff}</span>
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden shadow-[inset_0_1px_2px_rgba(0,0,0,0.08)]">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    {!isFullyEarned ? (
+                      <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                        {presentRegularDays} present · {nextThreshold! - presentRegularDays} more to {nextThreshold === 5 ? 'earn 1st paid day' : nextThreshold === 12 ? 'earn 2 paid days' : 'earn all'}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                        All {totalAvailOff} off-day{totalAvailOff !== 1 ? 's' : ''} paid · Great work! 🌟
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* RIGHT (3 cols): Best Streak + Next Milestone Progress */}

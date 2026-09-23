@@ -56,6 +56,12 @@ contextBridge.exposeInMainWorld('electronApi', {
       ipcRenderer.on('updater:update-available', handler);
       return () => ipcRenderer.removeListener('updater:update-available', handler);
     },
+    /** Register a listener for download progress (0-100%). */
+    onDownloadProgress: (callback: (info: { percent: number; bytesPerSecond: number }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, info: { percent: number; bytesPerSecond: number }) => callback(info);
+      ipcRenderer.on('updater:download-progress', handler);
+      return () => ipcRenderer.removeListener('updater:download-progress', handler);
+    },
     /** Register a listener for when an update has been fully downloaded and is ready. */
     onUpdateDownloaded: (callback: (info: { version: string }) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, info: { version: string }) => callback(info);

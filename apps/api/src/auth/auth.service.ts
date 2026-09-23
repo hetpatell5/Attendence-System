@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -10,6 +11,7 @@ import type { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../audit/audit.service';
+import { EmailService } from '../email/email.service';
 import type { JwtPayload } from './types/jwt-payload.type';
 
 export interface AuthTokensResult {
@@ -77,17 +79,33 @@ export class AuthService {
   );
   private readonly refreshPepper = process.env.JWT_REFRESH_SECRET ?? '';
 
+  // Pepper for OTP / reset-token hashing. Deliberately reuses JWT_SECRET rather than adding
+  // a new required env var — both exist purely to make the stored hash unrecoverable from a
+  // DB leak alone, not as an independent secret.
+  private readonly recoveryPepper = process.env.JWT_SECRET ?? '';
+  private readonly OTP_TTL_MS = 10 * 60 * 1000;
+  private readonly OTP_MAX_ATTEMPTS = 5;
+  private readonly RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
     private readonly auditService: AuditService,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
   ) {}
 
   private hashRefreshToken(rawToken: string): string {
     return crypto
       .createHash('sha256')
       .update(rawToken + this.refreshPepper)
+      .digest('hex');
+  }
+
+  private hashRecoverySecret(raw: string): string {
+    return crypto
+      .createHash('sha256')
+      .update(raw + this.recoveryPepper)
       .digest('hex');
   }
 
@@ -260,6 +278,142 @@ export class AuthService {
     }
 
     void this.auditService.log({ eventType: 'LOGOUT', userId, ipAddress: ip })
+      .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hidden admin password recovery (Ctrl+F on the login page).
+  //
+  // Mirrors the old system's forgot_password.php: one company-wide recovery
+  // email (CompanySettings.recoveryEmail), OTP-gated, resets the password of
+  // whichever admin username the caller typed in. Every response is worded
+  // identically regardless of whether that username exists, so this endpoint
+  // can't be used to enumerate admin accounts.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Step 1: generate and email a 6-digit OTP for the given admin username.
+   * Always resolves — never reveals whether the username matched an admin
+   * account. Only genuine operational problems (no recovery email configured,
+   * SMTP not set up, email send failure) are surfaced, since those are visible
+   * system state, not information about a specific account.
+   */
+  async requestPasswordResetOtp(usernameOrEmail: string, ip?: string): Promise<void> {
+    const identifier = usernameOrEmail?.trim() || '';
+    const settings = await this.prisma.companySettings.findFirst();
+    const recoveryEmail = settings?.recoveryEmail?.trim();
+    if (!recoveryEmail) {
+      throw new BadRequestException(
+        'Recovery email is not configured. Set it in Settings → Company Profile → Admin Profile Update.',
+      );
+    }
+    // Defense in depth: the settings DTO now validates this on save, but a value saved
+    // before that validation existed would otherwise fail later with nodemailer's opaque
+    // "No recipients defined" once it reaches sendMail().
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail)) {
+      throw new BadRequestException(
+        `The configured recovery email "${recoveryEmail}" isn't valid. Fix it in Settings → Company Profile → Admin Profile Update.`,
+      );
+    }
+
+    const user = identifier ? await this.usersService.findAdminByUsernameOrEmail(identifier) : null;
+    if (!user) {
+      // Same shape as the success path, just skip generating/sending anything —
+      // the caller can't distinguish this from "OTP sent" (see doc comment above).
+      void this.auditService.log({ eventType: 'PASSWORD_RESET_REQUESTED', email: identifier, ipAddress: ip })
+        .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
+      return;
+    }
+
+    // Invalidate any still-usable OTPs for this user before issuing a new one, so only the
+    // most recent code/reset-token can ever be redeemed.
+    await this.prisma.passwordResetOtp.updateMany({
+      where: { userId: user.id, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+
+    const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+    await this.prisma.passwordResetOtp.create({
+      data: {
+        userId: user.id,
+        codeHash: this.hashRecoverySecret(`${user.id}:${code}`),
+        codeExpiresAt: new Date(Date.now() + this.OTP_TTL_MS),
+      },
+    });
+
+    await this.emailService.sendPasswordResetOtpEmail(
+      recoveryEmail,
+      code,
+      settings?.companyName || 'Attendance System',
+    );
+
+    void this.auditService.log({ eventType: 'PASSWORD_RESET_REQUESTED', userId: user.id, ipAddress: ip })
+      .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
+  }
+
+  /**
+   * Step 2: verify the OTP and issue a short-lived, single-use reset token.
+   */
+  async verifyPasswordResetOtp(usernameOrEmail: string, code: string): Promise<{ resetToken: string }> {
+    const identifier = usernameOrEmail?.trim() || '';
+    const user = identifier ? await this.usersService.findAdminByUsernameOrEmail(identifier) : null;
+    // Generic message throughout — never distinguishes "no such user" from "wrong code".
+    const invalid = () => new UnauthorizedException('Invalid or expired code.');
+    if (!user) throw invalid();
+
+    const otp = await this.prisma.passwordResetOtp.findFirst({
+      where: { userId: user.id, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!otp || otp.codeExpiresAt.getTime() < Date.now()) throw invalid();
+    if (otp.attempts >= this.OTP_MAX_ATTEMPTS) {
+      await this.prisma.passwordResetOtp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
+      throw invalid();
+    }
+
+    const providedHash = this.hashRecoverySecret(`${user.id}:${code?.trim() ?? ''}`);
+    if (providedHash !== otp.codeHash) {
+      await this.prisma.passwordResetOtp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
+      throw invalid();
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    await this.prisma.passwordResetOtp.update({
+      where: { id: otp.id },
+      data: {
+        consumedAt: new Date(),
+        resetTokenHash: this.hashRecoverySecret(resetToken),
+        resetTokenExpiresAt: new Date(Date.now() + this.RESET_TOKEN_TTL_MS),
+      },
+    });
+
+    return { resetToken };
+  }
+
+  /**
+   * Step 3: spend the one-time reset token to set a new password.
+   */
+  async resetPasswordWithToken(resetToken: string, newPassword: string, ip?: string): Promise<void> {
+    const invalid = () => new UnauthorizedException('This reset link has expired. Please request a new code.');
+    const tokenHash = this.hashRecoverySecret(resetToken?.trim() ?? '');
+    const otp = await this.prisma.passwordResetOtp.findFirst({ where: { resetTokenHash: tokenHash } });
+    if (!otp || !otp.resetTokenExpiresAt || otp.resetTokenExpiresAt.getTime() < Date.now()) {
+      throw invalid();
+    }
+
+    await this.usersService.updatePassword(otp.userId, newPassword);
+    // Single-use: clear the token hash so this same reset link can't be replayed.
+    await this.prisma.passwordResetOtp.update({
+      where: { id: otp.id },
+      data: { resetTokenHash: null, resetTokenExpiresAt: null },
+    });
+    // A recovered account may have been compromised — force re-login everywhere.
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: otp.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    void this.auditService.log({ eventType: 'PASSWORD_RESET_COMPLETED', userId: otp.userId, ipAddress: ip })
       .catch((e: unknown) => console.error('[AuthService] audit log error:', e));
   }
 }

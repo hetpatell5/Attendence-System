@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from '../users/users.module';
 import { AuditModule } from '../audit/audit.module';
+import { EmailModule } from '../email/email.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
@@ -15,6 +16,7 @@ import { RolesGuard } from './guards/roles.guard';
   imports: [
     UsersModule,
     AuditModule,
+    EmailModule,
     PassportModule,
     JwtModule.register({}),
     // Global baseline: 200 requests per 60 seconds per IP.

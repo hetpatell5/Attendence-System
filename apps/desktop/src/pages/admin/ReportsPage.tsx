@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   Wallet,
   Award,
+  TrendingUp,
 } from 'lucide-react';
 import { cn, compareEmployeesByName, to12h } from '@/lib/utils';
 
@@ -41,9 +43,305 @@ function getAvatarPalette(name: string): string {
 }
 
 type Tab = 'attendance' | 'performance';
+type ChartRange = '6m' | 'alltime';
+
+interface StockChartPoint {
+  xLabel: string;
+  value: number;
+  secondaryValue?: number;
+  dateLabel: string;
+  displayValue: string;
+  secondaryDisplayValue?: string;
+  isMarker?: boolean;
+  markerNote?: string;
+}
+
+function StockAreaChart({
+  points,
+  lineColor,
+  areaGradientId,
+  yTickFormatter,
+  secondaryLineColor,
+}: {
+  points: StockChartPoint[];
+  lineColor: string;
+  areaGradientId: string;
+  yTickFormatter?: (v: number) => string;
+  secondaryLineColor?: string;
+}) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  if (points.length === 0) {
+    return (
+      <div className="h-[180px] w-full flex items-center justify-center text-xs text-muted-foreground">
+        No data available
+      </div>
+    );
+  }
+
+  const W = 460;
+  const H = 160;
+  const padL = 38;
+  const padR = 12;
+  const padT = 24;
+  const padB = 22;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  const allVals = points.flatMap((p) =>
+    [p.value, p.secondaryValue].filter((v): v is number => v !== undefined)
+  );
+  const minVal = Math.max(0, Math.min(...allVals) * 0.9);
+  const maxVal = Math.max(...allVals, 1) * 1.1;
+  const yRange = maxVal - minVal || 1;
+
+  const n = points.length;
+  const xs = points.map((_, i) => padL + (i / Math.max(n - 1, 1)) * chartW);
+  const ys = points.map((p) => padT + chartH - ((p.value - minVal) / yRange) * chartH);
+
+  const linePts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
+  const areaPts = `${padL},${padT + chartH} ` + linePts + ` ${padL + chartW},${padT + chartH}`;
+
+  const hasSecondary = points.some((p) => p.secondaryValue !== undefined);
+  const secYs = hasSecondary
+    ? points.map((p) => padT + chartH - (((p.secondaryValue ?? 0) - minVal) / yRange) * chartH)
+    : [];
+  const secLinePts = hasSecondary ? xs.map((x, i) => `${x},${secYs[i]}`).join(' ') : '';
+
+  const activeIdx = hoverIdx !== null ? hoverIdx : n - 1;
+  const activePoint = points[activeIdx];
+
+  const yTicks = [0, 0.5, 1].map((pct) => {
+    const val = minVal + yRange * pct;
+    const y = padT + chartH - pct * chartH;
+    return {
+      y,
+      label: yTickFormatter ? yTickFormatter(val) : Math.round(val).toString(),
+    };
+  });
+
+  return (
+    <div className="relative w-full h-[180px] bg-white dark:bg-card rounded-xl border border-border/60 shadow-xs p-1.5 select-none overflow-hidden">
+      {/* Top-Right Floating Badge */}
+      <div className="absolute top-2 right-2.5 z-20 flex items-center gap-1.5 bg-slate-900 text-white dark:bg-black/90 dark:text-white border border-slate-700/50 dark:border-white/15 px-2.5 py-1 rounded-md text-[11px] font-mono shadow-md backdrop-blur-md max-w-[calc(100%-20px)] truncate">
+        <span className="font-bold text-white tracking-tight">
+          {activePoint?.displayValue}
+        </span>
+        {activePoint?.secondaryDisplayValue && (
+          <span className="text-white/70 text-[10px] pl-1.5 border-l border-white/20">
+            {activePoint.secondaryDisplayValue}
+          </span>
+        )}
+        <span className="text-white/50 text-[10px] font-sans ml-1">
+          {activePoint?.dateLabel}
+        </span>
+        {activePoint?.markerNote && (
+          <span className="text-emerald-400 text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/30">
+            {activePoint.markerNote}
+          </span>
+        )}
+      </div>
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-full overflow-visible"
+        preserveAspectRatio="none"
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const relX = ((e.clientX - rect.left) / rect.width) * W;
+          const clampedX = Math.max(padL, Math.min(padL + chartW, relX));
+          const ratio = (clampedX - padL) / chartW;
+          const idx = Math.min(n - 1, Math.max(0, Math.round(ratio * (n - 1))));
+          setHoverIdx(idx);
+        }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <defs>
+          <linearGradient id={areaGradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+
+        {/* Horizontal grid lines with labels */}
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line
+              x1={padL}
+              y1={t.y}
+              x2={W - padR}
+              y2={t.y}
+              stroke="currentColor"
+              className="text-slate-200 dark:text-border/40"
+              strokeDasharray="3 3"
+              strokeWidth="0.8"
+            />
+            <text
+              x={padL - 4}
+              y={t.y + 3}
+              textAnchor="end"
+              className="text-[8px] fill-slate-400 dark:fill-muted-foreground font-mono"
+            >
+              {t.label}
+            </text>
+          </g>
+        ))}
+
+        {/* Gradient Area Fill */}
+        <polygon points={areaPts} fill={`url(#${areaGradientId})`} />
+
+        {/* Secondary Line (if present, e.g. Expected Hours dashed line) */}
+        {hasSecondary && (
+          <polyline
+            points={secLinePts}
+            fill="none"
+            stroke={secondaryLineColor || '#f43f5e'}
+            strokeWidth="1.2"
+            strokeDasharray="4 2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            strokeOpacity="0.75"
+          />
+        )}
+
+        {/* Primary Curve Line */}
+        <polyline
+          points={linePts}
+          fill="none"
+          stroke={lineColor}
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+
+        {/* Key Markers / Revision Dots */}
+        {points.map((p, i) => (
+          <g key={i}>
+            {p.isMarker && (
+              <circle
+                cx={xs[i]}
+                cy={ys[i]}
+                r={3.5}
+                fill={lineColor}
+                stroke="#ffffff"
+                strokeWidth="1.2"
+              />
+            )}
+          </g>
+        ))}
+
+        {/* Crosshair guide line & dot when hovered */}
+        {hoverIdx !== null && (
+          <g>
+            <line
+              x1={xs[hoverIdx]}
+              y1={padT}
+              x2={xs[hoverIdx]}
+              y2={padT + chartH}
+              stroke="currentColor"
+              className="text-slate-400 dark:text-white"
+              strokeOpacity="0.5"
+              strokeDasharray="3 3"
+              strokeWidth="1"
+            />
+            {hasSecondary && (
+              <circle
+                cx={xs[hoverIdx]}
+                cy={secYs[hoverIdx]}
+                r={3}
+                fill={secondaryLineColor || '#f43f5e'}
+                stroke="#ffffff"
+                strokeWidth="1"
+              />
+            )}
+            <circle
+              cx={xs[hoverIdx]}
+              cy={ys[hoverIdx]}
+              r={4.5}
+              fill={lineColor}
+              stroke="#ffffff"
+              strokeWidth="2"
+            />
+          </g>
+        )}
+
+        {/* X-axis labels at bottom */}
+        {points.map((p, i) => {
+          const show =
+            i === 0 ||
+            i === n - 1 ||
+            (n > 6 && i % Math.ceil(n / 5) === 0);
+          if (!show) return null;
+          return (
+            <text
+              key={i}
+              x={xs[i]}
+              y={H - 5}
+              textAnchor="middle"
+              className="text-[8px] fill-slate-400 dark:fill-muted-foreground font-mono"
+            >
+              {p.xLabel}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function getBarTooltipStyle(idx: number, total: number): React.CSSProperties {
+  const gap = Math.floor(420 / Math.max(total, 1));
+  const barLeftPct = ((36 + idx * gap) / 460) * 100;
+  const barRightPct = ((36 + idx * gap + 38) / 460) * 100;
+  const barCenterPct = (barLeftPct + barRightPct) / 2;
+
+  // If hovering the rightmost bar (e.g. August in 6M view), position cleanly to the LEFT of the bar
+  if (idx >= total - 1) {
+    return {
+      top: '8px',
+      right: `calc(100% - ${Math.max(barLeftPct - 2, 20)}%)`,
+      left: 'auto',
+      maxWidth: 'min(210px, calc(100% - 24px))',
+    };
+  }
+
+  // If next to rightmost on the right half:
+  if (idx === total - 2 && barLeftPct > 60) {
+    return {
+      top: '8px',
+      right: `calc(100% - ${Math.max(barLeftPct - 2, 25)}%)`,
+      left: 'auto',
+      maxWidth: 'min(210px, calc(100% - 24px))',
+    };
+  }
+
+  // If leftmost bar (e.g. March), position cleanly to the RIGHT of the bar
+  if (idx === 0) {
+    return {
+      top: '8px',
+      left: `${Math.min(barRightPct + 2, 80)}%`,
+      right: 'auto',
+      maxWidth: 'min(210px, calc(100% - 24px))',
+    };
+  }
+
+  // For middle bars: center horizontally over the bar
+  return {
+    top: '8px',
+    left: `${barCenterPct}%`,
+    transform: 'translateX(-50%)',
+    maxWidth: 'min(210px, calc(100% - 24px))',
+  };
+}
 
 export function ReportsPage(): JSX.Element {
-  const [tab, setTab] = useState<Tab>('attendance');
+  const [searchParams] = useSearchParams();
+
+  // Read query params on mount to support deep-linking from EmployeesPage
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = searchParams.get('tab');
+    return t === 'performance' ? 'performance' : 'attendance';
+  });
 
   // ─── ATTENDANCE TAB STATE ─────────────────────────────────────────────────
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -51,10 +349,23 @@ export function ReportsPage(): JSX.Element {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'IN' | 'LATE' | 'CHECKED_OUT' | 'ABSENT' | 'EARLY'>('ALL');
 
   // ─── PERFORMANCE TAB STATE ────────────────────────────────────────────────
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(
+    searchParams.get('employeeId') || ''
+  );
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [hoveredAttMonth, setHoveredAttMonth] = useState<number | null>(null);
   const [hoveredSalMonth, setHoveredSalMonth] = useState<number | null>(null);
+  const [hoveredIncMonth, setHoveredIncMonth] = useState<number | null>(null);
+  const [hoveredHrsMonth, setHoveredHrsMonth] = useState<number | null>(null);
+  const [chartRange, setChartRange] = useState<ChartRange>('6m');
+
+  // When employeeId query param arrives (e.g. from EmployeesPage), pick it up
+  useEffect(() => {
+    const empId = searchParams.get('employeeId');
+    if (empId) setSelectedEmployeeId(empId);
+    const t = searchParams.get('tab');
+    if (t === 'performance') setTab('performance');
+  }, []);
 
   // ─── 1. FETCH TODAY'S LIVE ATTENDANCE ─────────────────────────────────────
   const {
@@ -271,6 +582,87 @@ export function ReportsPage(): JSX.Element {
     };
   }, [perfData, selectedYear]);
 
+  // ─── 5. CHART DATA COMPUTATIONS (6M vs ALL TIME) ─────────────────────────
+  // Determine past 6 completed months range:
+  // For 2026 (current month = Sep = 9): March (3) to August (8) — exactly 6 months!
+  const sixMonthsRange = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1-12
+
+    if (selectedYear === currentYear) {
+      const endM = Math.max(1, currentMonth - 1); // 8 (August)
+      const startM = Math.max(1, endM - 5);       // 3 (March)
+      return { startMonth: startM, endMonth: endM };
+    } else if (selectedYear < currentYear) {
+      return { startMonth: 7, endMonth: 12 };
+    } else {
+      return { startMonth: 1, endMonth: 6 };
+    }
+  }, [selectedYear]);
+
+  // Chart 1 Data: Monthly Attendance
+  const attDisplayData = useMemo(() => {
+    if (!perfData) return [];
+    if (chartRange === '6m') {
+      return perfData.monthlyAttendance.filter(
+        (m) => m.month >= sixMonthsRange.startMonth && m.month <= sixMonthsRange.endMonth
+      );
+    }
+    return perfData.monthlyAttendance.filter((m) => !m.isFutureMonth);
+  }, [perfData, chartRange, sixMonthsRange]);
+
+  // Chart 2 Data: Monthly Paid Salary
+  const salDisplayData = useMemo(() => {
+    if (!perfData) return [];
+    if (chartRange === '6m') {
+      return perfData.monthlySalary.filter(
+        (s) => s.month >= sixMonthsRange.startMonth && s.month <= sixMonthsRange.endMonth
+      );
+    }
+    return perfData.monthlySalary.filter((_, i) => !perfData.monthlyAttendance[i]?.isFutureMonth);
+  }, [perfData, chartRange, sixMonthsRange]);
+
+  // Chart 3 Data: Salary Increment History
+  const incDisplayData = useMemo(() => {
+    if (!incrementTimelineData || incrementTimelineData.length === 0) return [];
+    if (chartRange === '6m') {
+      const startKey = `${selectedYear}-${String(sixMonthsRange.startMonth).padStart(2, '0')}`;
+      const endKey = `${selectedYear}-${String(sixMonthsRange.endMonth).padStart(2, '0')}`;
+      const filtered = incrementTimelineData.filter((d) => d.key >= startKey && d.key <= endKey);
+      if (filtered.length > 0) return filtered;
+      return incrementTimelineData.slice(-6);
+    }
+    return incrementTimelineData;
+  }, [incrementTimelineData, chartRange, selectedYear, sixMonthsRange]);
+
+  // Chart 4 Data: Expected vs Worked Hours
+  const hrsDisplayData = useMemo(() => {
+    if (!perfData) return [];
+    const source = chartRange === '6m'
+      ? perfData.monthlyAttendance.filter(
+          (m) => m.month >= sixMonthsRange.startMonth && m.month <= sixMonthsRange.endMonth
+        )
+      : perfData.monthlyAttendance.filter((m) => !m.isFutureMonth);
+
+    return source.map((m) => {
+      const expected = m.expectedHours !== undefined && m.expectedHours > 0
+        ? m.expectedHours
+        : Math.round((m.presents + m.absents + m.leaves) * 8.5);
+
+      const worked = m.workedHours !== undefined && m.workedHours > 0
+        ? m.workedHours
+        : Number(((m.presents * 8.5) + ((m.halfDays ?? 0) * 4.25)).toFixed(1));
+
+      return {
+        month: m.shortName,
+        fullName: m.fullName,
+        expected,
+        worked,
+      };
+    });
+  }, [perfData, chartRange, sixMonthsRange]);
+
   // ─── FILTERED TODAY'S ATTENDANCE RECORDS ──────────────────────────────────
   const filteredRecords = useMemo(() => {
     if (!todayData?.records) return [];
@@ -317,7 +709,7 @@ export function ReportsPage(): JSX.Element {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex bg-muted/60 p-1 rounded-xl border border-border/60 self-start sm:self-auto">
+        <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700 self-start sm:self-auto">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -325,8 +717,8 @@ export function ReportsPage(): JSX.Element {
               className={cn(
                 'flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all',
                 tab === t.id
-                  ? 'bg-background text-foreground shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
               )}
             >
               {t.icon}
@@ -678,7 +1070,7 @@ export function ReportsPage(): JSX.Element {
                 >
                   {employeeList.map((emp: Employee) => (
                     <option key={emp.id} value={emp.id}>
-                      {emp.firstName} {emp.lastName} ({emp.employeeCode})
+                      {emp.firstName} {emp.lastName}
                     </option>
                   ))}
                 </Select>
@@ -792,10 +1184,45 @@ export function ReportsPage(): JSX.Element {
                 </div>
               </div>
 
-              {/* ── 2-Column Performance Charts Suite ─────────────────────── */}
+              {/* ── Performance Trends & Charts Suite Header ───────────────────────── */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 pb-1">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <TrendingUp size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Performance Trends & Insights</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      {chartRange === '6m'
+                        ? `Showing past 6 completed months (Mar – Aug ${selectedYear})`
+                        : `Showing all-time performance history (${selectedYear})`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Unified Range Switch on Top-Right Corner */}
+                <div className="flex bg-muted/80 p-0.5 rounded-xl border border-border/60 shadow-xs self-start sm:self-auto">
+                  {(['6m', 'alltime'] as ChartRange[]).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setChartRange(r)}
+                      className={cn(
+                        'px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer',
+                        chartRange === r
+                          ? 'bg-foreground text-background shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {r === '6m' ? 'Last 6M' : 'All Time'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── 2x2 Performance Charts Suite ─────────────────────── */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* ── Chart 1: Monthly Attendance (Presents) ─────────────── */}
-                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card">
+                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-visible">
                   <CardHeader className="p-4 border-b border-border/40 pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -807,130 +1234,91 @@ export function ReportsPage(): JSX.Element {
                         </CardTitle>
                       </div>
                       <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-600 border border-cyan-500/20">
-                        {perfData.summary.totalYearlyPresents} Total Days
+                        {chartRange === '6m'
+                          ? `${attDisplayData.reduce((s, m) => s + m.presents, 0)} Total Days`
+                          : `${perfData.summary.totalYearlyPresents} Total Days`}
                       </span>
                     </div>
                   </CardHeader>
                   <CardContent className="p-4">
-                    <div className="relative w-full h-[180px]">
-                      <svg
-                        viewBox="0 0 460 160"
-                        className="w-full h-full overflow-visible"
-                        preserveAspectRatio="none"
-                      >
-                        <defs>
-                          <linearGradient id="attBarGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.85" />
-                            <stop offset="100%" stopColor="#0284c7" stopOpacity="0.3" />
-                          </linearGradient>
-                        </defs>
-
-                        {/* Y-axis grid */}
-                        {[0, 10, 20, 30].map((val) => {
-                          const y = 130 - (val / 31) * 110;
+                    {chartRange === 'alltime' ? (
+                      <StockAreaChart
+                        points={attDisplayData.map((m) => ({
+                          xLabel: m.shortName,
+                          value: m.presents,
+                          dateLabel: m.fullName,
+                          displayValue: `${m.presents} Days`,
+                        }))}
+                        lineColor="#00d4ff"
+                        areaGradientId="attStockGrad"
+                        yTickFormatter={(v) => `${Math.round(v)}d`}
+                      />
+                    ) : (
+                      // Bar chart for Last 6M (March to August)
+                      <div className="relative w-full h-[180px]">
+                        {(() => {
+                          const n = attDisplayData.length;
+                          const gap = Math.floor(420 / Math.max(n, 1));
+                          const barW = Math.min(38, gap - 12);
                           return (
-                            <g key={val}>
-                              <line
-                                x1={30}
-                                y1={y}
-                                x2={450}
-                                y2={y}
-                                stroke="currentColor"
-                                className="text-border/40"
-                                strokeDasharray="2 2"
-                                strokeWidth="1"
-                              />
-                              <text
-                                x={24}
-                                y={y + 3}
-                                textAnchor="end"
-                                className="text-[8px] fill-muted-foreground font-mono"
-                              >
-                                {val}d
-                              </text>
-                            </g>
+                            <svg viewBox="0 0 460 160" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="attBarGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.9" />
+                                  <stop offset="100%" stopColor="#0284c7" stopOpacity="0.4" />
+                                </linearGradient>
+                              </defs>
+                              {[0, 10, 20, 30].map((val) => {
+                                const y = 130 - (val / 31) * 110;
+                                return (
+                                  <g key={val}>
+                                    <line x1={30} y1={y} x2={450} y2={y} stroke="currentColor" className="text-border/40" strokeDasharray="2 2" strokeWidth="1" />
+                                    <text x={24} y={y + 3} textAnchor="end" className="text-[8px] fill-muted-foreground font-mono">{val}d</text>
+                                  </g>
+                                );
+                              })}
+                              {attDisplayData.map((m, idx) => {
+                                const x = 36 + idx * gap;
+                                const barHeight = Math.max((m.presents / 31) * 110, m.presents > 0 ? 3 : 0);
+                                const y = 130 - barHeight;
+                                const isHov = hoveredAttMonth === idx;
+                                return (
+                                  <g key={m.month} className="cursor-pointer group" onMouseEnter={() => setHoveredAttMonth(idx)} onMouseLeave={() => setHoveredAttMonth(null)}>
+                                    <rect
+                                      x={x}
+                                      y={y}
+                                      width={barW}
+                                      height={barHeight}
+                                      rx={3}
+                                      fill={m.presents > 0 ? 'url(#attBarGrad)' : 'currentColor'}
+                                      className={cn('transition-all duration-200', m.presents > 0 ? (isHov ? 'opacity-100 brightness-110' : 'opacity-85') : 'text-border/30')}
+                                    />
+                                    <text x={x + barW / 2} y={145} textAnchor="middle" className={cn('text-[9px] font-semibold transition-colors', isHov ? 'fill-foreground font-bold' : 'fill-muted-foreground')}>
+                                      {m.shortName}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
                           );
-                        })}
-
-                        {/* Bars for 12 months */}
-                        {perfData.monthlyAttendance.map((m, idx) => {
-                          const barWidth = 22;
-                          const x = 36 + idx * 34;
-                          const barHeight = Math.max((m.presents / 31) * 110, 2);
-                          const y = 130 - barHeight;
-                          const isHovered = hoveredAttMonth === idx;
-
-                          return (
-                            <g
-                              key={m.month}
-                              className="cursor-pointer"
-                              onMouseEnter={() => setHoveredAttMonth(idx)}
-                              onMouseLeave={() => setHoveredAttMonth(null)}
-                            >
-                              <rect
-                                x={x}
-                                y={y}
-                                width={barWidth}
-                                height={barHeight}
-                                rx={4}
-                                fill={m.presents > 0 ? 'url(#attBarGrad)' : 'currentColor'}
-                                className={cn(
-                                  'transition-all duration-200',
-                                  m.presents > 0
-                                    ? isHovered
-                                      ? 'opacity-100 filter drop-shadow(0 2px 6px rgba(0,212,255,0.4))'
-                                      : 'opacity-85'
-                                    : 'text-border/30'
-                                )}
-                              />
-
-                              {/* Month label */}
-                              <text
-                                x={x + barWidth / 2}
-                                y={145}
-                                textAnchor="middle"
-                                className={cn(
-                                  'text-[9px] font-semibold transition-colors',
-                                  isHovered ? 'fill-foreground font-bold' : 'fill-muted-foreground'
-                                )}
-                              >
-                                {m.shortName}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </svg>
-
-                      {/* Floating Tooltip */}
-                      {hoveredAttMonth !== null && perfData.monthlyAttendance[hoveredAttMonth] && (
-                        <div
-                          className="absolute z-20 pointer-events-none p-2 rounded-xl bg-popover/95 text-popover-foreground shadow-xl border border-border/80 backdrop-blur-md text-[11px] space-y-1 -translate-x-1/2 -translate-y-full"
-                          style={{
-                            left: `${((36 + hoveredAttMonth * 34 + 11) / 460) * 100}%`,
-                            top: `${(Math.max(130 - (perfData.monthlyAttendance[hoveredAttMonth]!.presents / 31) * 110, 20) / 160) * 100 - 8}%`,
-                          }}
-                        >
-                          <div className="font-bold border-b border-border/40 pb-0.5">
-                            {perfData.monthlyAttendance[hoveredAttMonth]?.fullName}
+                        })()}
+                        {hoveredAttMonth !== null && attDisplayData[hoveredAttMonth] && (
+                          <div
+                            className="absolute z-20 pointer-events-none p-2.5 rounded-xl bg-popover/95 text-popover-foreground shadow-xl border border-border/80 backdrop-blur-md text-[11px] space-y-1"
+                            style={getBarTooltipStyle(hoveredAttMonth, attDisplayData.length)}
+                          >
+                            <div className="font-bold border-b border-border/40 pb-0.5">{attDisplayData[hoveredAttMonth]?.fullName}</div>
+                            <div className="flex justify-between gap-3"><span className="text-muted-foreground">Presents:</span><span className="font-bold text-cyan-500">{attDisplayData[hoveredAttMonth]?.presents} Days</span></div>
+                            <div className="flex justify-between gap-3 text-[10px] text-muted-foreground"><span>Absents:</span><span>{attDisplayData[hoveredAttMonth]?.absents} Days</span></div>
                           </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">Presents:</span>
-                            <span className="font-bold text-cyan-500">
-                              {perfData.monthlyAttendance[hoveredAttMonth]?.presents} Days
-                            </span>
-                          </div>
-                          <div className="flex justify-between gap-2 text-[10px] text-muted-foreground">
-                            <span>Absents:</span>
-                            <span>{perfData.monthlyAttendance[hoveredAttMonth]?.absents} Days</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
                 {/* ── Chart 2: Monthly Paid Salary Payouts ───────────────── */}
-                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card">
+                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-visible">
                   <CardHeader className="p-4 border-b border-border/40 pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -942,138 +1330,106 @@ export function ReportsPage(): JSX.Element {
                         </CardTitle>
                       </div>
                       <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 text-indigo-600 border border-indigo-500/20">
-                        ₹{perfData.summary.totalYearlySalary.toLocaleString('en-IN')} Total
+                        ₹{Math.round(
+                          chartRange === '6m'
+                            ? salDisplayData.reduce((s, m) => s + m.netSalary, 0)
+                            : perfData.summary.totalYearlySalary
+                        ).toLocaleString('en-IN')}{' '}
+                        Total
                       </span>
                     </div>
                   </CardHeader>
                   <CardContent className="p-4">
-                    <div className="relative w-full h-[180px]">
-                      {(() => {
-                        const maxSalary = Math.max(
-                          ...perfData.monthlySalary.map((s) => s.netSalary),
-                          perfData.employee.baseSalary,
-                          1000
-                        );
-
-                        return (
-                          <svg
-                            viewBox="0 0 460 160"
-                            className="w-full h-full overflow-visible"
-                            preserveAspectRatio="none"
+                    {chartRange === 'alltime' ? (
+                      <StockAreaChart
+                        points={salDisplayData.map((s) => ({
+                          xLabel: s.shortName,
+                          value: s.netSalary,
+                          dateLabel: s.fullName,
+                          displayValue: `₹${Math.round(s.netSalary).toLocaleString('en-IN')}`,
+                        }))}
+                        lineColor="#8b5cf6"
+                        areaGradientId="salStockGrad"
+                        yTickFormatter={(v) => (v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${Math.round(v)}`)}
+                      />
+                    ) : (
+                      <div className="relative w-full h-[180px]">
+                        {(() => {
+                          const maxSalary = Math.max(
+                            ...salDisplayData.map((s) => s.netSalary),
+                            perfData.employee.baseSalary,
+                            1000
+                          );
+                          const n = salDisplayData.length;
+                          const gap = Math.floor(420 / Math.max(n, 1));
+                          const barWidth = Math.min(38, gap - 12);
+                          return (
+                            <svg viewBox="0 0 460 160" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="salBarGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.9" />
+                                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0.4" />
+                                </linearGradient>
+                              </defs>
+                              {[0, 0.5, 1].map((pct, idx) => {
+                                const y = 130 - pct * 110;
+                                const val = Math.round(maxSalary * pct);
+                                return (
+                                  <g key={idx}>
+                                    <line x1={30} y1={y} x2={450} y2={y} stroke="currentColor" className="text-border/40" strokeDasharray="2 2" strokeWidth="1" />
+                                    <text x={24} y={y + 3} textAnchor="end" className="text-[8px] fill-muted-foreground font-mono">
+                                      ₹{val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                              {salDisplayData.map((s, idx) => {
+                                const x = 36 + idx * gap;
+                                const barHeight = Math.max((s.netSalary / (maxSalary || 1)) * 110, s.netSalary > 0 ? 3 : 0);
+                                const y = 130 - barHeight;
+                                const isHov = hoveredSalMonth === idx;
+                                return (
+                                  <g
+                                    key={s.month}
+                                    className="cursor-pointer group"
+                                    onMouseEnter={() => setHoveredSalMonth(idx)}
+                                    onMouseLeave={() => setHoveredSalMonth(null)}
+                                  >
+                                    <rect
+                                      x={x}
+                                      y={y}
+                                      width={barWidth}
+                                      height={barHeight}
+                                      rx={3}
+                                      fill={s.netSalary > 0 ? 'url(#salBarGrad)' : 'currentColor'}
+                                      className={cn('transition-all duration-200', s.netSalary > 0 ? (isHov ? 'opacity-100 brightness-110' : 'opacity-85') : 'text-border/30')}
+                                    />
+                                    <text
+                                      x={x + barWidth / 2}
+                                      y={145}
+                                      textAnchor="middle"
+                                      className={cn('text-[9px] font-semibold transition-colors', isHov ? 'fill-foreground font-bold' : 'fill-muted-foreground')}
+                                    >
+                                      {s.shortName}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          );
+                        })()}
+                        {hoveredSalMonth !== null && salDisplayData[hoveredSalMonth] && (
+                          <div
+                            className="absolute z-20 pointer-events-none p-2.5 rounded-xl bg-popover/95 text-popover-foreground shadow-xl border border-border/80 backdrop-blur-md text-[11px] space-y-1"
+                            style={getBarTooltipStyle(hoveredSalMonth, salDisplayData.length)}
                           >
-                            <defs>
-                              <linearGradient id="salBarGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.85" />
-                                <stop offset="100%" stopColor="#6366f1" stopOpacity="0.3" />
-                              </linearGradient>
-                            </defs>
-
-                            {/* Y-axis grid */}
-                            {[0, 0.5, 1].map((pct, idx) => {
-                              const y = 130 - pct * 110;
-                              const val = Math.round(maxSalary * pct);
-                              return (
-                                <g key={idx}>
-                                  <line
-                                    x1={30}
-                                    y1={y}
-                                    x2={450}
-                                    y2={y}
-                                    stroke="currentColor"
-                                    className="text-border/40"
-                                    strokeDasharray="2 2"
-                                    strokeWidth="1"
-                                  />
-                                  <text
-                                    x={24}
-                                    y={y + 3}
-                                    textAnchor="end"
-                                    className="text-[8px] fill-muted-foreground font-mono"
-                                  >
-                                    ₹{val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}
-                                  </text>
-                                </g>
-                              );
-                            })}
-
-                            {/* Bars for 12 months */}
-                            {perfData.monthlySalary.map((s, idx) => {
-                              const barWidth = 22;
-                              const x = 36 + idx * 34;
-                              const barHeight = Math.max((s.netSalary / (maxSalary || 1)) * 110, 2);
-                              const y = 130 - barHeight;
-                              const isHovered = hoveredSalMonth === idx;
-
-                              return (
-                                <g
-                                  key={s.month}
-                                  className="cursor-pointer"
-                                  onMouseEnter={() => setHoveredSalMonth(idx)}
-                                  onMouseLeave={() => setHoveredSalMonth(null)}
-                                >
-                                  <rect
-                                    x={x}
-                                    y={y}
-                                    width={barWidth}
-                                    height={barHeight}
-                                    rx={4}
-                                    fill={s.netSalary > 0 ? 'url(#salBarGrad)' : 'currentColor'}
-                                    className={cn(
-                                      'transition-all duration-200',
-                                      s.netSalary > 0
-                                        ? isHovered
-                                          ? 'opacity-100 filter drop-shadow(0 2px 6px rgba(139,92,246,0.4))'
-                                          : 'opacity-85'
-                                        : 'text-border/30'
-                                    )}
-                                  />
-
-                                  {/* Month label */}
-                                  <text
-                                    x={x + barWidth / 2}
-                                    y={145}
-                                    textAnchor="middle"
-                                    className={cn(
-                                      'text-[9px] font-semibold transition-colors',
-                                      isHovered ? 'fill-foreground font-bold' : 'fill-muted-foreground'
-                                    )}
-                                  >
-                                    {s.shortName}
-                                  </text>
-                                </g>
-                              );
-                            })}
-                          </svg>
-                        );
-                      })()}
-
-                      {/* Floating Tooltip for Salary */}
-                      {hoveredSalMonth !== null && perfData.monthlySalary[hoveredSalMonth] && (
-                        <div
-                          className="absolute z-20 pointer-events-none p-2 rounded-xl bg-popover/95 text-popover-foreground shadow-xl border border-border/80 backdrop-blur-md text-[11px] space-y-1 -translate-x-1/2 -translate-y-full"
-                          style={{
-                            left: `${((36 + hoveredSalMonth * 34 + 11) / 460) * 100}%`,
-                            top: '40%',
-                          }}
-                        >
-                          <div className="font-bold border-b border-border/40 pb-0.5">
-                            {perfData.monthlySalary[hoveredSalMonth]?.fullName}
+                            <div className="font-bold border-b border-border/40 pb-0.5">{salDisplayData[hoveredSalMonth]?.fullName}</div>
+                            <div className="flex justify-between gap-3"><span className="text-muted-foreground">Paid:</span><span className="font-bold text-indigo-500">₹{Math.round(salDisplayData[hoveredSalMonth]!.netSalary).toLocaleString('en-IN')}</span></div>
+                            <div className="flex justify-between gap-3 text-[10px] text-muted-foreground"><span>Status:</span><span className="font-semibold text-foreground">{salDisplayData[hoveredSalMonth]?.status}</span></div>
                           </div>
-                          <div className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">Paid Salary:</span>
-                            <span className="font-bold text-indigo-500">
-                              ₹{Math.round(perfData.monthlySalary[hoveredSalMonth]?.netSalary || 0).toLocaleString('en-IN')}
-                            </span>
-                          </div>
-                          <div className="flex justify-between gap-2 text-[10px] text-muted-foreground">
-                            <span>Status:</span>
-                            <span className="font-semibold text-foreground">
-                              {perfData.monthlySalary[hoveredSalMonth]?.status}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -1081,7 +1437,7 @@ export function ReportsPage(): JSX.Element {
               {/* ── 2-Column Secondary Charts Suite ─────────────────────── */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
                 {/* ── Chart 3: Salary Increment & Base Pay Progression Graph ── */}
-                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden flex flex-col">
+                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-visible flex flex-col">
                   <CardHeader className="p-4 border-b border-border/40 pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1098,105 +1454,110 @@ export function ReportsPage(): JSX.Element {
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 flex-1">
-                    {incrementTimelineData.length === 0 ? (
-                      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+                    {incDisplayData.length === 0 ? (
+                      <div className="h-[180px] w-full flex items-center justify-center text-xs text-muted-foreground">
                         No salary history available.
                       </div>
+                    ) : chartRange === 'alltime' ? (
+                      <StockAreaChart
+                        points={incDisplayData.map((d) => ({
+                          xLabel: d.label,
+                          value: d.salary,
+                          dateLabel: d.fullLabel,
+                          displayValue: `₹${d.salary.toLocaleString('en-IN')}`,
+                          isMarker: d.isRevisionMonth,
+                          markerNote: d.incrementFromPrev > 0 ? `+₹${d.incrementFromPrev.toLocaleString('en-IN')}` : undefined,
+                        }))}
+                        lineColor="#10b981"
+                        areaGradientId="incStockGrad"
+                        yTickFormatter={(v) => (v >= 1000 ? `₹${(v / 1000).toFixed(1)}k` : `₹${Math.round(v)}`)}
+                      />
                     ) : (
-                      (() => {
-                        const maxSalaryVal = Math.max(
-                          ...incrementTimelineData.map((d) => d.salary),
-                          incrementStats.currentSalary,
-                          1000
-                        ) * 1.15;
-                        
-                        const minSalaryVal = Math.max(0, Math.min(...incrementTimelineData.map((d) => d.salary)) * 0.85);
-                        const yRange = maxSalaryVal - minSalaryVal;
-
-                        return (
-                          <div className="relative w-full h-[180px] select-none flex flex-col pl-6 pr-2">
-                            {/* Y-Axis Grid Lines */}
-                            <div className="absolute inset-x-6 inset-y-0 pointer-events-none flex flex-col-reverse justify-between">
+                      <div className="relative w-full h-[180px]">
+                        {(() => {
+                          const maxSalaryVal = Math.max(...incDisplayData.map((d) => d.salary), incrementStats.currentSalary, 1000) * 1.12;
+                          const minSalaryVal = Math.max(0, Math.min(...incDisplayData.map((d) => d.salary)) * 0.85);
+                          const yRange = maxSalaryVal - minSalaryVal || 1;
+                          const n = incDisplayData.length;
+                          const gap = Math.floor(420 / Math.max(n, 1));
+                          const barW = Math.min(38, gap - 12);
+                          return (
+                            <svg viewBox="0 0 460 160" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="incBarGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.9" />
+                                  <stop offset="100%" stopColor="#059669" stopOpacity="0.4" />
+                                </linearGradient>
+                              </defs>
                               {[0, 0.5, 1].map((pct, idx) => {
+                                const y = 130 - pct * 110;
                                 const val = Math.round(minSalaryVal + yRange * pct);
                                 return (
-                                  <div key={idx} className="relative w-full border-t border-border/40 flex items-center">
-                                    <span className="absolute -left-2 -translate-x-full text-[9px] text-muted-foreground font-medium whitespace-nowrap">
-                                      {val >= 1000 ? `${(val / 1000).toFixed(val % 1000 === 0 ? 0 : 1)}k` : val}
-                                    </span>
-                                  </div>
+                                  <g key={idx}>
+                                    <line x1={30} y1={y} x2={450} y2={y} stroke="currentColor" className="text-border/40" strokeDasharray="2 2" strokeWidth="1" />
+                                    <text x={24} y={y + 3} textAnchor="end" className="text-[8px] fill-muted-foreground font-mono">
+                                      ₹{val >= 1000 ? `${(val / 1000).toFixed(val % 1000 === 0 ? 0 : 1)}k` : val}
+                                    </text>
+                                  </g>
                                 );
                               })}
-                            </div>
-
-                            {/* Bars Container */}
-                            <div className="relative flex-1 w-full flex items-end justify-between gap-1 sm:gap-2 z-10 h-[155px]">
-                              {incrementTimelineData.map((d, idx) => {
-                                const heightPct = Math.max(4, ((d.salary - minSalaryVal) / (yRange || 1)) * 100);
-                                const isRevision = d.isRevisionMonth;
-                                
+                              {incDisplayData.map((d, idx) => {
+                                const x = 36 + idx * gap;
+                                const barHeight = Math.max(((d.salary - minSalaryVal) / yRange) * 110, 4);
+                                const y = 130 - barHeight;
+                                const isHov = hoveredIncMonth === idx;
                                 return (
-                                  <div 
-                                    key={d.key} 
-                                    className="relative flex flex-col items-center justify-end h-full flex-1 group cursor-pointer"
+                                  <g
+                                    key={d.key}
+                                    className="cursor-pointer group"
+                                    onMouseEnter={() => setHoveredIncMonth(idx)}
+                                    onMouseLeave={() => setHoveredIncMonth(null)}
                                   >
-                                    {/* Value Label above pillar */}
-                                    <div className="absolute -top-5 text-[9px] font-bold text-foreground whitespace-nowrap transition-transform duration-200 group-hover:-translate-y-1 opacity-0 group-hover:opacity-100">
-                                      ₹{d.salary >= 1000 ? `${(d.salary / 1000).toFixed(d.salary % 1000 === 0 ? 0 : 1)}k` : d.salary}
-                                    </div>
-
-                                    {/* Bar */}
-                                    <div 
-                                      className={cn(
-                                        "w-full max-w-[28px] rounded-t-sm bg-gradient-to-t from-emerald-500/20 to-emerald-600/90 border border-emerald-500/30 border-b-0 transition-all duration-300 relative",
-                                        "group-hover:from-emerald-500/30 group-hover:to-emerald-500 group-hover:border-emerald-500/60"
-                                      )}
-                                      style={{ height: `${heightPct}%` }}
+                                    <rect
+                                      x={x}
+                                      y={y}
+                                      width={barW}
+                                      height={barHeight}
+                                      rx={3}
+                                      fill="url(#incBarGrad)"
+                                      className={cn('transition-all duration-200', isHov ? 'opacity-100 brightness-110' : 'opacity-85')}
+                                    />
+                                    {d.isRevisionMonth && idx > 0 && d.incrementFromPrev > 0 && (
+                                      <circle cx={x + barW - 4} cy={y + 4} r={3} fill="#10b981" stroke="#ffffff" strokeWidth="1.2" />
+                                    )}
+                                    <text
+                                      x={x + barW / 2}
+                                      y={145}
+                                      textAnchor="middle"
+                                      className={cn('text-[9px] font-semibold transition-colors', isHov ? 'fill-foreground font-bold' : 'fill-muted-foreground')}
                                     >
-                                      {/* Revision Marker/Badge */}
-                                      {isRevision && idx > 0 && d.incrementFromPrev > 0 && (
-                                        <div className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-emerald-500 ring-1 ring-background shadow-sm" />
-                                      )}
-                                    </div>
-                                    
-                                    {/* X-axis Label */}
-                                    <div className="absolute -bottom-5 text-[9px] font-medium text-muted-foreground whitespace-nowrap text-center w-full truncate">
                                       {d.label}
-                                    </div>
-                                    
-                                    {/* Tooltip on Hover */}
-                                    <div className="absolute bottom-full mb-6 z-30 pointer-events-none p-2.5 rounded-xl bg-popover border border-border/80 shadow-xl text-xs space-y-1.5 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <div className="font-semibold text-muted-foreground pb-1 mb-1 border-b border-border/40">
-                                        {d.fullLabel}
-                                      </div>
-                                      <div className="flex justify-between items-center gap-4">
-                                        <span className="text-foreground">Base Salary</span>
-                                        <span className="font-bold text-foreground">
-                                          ₹{d.salary.toLocaleString('en-IN')}
-                                        </span>
-                                      </div>
-                                      {d.incrementFromPrev > 0 && (
-                                        <div className="flex justify-between items-center gap-4 text-emerald-600 dark:text-emerald-400">
-                                          <span>Increment</span>
-                                          <span className="font-semibold">
-                                            +₹{d.incrementFromPrev.toLocaleString('en-IN')}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                    </text>
+                                  </g>
                                 );
                               })}
-                            </div>
+                            </svg>
+                          );
+                        })()}
+                        {hoveredIncMonth !== null && incDisplayData[hoveredIncMonth] && (
+                          <div
+                            className="absolute z-20 pointer-events-none p-2.5 rounded-xl bg-popover/95 text-popover-foreground shadow-xl border border-border/80 backdrop-blur-md text-[11px] space-y-1"
+                            style={getBarTooltipStyle(hoveredIncMonth, incDisplayData.length)}
+                          >
+                            <div className="font-bold border-b border-border/40 pb-0.5">{incDisplayData[hoveredIncMonth]?.fullLabel}</div>
+                            <div className="flex justify-between gap-3"><span className="text-muted-foreground">Base Salary:</span><span className="font-bold text-emerald-500">₹{incDisplayData[hoveredIncMonth]?.salary.toLocaleString('en-IN')}</span></div>
+                            {incDisplayData[hoveredIncMonth]!.incrementFromPrev > 0 && (
+                              <div className="flex justify-between gap-3 text-[10px] text-emerald-600 dark:text-emerald-400"><span>Increment:</span><span>+₹{incDisplayData[hoveredIncMonth]!.incrementFromPrev.toLocaleString('en-IN')}</span></div>
+                            )}
                           </div>
-                        );
-                      })()
+                        )}
+                      </div>
                     )}
                   </CardContent>
                 </Card>
 
                 {/* ── Chart 4: Expected vs Working Hours ── */}
-                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-hidden flex flex-col">
+                <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-visible flex flex-col">
                   <CardHeader className="p-4 border-b border-border/40 pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1208,110 +1569,123 @@ export function ReportsPage(): JSX.Element {
                         </CardTitle>
                       </div>
                       <div className="flex items-center gap-2 text-[9px] font-semibold uppercase text-muted-foreground">
-                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-rose-500/30" /> Expected</div>
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-rose-500/25 border border-rose-500/60" /> Expected</div>
                         <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-rose-500" /> Worked</div>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 flex-1">
-                    <div className="relative w-full h-[180px]">
-                      {(() => {
-                        const hoursData = perfData.monthlyAttendance.map(m => {
-                          const expectedDays = m.presents + m.absents + m.leaves;
-                          const expected = expectedDays * 8;
-                          const worked = (m.presents * 8) + (m.halfDays * 4);
-                          return { month: m.shortName, fullName: m.fullName, expected, worked };
-                        });
-                        
-                        const maxHours = Math.max(...hoursData.map(d => d.expected), 160) * 1.1;
+                    {hrsDisplayData.length === 0 ? (
+                      <div className="h-[180px] w-full flex items-center justify-center text-xs text-muted-foreground">
+                        No hours data available.
+                      </div>
+                    ) : chartRange === 'alltime' ? (
+                      <StockAreaChart
+                        points={hrsDisplayData.map((d) => ({
+                          xLabel: d.month,
+                          value: d.worked,
+                          secondaryValue: d.expected,
+                          dateLabel: d.fullName,
+                          displayValue: `Worked: ${d.worked} hrs`,
+                          secondaryDisplayValue: `Expected: ${d.expected} hrs`,
+                        }))}
+                        lineColor="#e11d48"
+                        secondaryLineColor="#f43f5e"
+                        areaGradientId="hrsStockGrad"
+                        yTickFormatter={(v) => `${Math.round(v)}h`}
+                      />
+                    ) : (
+                      <div className="relative w-full h-[180px]">
+                        {(() => {
+                          const maxHours = Math.max(...hrsDisplayData.map((d) => Math.max(d.expected, d.worked)), 160) * 1.1;
+                          const n = hrsDisplayData.length;
+                          const slotW = Math.floor(420 / Math.max(n, 1));
+                          const pairW = Math.min(slotW - 4, 38);
+                          const singleW = Math.floor(pairW / 2) - 1;
 
-                        return (
-                          <svg
-                            viewBox="0 0 460 160"
-                            className="w-full h-full overflow-visible"
-                            preserveAspectRatio="none"
+                          return (
+                            <svg viewBox="0 0 460 160" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="wrkBarGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.9" />
+                                  <stop offset="100%" stopColor="#e11d48" stopOpacity="0.7" />
+                                </linearGradient>
+                              </defs>
+                              {[0, 0.5, 1].map((pct, idx) => {
+                                const y = 130 - pct * 110;
+                                const val = Math.round(maxHours * pct);
+                                return (
+                                  <g key={idx}>
+                                    <line x1={30} y1={y} x2={450} y2={y} stroke="currentColor" className="text-border/40" strokeDasharray="2 2" strokeWidth="1" />
+                                    <text x={24} y={y + 3} textAnchor="end" className="text-[8px] fill-muted-foreground font-mono">{val}h</text>
+                                  </g>
+                                );
+                              })}
+                              {hrsDisplayData.map((d, idx) => {
+                                const slotX = 36 + idx * slotW;
+                                const expX = slotX;
+                                const wrkX = slotX + singleW + 2;
+                                const expH = Math.max((d.expected / maxHours) * 110, d.expected > 0 ? 2 : 0);
+                                const wrkH = Math.max((d.worked / maxHours) * 110, d.worked > 0 ? 2 : 0);
+                                const expY = 130 - expH;
+                                const wrkY = 130 - wrkH;
+                                const isHov = hoveredHrsMonth === idx;
+                                return (
+                                  <g
+                                    key={idx}
+                                    className="cursor-pointer group"
+                                    onMouseEnter={() => setHoveredHrsMonth(idx)}
+                                    onMouseLeave={() => setHoveredHrsMonth(null)}
+                                  >
+                                    {/* Expected bar (outline) */}
+                                    <rect
+                                      x={expX}
+                                      y={expY}
+                                      width={singleW}
+                                      height={expH}
+                                      rx={2}
+                                      className="fill-rose-500/20"
+                                      stroke="#f43f5e"
+                                      strokeWidth="0.8"
+                                      strokeOpacity="0.6"
+                                    />
+                                    {/* Worked bar (solid) — will be taller if worked > expected */}
+                                    <rect
+                                      x={wrkX}
+                                      y={wrkY}
+                                      width={singleW}
+                                      height={wrkH}
+                                      rx={2}
+                                      fill="url(#wrkBarGrad)"
+                                      className={cn('transition-all duration-200', isHov ? 'brightness-110' : '')}
+                                    />
+                                    <text
+                                      x={slotX + pairW / 2}
+                                      y={145}
+                                      textAnchor="middle"
+                                      className={cn('text-[9px] font-semibold transition-colors', isHov ? 'fill-foreground font-bold' : 'fill-muted-foreground')}
+                                    >
+                                      {d.month}
+                                    </text>
+                                    <title>{d.fullName}&#10;Expected: {d.expected} hrs&#10;Worked: {d.worked} hrs</title>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          );
+                        })()}
+                        {hoveredHrsMonth !== null && hrsDisplayData[hoveredHrsMonth] && (
+                          <div
+                            className="absolute z-20 pointer-events-none p-2.5 rounded-xl bg-popover/95 text-popover-foreground shadow-xl border border-border/80 backdrop-blur-md text-[11px] space-y-1"
+                            style={getBarTooltipStyle(hoveredHrsMonth, hrsDisplayData.length)}
                           >
-                            <defs>
-                              <linearGradient id="workedBarGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.9" />
-                                <stop offset="100%" stopColor="#e11d48" stopOpacity="0.7" />
-                              </linearGradient>
-                            </defs>
-
-                            {/* Y-axis grid */}
-                            {[0, 0.5, 1].map((pct, idx) => {
-                              const y = 130 - pct * 110;
-                              const val = Math.round(maxHours * pct);
-                              return (
-                                <g key={idx}>
-                                  <line
-                                    x1={30}
-                                    y1={y}
-                                    x2={450}
-                                    y2={y}
-                                    stroke="currentColor"
-                                    className="text-border/40"
-                                    strokeDasharray="2 2"
-                                    strokeWidth="1"
-                                  />
-                                  <text
-                                    x={24}
-                                    y={y + 3}
-                                    textAnchor="end"
-                                    className="text-[8px] fill-muted-foreground font-mono"
-                                  >
-                                    {val}h
-                                  </text>
-                                </g>
-                              );
-                            })}
-
-                            {/* Bars */}
-                            {hoursData.map((d, idx) => {
-                              const barWidth = 14;
-                              const expHeight = Math.max((d.expected / maxHours) * 110, 2);
-                              const expY = 130 - expHeight;
-                              const expX = 36 + idx * 34;
-
-                              const wrkHeight = Math.max((d.worked / maxHours) * 110, 2);
-                              const wrkY = 130 - wrkHeight;
-                              const wrkX = expX + 10; 
-
-                              return (
-                                <g key={idx} className="cursor-pointer group">
-                                  <rect
-                                    x={expX}
-                                    y={expY}
-                                    width={barWidth}
-                                    height={expHeight}
-                                    rx={3}
-                                    className="fill-rose-500/25"
-                                  />
-                                  <rect
-                                    x={wrkX}
-                                    y={wrkY}
-                                    width={barWidth}
-                                    height={wrkHeight}
-                                    rx={3}
-                                    fill="url(#workedBarGrad)"
-                                    className="transition-all duration-200 group-hover:brightness-110"
-                                  />
-                                  <text
-                                    x={expX + 10}
-                                    y={145}
-                                    textAnchor="middle"
-                                    className="text-[9px] font-semibold fill-muted-foreground group-hover:fill-foreground transition-colors"
-                                  >
-                                    {d.month}
-                                  </text>
-                                  <title>{d.fullName}&#10;Expected: {d.expected} hrs&#10;Worked: {d.worked} hrs</title>
-                                </g>
-                              );
-                            })}
-                          </svg>
-                        );
-                      })()}
-                    </div>
+                            <div className="font-bold border-b border-border/40 pb-0.5">{hrsDisplayData[hoveredHrsMonth]?.fullName}</div>
+                            <div className="flex justify-between gap-3"><span className="text-muted-foreground">Expected:</span><span className="font-bold text-rose-400">{hrsDisplayData[hoveredHrsMonth]?.expected} hrs</span></div>
+                            <div className="flex justify-between gap-3"><span className="text-muted-foreground">Worked:</span><span className="font-bold text-rose-500">{hrsDisplayData[hoveredHrsMonth]?.worked} hrs</span></div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>

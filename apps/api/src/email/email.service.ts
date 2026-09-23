@@ -247,4 +247,44 @@ export class EmailService {
       throw new BadRequestException(`Could not send salary slip email: ${err.message}`);
     }
   }
+
+  /**
+   * Sends the hidden admin password-reset OTP to the configured recovery email.
+   * Throws (BadRequestException) if SMTP isn't configured — that's an operational
+   * problem the admin needs to see, not a security leak.
+   */
+  async sendPasswordResetOtpEmail(to: string, code: string, companyName: string): Promise<void> {
+    const { transporter, from, fromName } = await this.createTransporter();
+
+    const html = `
+      <div style="max-width:480px;margin:0 auto;background:#0f172a;border-radius:16px;overflow:hidden;font-family:Segoe UI,Arial,sans-serif;border:1px solid #1e293b;">
+        <div style="background:linear-gradient(135deg,#0284c7,#0ea5e9);padding:32px 24px;text-align:center;">
+          <h1 style="color:#fff;font-size:22px;margin:0;">Password Reset</h1>
+          <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:8px 0 0;">Your verification code</p>
+        </div>
+        <div style="padding:32px 24px;text-align:center;">
+          <div style="background:#1e293b;border-radius:12px;padding:24px;margin:0 0 20px;">
+            <div style="font-size:36px;font-weight:700;letter-spacing:12px;color:#38bdf8;font-family:monospace;">${code}</div>
+          </div>
+          <p style="color:#94a3b8;font-size:13px;line-height:1.6;">
+            Enter this code on the password reset dialog.<br>
+            This code expires in <b style="color:#f8fafc;">10 minutes</b>.
+          </p>
+          <p style="color:#475569;font-size:11px;margin-top:24px;">If you didn't request this, ignore this email.</p>
+        </div>
+      </div>`;
+
+    try {
+      await transporter.sendMail({
+        from: `"${fromName}" <${from}>`,
+        to,
+        subject: `Password Reset OTP - ${companyName}`,
+        html,
+      });
+      this.logger.log(`Password reset OTP sent to ${to}`);
+    } catch (err: any) {
+      this.logger.error(`Failed to send password reset OTP to ${to}: ${err.message}`, err.stack);
+      throw new BadRequestException(`Could not send OTP email: ${err.message}`);
+    }
+  }
 }

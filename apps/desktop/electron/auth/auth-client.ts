@@ -22,14 +22,19 @@ function toStoredSession(tokens: AuthTokens): StoredSession {
 
 async function postJson<T>(pathname: string, body: unknown, accessToken?: string): Promise<T> {
   const apiUrl = getApiUrl();
-  const response = await fetch(`${apiUrl}${pathname}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}${pathname}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err: any) {
+    throw new AuthApiError(`Failed to reach API server: ${err?.message || 'Connection refused'}`, 0);
+  }
 
   if (!response.ok) {
     let errorMessage = `Request to ${pathname} failed`;
@@ -147,14 +152,18 @@ export async function apiRequest<T>(pathname: string, init: ApiRequestInit = {})
 
   const doFetch = async (accessToken: string): Promise<Response> => {
     const apiUrl = getApiUrl();
-    return fetch(`${apiUrl}${pathname}`, {
-      method: init.method ?? 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-    });
+    try {
+      return await fetch(`${apiUrl}${pathname}`, {
+        method: init.method ?? 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      });
+    } catch (err: any) {
+      throw new AuthApiError(`Failed to reach API server: ${err?.message || 'Connection refused'}`, 0);
+    }
   };
 
   let response = await doFetch(session.accessToken);

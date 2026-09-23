@@ -26,6 +26,17 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  /** Admin accounts eligible for the hidden password-recovery flow. */
+  findAdminByUsernameOrEmail(identifier: string): Promise<User | null> {
+    return this.prisma.user.findFirst({
+      where: {
+        isActive: true,
+        role: { in: ['SUPER_ADMIN', 'ADMIN'] },
+        OR: [{ username: identifier }, { email: identifier }],
+      },
+    });
+  }
+
   async updatePassword(id: string, newPassword: string): Promise<void> {
     const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id });
     await this.prisma.user.update({ where: { id }, data: { passwordHash } });

@@ -9,7 +9,7 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
-import { IsString, MinLength } from 'class-validator';
+import { IsString, MinLength, MaxLength } from 'class-validator';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthTokens, AuthUser } from '@attendance/shared';
 import { AuthService } from './auth.service';
@@ -24,6 +24,33 @@ class ChangePasswordDto {
   @IsString()
   @MinLength(1)
   currentPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  newPassword!: string;
+}
+
+class RecoveryRequestDto {
+  @IsString()
+  @MinLength(1)
+  username!: string;
+}
+
+class RecoveryVerifyDto {
+  @IsString()
+  @MinLength(1)
+  username!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(6)
+  code!: string;
+}
+
+class RecoveryResetDto {
+  @IsString()
+  @MinLength(1)
+  resetToken!: string;
 
   @IsString()
   @MinLength(6)
@@ -125,5 +152,34 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
     return this.usersService.toPublicProfile(record);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hidden admin password recovery (Ctrl+F on the login page). All @Public and
+  // tightly throttled — these run before login, so there's no session to guard
+  // them, and they're the one place someone could try to brute-force in.
+  // ---------------------------------------------------------------------------
+
+  @Public()
+  @Throttle({ default: { limit: 3, ttl: 300_000 } })
+  @Post('recovery/request')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async recoveryRequest(@Body() dto: RecoveryRequestDto, @Req() req: RequestWithUser): Promise<void> {
+    await this.authService.requestPasswordResetOtp(dto.username, getClientIp(req));
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 8, ttl: 300_000 } })
+  @Post('recovery/verify')
+  async recoveryVerify(@Body() dto: RecoveryVerifyDto): Promise<{ resetToken: string }> {
+    return this.authService.verifyPasswordResetOtp(dto.username, dto.code);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 300_000 } })
+  @Post('recovery/reset')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async recoveryReset(@Body() dto: RecoveryResetDto, @Req() req: RequestWithUser): Promise<void> {
+    await this.authService.resetPasswordWithToken(dto.resetToken, dto.newPassword, getClientIp(req));
   }
 }

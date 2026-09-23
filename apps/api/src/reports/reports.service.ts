@@ -500,6 +500,35 @@ export class ReportsService {
       const leaves = logsForMonth.filter((l) => l.status === 'LEAVE').length;
       const halfDays = logsForMonth.filter((l) => l.status === 'HALF_DAY').length;
 
+      const totalWorkedMinutes = logsForMonth.reduce((s, l) => s + (l.workedMinutes || 0), 0);
+      const attWorkedHours = Number((totalWorkedMinutes / 60).toFixed(1));
+
+      const rec = salaryRecords.find((s) => {
+        const d = new Date(s.month);
+        return d.getUTCMonth() + 1 === mNum;
+      });
+
+      // Shift hours matching SalaryManagementPage calculation
+      let shiftHours = 10.5;
+      const latestShift = employee.employeeShifts?.[0]?.shift;
+      if (latestShift?.startTime && latestShift?.endTime) {
+        const [sh, sm] = latestShift.startTime.split(':').map(Number);
+        const [eh, em] = latestShift.endTime.split(':').map(Number);
+        let diffMinutes = ((eh || 0) * 60 + (em || 0)) - ((sh || 0) * 60 + (sm || 0));
+        if (diffMinutes <= 0) diffMinutes += 24 * 60;
+        shiftHours = diffMinutes / 60;
+      } else if (latestShift?.workingHours) {
+        shiftHours = Number(latestShift.workingHours);
+      }
+
+      const expectedHours = rec && rec.expectedHours && Number(rec.expectedHours) > 0
+        ? Number(Number(rec.expectedHours).toFixed(1))
+        : Number(((presents + absents + leaves) * shiftHours).toFixed(1));
+
+      const workedHours = rec && rec.workedHours && Number(rec.workedHours) > 0
+        ? Number(Number(rec.workedHours).toFixed(1))
+        : attWorkedHours;
+
       return {
         month: mNum,
         shortName,
@@ -508,6 +537,8 @@ export class ReportsService {
         absents,
         leaves,
         halfDays,
+        expectedHours,
+        workedHours,
         isBeforeJoin,
         isFutureMonth,
         isActive: !isBeforeJoin && !isFutureMonth,

@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsIP, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsInt, IsIP, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 
 export class UpdateSettingsDto {
   @IsOptional()
@@ -81,6 +81,18 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   adminEmail?: string;
+
+  /**
+   * Destination for the hidden admin password-reset OTP (Ctrl+F on the login page).
+   * `@ValidateIf` (rather than plain `@IsOptional`) lets an empty string through
+   * unvalidated so the field can still be cleared, while any non-empty value must be
+   * a real email — otherwise a typo like "name@gmailcom" saves silently and the OTP
+   * send later fails with a bare "No recipients defined" nodemailer error.
+   */
+  @IsOptional()
+  @ValidateIf((o) => !!o.recoveryEmail)
+  @IsEmail()
+  recoveryEmail?: string;
 
   // Custom Templates (HTML + CSS)
   @IsOptional()

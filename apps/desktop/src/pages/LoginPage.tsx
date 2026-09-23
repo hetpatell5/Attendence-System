@@ -3,8 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { authClient } from '@/lib/auth-client';
+import { recoveryApi } from '@/lib/api';
+import { ApiError } from '@/lib/api-client';
 import { useAuthStore } from '@/state/auth-store';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Eye,
   EyeOff,
@@ -12,9 +17,210 @@ import {
   User,
   AlertCircle,
   Loader2,
+  KeyRound,
+  CheckCircle2,
 } from 'lucide-react';
 import { AnalogClock } from '@/components/AnalogClock';
 import companyLogo from '@/assets/logo.png';
+
+// ---------------------------------------------------------------------------
+// Hidden admin password recovery — Ctrl+F on the login screen opens this.
+// Three steps: request an OTP for a username, verify it, set a new password.
+// ---------------------------------------------------------------------------
+type RecoveryStep = 'request' | 'verify' | 'reset' | 'done';
+
+function RecoveryDialog({
+  open,
+  onOpenChange,
+  initialUsername,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialUsername: string;
+}): JSX.Element {
+  const [step, setStep] = useState<RecoveryStep>('request');
+  const [username, setUsername] = useState(initialUsername);
+  const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset all state whenever the dialog is (re)opened.
+  useEffect(() => {
+    if (open) {
+      setStep('request');
+      setUsername(initialUsername);
+      setCode('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setResetToken('');
+      setError(null);
+    }
+  }, [open, initialUsername]);
+
+  const handleSendOtp = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!username.trim()) {
+      setError('Enter the admin username to reset.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await recoveryApi.requestOtp(username.trim());
+      setStep('verify');
+    } catch (err) {
+      // Operational errors (no recovery email configured, SMTP not set up) are shown
+      // verbatim — they're system state, not information about a specific account.
+      setError(err instanceof ApiError ? err.message : 'Failed to send code. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleVerify = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (code.trim().length !== 6) {
+      setError('Enter the 6-digit code.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const { resetToken: token } = await recoveryApi.verifyOtp(username.trim(), code.trim());
+      setResetToken(token);
+      setStep('reset');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Invalid or expired code.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReset = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await recoveryApi.resetPassword(resetToken, newPassword);
+      setStep('done');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to reset password. Please start over.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound size={17} className="text-sky-600" /> Admin Password Recovery
+          </DialogTitle>
+        </DialogHeader>
+
+        {error && (
+          <div className="flex items-center gap-2.5 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive font-medium">
+            <AlertCircle size={14} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {step === 'request' && (
+          <form onSubmit={handleSendOtp} className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              A one-time code will be emailed to the recovery address configured in Settings.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Admin Username</Label>
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" autoFocus />
+            </div>
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : 'Send Code'}
+            </Button>
+          </form>
+        )}
+
+        {step === 'verify' && (
+          <form onSubmit={handleVerify} className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Enter the 6-digit code sent to the recovery email. It expires in 10 minutes.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Verification Code</Label>
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="123456"
+                inputMode="numeric"
+                className="text-center text-lg tracking-[0.3em] font-mono"
+                autoFocus
+              />
+            </div>
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : 'Verify Code'}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setStep('request')}
+              className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
+            >
+              ← Back
+            </button>
+          </form>
+        )}
+
+        {step === 'reset' && (
+          <form onSubmit={handleReset} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>New Password</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Confirm Password</Label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : 'Reset Password'}
+            </Button>
+          </form>
+        )}
+
+        {step === 'done' && (
+          <div className="text-center space-y-3 py-2">
+            <CheckCircle2 size={36} className="mx-auto text-emerald-500" />
+            <p className="text-sm font-medium">Password reset. Please log in with your new password.</p>
+            <Button onClick={() => onOpenChange(false)} className="w-full">
+              Close
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Server health indicator (read-only — no config button in production)
@@ -76,6 +282,7 @@ export function LoginPage(): JSX.Element {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const setUser = useAuthStore((state) => state.setUser);
   const navigate = useNavigate();
 
@@ -86,6 +293,19 @@ export function LoginPage(): JSX.Element {
       usernameInputRef.current?.focus();
     }, 50);
     return () => clearTimeout(t);
+  }, []);
+
+  // Hidden admin recovery shortcut: Ctrl+F opens the OTP dialog. Intercepted here (rather
+  // than left to the browser) so it doesn't trigger Chromium's in-page "Find" in Electron.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setRecoveryOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
@@ -266,6 +486,8 @@ export function LoginPage(): JSX.Element {
           </div>
         </div>
       </div>
+
+      <RecoveryDialog open={recoveryOpen} onOpenChange={setRecoveryOpen} initialUsername={username} />
     </div>
   );
 }

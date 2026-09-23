@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { Observable, map, filter } from 'rxjs';
 import type { Notification } from '@prisma/client';
-import { NotificationsService } from './notifications.service';
+import { NotificationsService, EMPLOYEE_ONLY_NOTIFICATION_TYPES } from './notifications.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { RequestWithUser } from '../auth/types/request-with-user.type';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,16 +23,7 @@ import { EmployeesService } from '../employees/employees.service';
  * Admin SSE streams must filter these out so that admins don't
  * receive Windows toast notifications intended for employees.
  */
-const EMPLOYEE_ONLY_TYPES = new Set([
-  'LEAVE_APPROVED',
-  'LEAVE_REJECTED',
-  'LEAVE_CANCELLED',
-  'SALARY_PAID',
-  'SALARY_GENERATED',
-  'SALARY_INCREMENT',
-  'ATTENDANCE_ADJUSTED',
-  'ANNOUNCEMENT_PUBLISHED',
-]);
+const EMPLOYEE_ONLY_TYPES = new Set<string>(EMPLOYEE_ONLY_NOTIFICATION_TYPES);
 
 @Controller('notifications')
 export class NotificationsController {

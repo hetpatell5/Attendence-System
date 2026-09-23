@@ -7,6 +7,9 @@ import { spawn, execFile } from 'node:child_process';
 import { registerAuthIpcHandlers } from './auth/ipc-handlers';
 import { registerFilesIpcHandlers } from './files/ipc-handlers';
 
+// Force Chromium locale to en-GB for dd/mm/yyyy date inputs and formatters
+app.commandLine.appendSwitch('lang', 'en-GB');
+
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -202,15 +205,19 @@ function registerShutdownIpcHandlers(): void {
 // ---------------------------------------------------------------------------
 // Auto-Updater
 // ---------------------------------------------------------------------------
+// Grace period (ms) before forcing restart when the user has the window open.
+// After this time, the app will restart even if the window is visible.
+const UPDATE_FORCE_RESTART_GRACE_MS = 5 * 60 * 1000; // 5 minutes
+
 function setupAutoUpdater(): void {
   if (isDev) {
     console.log('[AutoUpdater] Skipped in dev mode.');
     return;
   }
 
-  // Disable automatic download — we control when to install
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // We handle install ourselves — do NOT rely on app quit to trigger update.
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdater] Checking for update…');
@@ -228,21 +235,64 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('download-progress', (progress) => {
     console.log(`[AutoUpdater] Downloading… ${progress.percent.toFixed(1)}%`);
+    mainWindow?.webContents.send('updater:download-progress', {
+      percent: Math.round(progress.percent),
+      bytesPerSecond: progress.bytesPerSecond,
+    });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[AutoUpdater] Update v${info.version} downloaded — will install on quit.`);
+    console.log(`[AutoUpdater] Update v${info.version} downloaded.`);
+
     // Notify renderer so it can show "Restart to install" banner
     mainWindow?.webContents.send('updater:update-downloaded', { version: info.version });
-    // Also show a native Windows notification
-    if (Notification.isSupported()) {
-      const n = new Notification({
-        title: 'Update Ready',
-        body: `Version ${info.version} has been downloaded. Restart the app to apply.`,
-        silent: false,
-      });
-      n.on('click', () => autoUpdater.quitAndInstall(false, true));
-      n.show();
+
+    const isWindowHidden = !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized();
+
+    if (isWindowHidden) {
+      // App is sitting in the tray — restart silently after a short delay
+      // so any in-flight IPC/API calls can complete.
+      console.log('[AutoUpdater] Window is hidden — restarting silently in 5 seconds…');
+      setTimeout(() => {
+        console.log('[AutoUpdater] Silent restart now.');
+        (app as any).isQuitting = true;
+        autoUpdater.quitAndInstall(
+          true,  // isSilent — no Windows installer UI prompts
+          true,  // isForceRunAfter — relaunch the app after install
+        );
+      }, 5_000);
+    } else {
+      // Window is open — user is actively using the app.
+      // Show a native notification. If they click it, restart immediately.
+      // After the grace period, restart automatically anyway.
+      console.log(`[AutoUpdater] Window is open — notifying user and scheduling forced restart in ${UPDATE_FORCE_RESTART_GRACE_MS / 60_000} minutes.`);
+
+      if (Notification.isSupported()) {
+        const n = new Notification({
+          title: `Update v${info.version} Ready`,
+          body: 'A new version has been downloaded. Click here to restart now, or the app will restart automatically in 5 minutes.',
+          silent: false,
+        });
+        n.on('click', () => {
+          console.log('[AutoUpdater] User clicked notification — restarting now.');
+          (app as any).isQuitting = true;
+          autoUpdater.quitAndInstall(true, true);
+        });
+        n.show();
+      }
+
+      // Forced restart after grace period
+      const forceRestartTimer = setTimeout(() => {
+        console.log('[AutoUpdater] Grace period expired — forcing restart.');
+        (app as any).isQuitting = true;
+        autoUpdater.quitAndInstall(true, true);
+      }, UPDATE_FORCE_RESTART_GRACE_MS);
+
+      // If the user manually clicks "Install Now" via the in-app banner,
+      // the 'updater:install-now' IPC handler below will fire quitAndInstall
+      // which triggers before-quit → we should cancel the timer to avoid
+      // double-quit. We store it on app so the IPC handler can clear it.
+      (app as any)._updateForceRestartTimer = forceRestartTimer;
     }
   });
 
@@ -264,7 +314,15 @@ function registerUpdaterIpcHandlers(): void {
   });
 
   ipcMain.handle('updater:install-now', () => {
-    if (!isDev) autoUpdater.quitAndInstall(false, true);
+    if (!isDev) {
+      // Clear any pending grace-period timer to prevent double-quit
+      if ((app as any)._updateForceRestartTimer) {
+        clearTimeout((app as any)._updateForceRestartTimer);
+        (app as any)._updateForceRestartTimer = null;
+      }
+      (app as any).isQuitting = true;
+      autoUpdater.quitAndInstall(true, true);
+    }
   });
 
   // Let renderer read the real app version from package.json

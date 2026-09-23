@@ -380,9 +380,9 @@ export function EmployeesPage(): JSX.Element {
                           {/* 3. Performance / Attendance (Indigo) */}
                           <button
                             type="button"
-                            onClick={() => navigate(`/admin/attendance?employee_id=${emp.id}`)}
+                            onClick={() => navigate(`/admin/reports?tab=performance&employeeId=${emp.id}`)}
                             className="p-1 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
-                            title="View Attendance / Performance"
+                            title="View Performance Report"
                           >
                             <BarChart2 className="w-4 h-4" />
                           </button>

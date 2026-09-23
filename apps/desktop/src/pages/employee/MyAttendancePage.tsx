@@ -392,18 +392,132 @@ export function MyAttendancePage(): JSX.Element {
   // metrics above — the single source of truth for "how long is a full shift" on this page.
   const shiftMinutes = Math.round(rateMetrics.shiftHours * 60);
 
-  const columns: DataTableColumn<Attendance>[] = [
+  // Synthesize complete list of days in descending order (totalDays down to 1) for table view
+  const tableRows = useMemo(() => {
+    const list: any[] = [];
+    for (let d = totalDays; d >= 1; d--) {
+      const dateStr = `${year}-${String(mon).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dObj = new Date(year, mon - 1, d);
+      const isSunday = dObj.getDay() === 0;
+      const isHoliday = holidaysByDate.has(dateStr);
+      const holiday = holidaysByDate.get(dateStr);
+      const existing = attendanceByDate.get(dateStr);
+      const isPast = dateStr < todayStr;
+      const isToday = dateStr === todayStr;
+
+      if (existing) {
+        const worked = (existing.workedMinutes || 0) > 0 || Boolean(existing.punchInAt) || (Array.isArray(existing.punchPairs) && existing.punchPairs.length > 0);
+        if (!worked && isSunday && existing.status !== 'PRESENT' && existing.status !== 'HALF_DAY') {
+          list.push({
+            ...existing,
+            id: existing.id || `sunday-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'SUNDAY',
+            isSunday: true,
+            isHoliday: false,
+          });
+        } else if (!worked && isHoliday && existing.status !== 'PRESENT' && existing.status !== 'HALF_DAY') {
+          list.push({
+            ...existing,
+            id: existing.id || `holiday-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'HOLIDAY',
+            holidayName: holiday?.name || 'Holiday',
+            isSunday: false,
+            isHoliday: true,
+          });
+        } else {
+          list.push({
+            ...existing,
+            attendanceDate: dateStr,
+            isSunday,
+            isHoliday,
+            holidayName: holiday?.name,
+          });
+        }
+      } else {
+        if (isSunday) {
+          list.push({
+            id: `sunday-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'SUNDAY',
+            punchInAt: null,
+            punchOutAt: null,
+            workedMinutes: 0,
+            punchPairs: [],
+            isSunday: true,
+            isHoliday: false,
+          });
+        } else if (isHoliday) {
+          list.push({
+            id: `holiday-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'HOLIDAY',
+            holidayName: holiday?.name || 'Holiday',
+            punchInAt: null,
+            punchOutAt: null,
+            workedMinutes: 0,
+            punchPairs: [],
+            isSunday: false,
+            isHoliday: true,
+          });
+        } else if (isPast) {
+          list.push({
+            id: `absent-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'ABSENT',
+            punchInAt: null,
+            punchOutAt: null,
+            workedMinutes: 0,
+            punchPairs: [],
+            isSunday: false,
+            isHoliday: false,
+          });
+        } else if (isToday) {
+          list.push({
+            id: `today-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'NOT_RECORDED',
+            punchInAt: null,
+            punchOutAt: null,
+            workedMinutes: 0,
+            punchPairs: [],
+            isSunday: false,
+            isHoliday: false,
+          });
+        } else {
+          list.push({
+            id: `future-${dateStr}`,
+            attendanceDate: dateStr,
+            status: 'UPCOMING',
+            punchInAt: null,
+            punchOutAt: null,
+            workedMinutes: 0,
+            punchPairs: [],
+            isSunday: false,
+            isHoliday: false,
+          });
+        }
+      }
+    }
+    return list;
+  }, [totalDays, year, mon, todayStr, attendanceByDate, holidaysByDate]);
+
+  const columns: DataTableColumn<any>[] = [
     { 
       key: 'attendanceDate', 
       header: 'Date', 
       render: (r) => {
         const dObj = new Date(r.attendanceDate);
         const isSun = dObj.getDay() === 0;
+        const dateStr = typeof r.attendanceDate === 'string' ? r.attendanceDate.slice(0, 10) : dObj.toLocaleDateString('en-CA');
+        const isHol = holidaysByDate.has(dateStr);
+        const isPurple = isSun || isHol;
         return (
           <div className="flex items-center gap-2">
-            <CalendarIcon size={14} className={cn(isSun ? "text-purple-500" : "text-muted-foreground")} />
-            <span className={cn("font-medium", isSun && "text-purple-600 font-semibold")}>
-              {dObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            <CalendarIcon size={14} className={cn(isPurple ? "text-purple-500" : "text-muted-foreground")} />
+            <span className={cn("font-medium", isPurple && "text-purple-600 dark:text-purple-400 font-semibold")}>
+              {dObj.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
             </span>
           </div>
         );
@@ -532,21 +646,54 @@ export function MyAttendancePage(): JSX.Element {
     { 
       key: 'status', 
       header: 'Status', 
-      render: (r) => <StatusBadge status={r.status} /> 
+      render: (r) => {
+        if (r.status === 'ABSENT') {
+          return (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-900/60">
+              Absent
+            </span>
+          );
+        }
+        if (r.status === 'SUNDAY') {
+          return (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-900/60">
+              Sunday
+            </span>
+          );
+        }
+        if (r.status === 'HOLIDAY') {
+          return (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-900/60" title={r.holidayName}>
+              {r.holidayName || 'Holiday'}
+            </span>
+          );
+        }
+        if (r.status === 'UPCOMING') {
+          return <span className="text-xs text-muted-foreground font-medium">—</span>;
+        }
+        if (r.status === 'NOT_RECORDED') {
+          return <span className="text-xs text-muted-foreground font-medium">Pending</span>;
+        }
+        return <StatusBadge status={r.status} />;
+      }
     },
 
     {
       key: 'action',
       header: 'Correction',
       render: (r) => {
+        if (r.status === 'UPCOMING') {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
+
         const dObj = new Date(r.attendanceDate);
-        const dateStr = dObj.toLocaleDateString('en-CA');
+        const dateStr = typeof r.attendanceDate === 'string' ? r.attendanceDate.slice(0, 10) : dObj.toLocaleDateString('en-CA');
         const req = requestsByDate.get(dateStr);
 
         if (req?.status === 'PENDING') {
           return (
             <Badge
-              onClick={() => handleOpenEditModal(r, undefined, req)}
+              onClick={() => handleOpenEditModal(r, dateStr, req)}
               className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] gap-1 px-2.5 py-1 font-medium cursor-pointer hover:bg-amber-500/25 transition-colors"
             >
               <Clock size={11} />
@@ -564,7 +711,7 @@ export function MyAttendancePage(): JSX.Element {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => handleOpenEditModal(r, undefined, req)}
+                onClick={() => handleOpenEditModal(r, dateStr, req)}
                 className="h-6 w-6 p-0 text-muted-foreground hover:text-primary rounded-md"
                 title="Edit again"
               >
@@ -578,11 +725,11 @@ export function MyAttendancePage(): JSX.Element {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => handleOpenEditModal(r, undefined, req)}
+            onClick={() => handleOpenEditModal(r, dateStr, req)}
             className="h-7 text-xs px-2.5 rounded-lg border-border/70 hover:border-primary/50 text-foreground gap-1.5 font-medium hover:bg-primary/5"
           >
             <Pencil size={12} className="text-primary" />
-            <span>Edit Punch</span>
+            <span>{r.status === 'ABSENT' || !r.punchInAt ? 'Request Punch' : 'Edit Punch'}</span>
           </Button>
         );
       },
@@ -604,47 +751,42 @@ export function MyAttendancePage(): JSX.Element {
 
         <div className="flex flex-wrap items-center gap-3">
           {/* All-in-One Compact Summary Capsule (Clay Pod) */}
-          <div className="clay-pod px-4 py-2 flex items-center flex-wrap sm:flex-nowrap gap-3 sm:gap-3.5 text-xs font-semibold">
+          <div className="clay-pod px-4 py-2 flex items-center flex-wrap sm:flex-nowrap gap-3 sm:gap-4 text-xs font-semibold">
             {/* Present */}
-            <div className="inline-flex items-center gap-1.5 text-emerald-700 font-bold" title="Present Days">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)] shrink-0" />
-              <span>{summary?.present ?? 0}</span>
+            <div className="inline-flex items-center gap-1.5" title="Present Days">
+              <span className="font-bold text-slate-800 dark:text-slate-100">{summary?.present ?? 0}</span>
               <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Present</span>
             </div>
 
-            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200 dark:bg-slate-700" />
 
             {/* Absent */}
-            <div className="inline-flex items-center gap-1.5 text-rose-700 font-bold" title="Absent Days">
-              <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.5)] shrink-0" />
-              <span>{summary?.absent ?? 0}</span>
+            <div className="inline-flex items-center gap-1.5" title="Absent Days">
+              <span className="font-bold text-slate-800 dark:text-slate-100">{summary?.absent ?? 0}</span>
               <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Absent</span>
             </div>
 
-            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200 dark:bg-slate-700" />
 
             {/* Half Day */}
-            <div className="inline-flex items-center gap-1.5 text-amber-700 font-bold" title="Half Days">
-              <span className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)] shrink-0" />
-              <span>{summary?.halfDay ?? 0}</span>
+            <div className="inline-flex items-center gap-1.5" title="Half Days">
+              <span className="font-bold text-slate-800 dark:text-slate-100">{summary?.halfDay ?? 0}</span>
               <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Half Day</span>
             </div>
 
-            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200 dark:bg-slate-700" />
 
             {/* Leave */}
-            <div className="inline-flex items-center gap-1.5 text-blue-700 font-bold" title="Leave Days">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)] shrink-0" />
-              <span>{summary?.leave ?? 0}</span>
+            <div className="inline-flex items-center gap-1.5" title="Leave Days">
+              <span className="font-bold text-slate-800 dark:text-slate-100">{summary?.leave ?? 0}</span>
               <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Leave</span>
             </div>
 
-            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
+            <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200 dark:bg-slate-700" />
 
             {/* Holiday */}
-            <div className="inline-flex items-center gap-1.5 text-purple-700 font-bold" title="Holidays">
-              <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.5)] shrink-0" />
-              <span>{summary?.holiday ?? 0}</span>
+            <div className="inline-flex items-center gap-1.5" title="Holidays">
+              <span className="font-bold text-slate-800 dark:text-slate-100">{summary?.holiday ?? 0}</span>
               <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Holiday</span>
             </div>
 
@@ -813,28 +955,9 @@ export function MyAttendancePage(): JSX.Element {
                 let cardClayClass = 'bg-white border border-slate-200/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.9),0_2px_6px_rgba(0,0,0,0.03)] hover:border-slate-400';
                 let dailySalaryBadge: React.ReactNode = null;
 
-                if (isHoliday) {
-                  cardClayClass = 'bg-gradient-to-br from-white via-amber-50/50 to-amber-100/40 border border-amber-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(245,158,11,0.1),0_4px_12px_-2px_rgba(245,158,11,0.12)] hover:scale-[1.02]';
-                  statusBadge = (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
-                      HOLIDAY
-                    </span>
-                  );
-                  centerContent = (
-                    <div className="py-1 text-center">
-                      <span className="text-xs font-bold text-amber-900 line-clamp-1">
-                        {holiday?.name || 'Holiday'}
-                      </span>
-                    </div>
-                  );
-                } else if (isSunday) {
-                  cardClayClass = 'bg-gradient-to-br from-slate-50/70 to-slate-100/50 border border-slate-200/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.9),0_2px_6px_rgba(0,0,0,0.03)] text-slate-500';
-                  statusBadge = (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full clay-pill text-slate-600">
-                      Off
-                    </span>
-                  );
-                } else if (row?.status === 'LEAVE') {
+                const hasAttended = (pairs.length > 0 && (row?.punchInAt || cellWorkedMins > 0)) || row?.status === 'PRESENT' || row?.status === 'HALF_DAY';
+
+                if (row?.status === 'LEAVE') {
                   cardClayClass = 'bg-gradient-to-br from-white via-blue-50/50 to-blue-100/40 border border-blue-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(59,130,246,0.1),0_4px_12px_-2px_rgba(59,130,246,0.1)] hover:scale-[1.02]';
                   statusBadge = (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
@@ -880,17 +1003,17 @@ export function MyAttendancePage(): JSX.Element {
                       ))}
                     </div>
                   );
-                } else if (pairs.length > 0 && (row?.punchInAt || cellWorkedMins > 0)) {
+                } else if (hasAttended) {
                   cardClayClass = 'bg-gradient-to-br from-white via-emerald-50/50 to-emerald-100/40 border border-emerald-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(16,185,129,0.12),0_4px_12px_-2px_rgba(16,185,129,0.12)] hover:scale-[1.02] hover:shadow-[0_8px_18px_-2px_rgba(16,185,129,0.2)]';
                   statusBadge = (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
-                      Present
+                      {row?.status === 'HALF_DAY' ? 'Half Day' : 'Present'}
                     </span>
                   );
                   dailySalaryBadge = (
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-[10px] text-emerald-700 font-bold">
-                        {formatDuration(cellWorkedMins)}
+                        {cellWorkedMins > 0 ? formatDuration(cellWorkedMins) : (row?.status === 'HALF_DAY' ? 'Half Day' : 'Present')}
                       </span>
                     </div>
                   );
@@ -903,6 +1026,27 @@ export function MyAttendancePage(): JSX.Element {
                         </div>
                       ))}
                     </div>
+                  );
+                } else if (isHoliday) {
+                  cardClayClass = 'bg-gradient-to-br from-white via-purple-50/50 to-purple-100/40 border border-purple-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(168,85,247,0.1),0_4px_12px_-2px_rgba(168,85,247,0.12)] hover:scale-[1.02]';
+                  statusBadge = (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
+                      HOLIDAY
+                    </span>
+                  );
+                  centerContent = (
+                    <div className="py-1 text-center">
+                      <span className="text-xs font-bold text-purple-900 line-clamp-1">
+                        {holiday?.name || 'Holiday'}
+                      </span>
+                    </div>
+                  );
+                } else if (isSunday) {
+                  cardClayClass = 'bg-gradient-to-br from-slate-50/70 to-slate-100/50 border border-slate-200/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.9),0_2px_6px_rgba(0,0,0,0.03)] text-slate-500';
+                  statusBadge = (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full clay-pill text-slate-600">
+                      Off
+                    </span>
                   );
                 } else if (isPast && !isSunday && !isHoliday) {
                   cardClayClass = 'bg-gradient-to-br from-white via-rose-50/50 to-rose-100/40 border border-rose-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(244,63,94,0.1),0_4px_12px_-2px_rgba(244,63,94,0.1)] hover:scale-[1.02] hover:shadow-[0_8px_18px_-2px_rgba(244,63,94,0.18)]';
@@ -975,7 +1119,7 @@ export function MyAttendancePage(): JSX.Element {
           </div>
         ) : (
           <div className="pt-4 overflow-x-auto">
-            <DataTable columns={columns} rows={rows} getRowKey={(r) => r.id} isLoading={isLoading} />
+            <DataTable columns={columns} rows={tableRows} getRowKey={(r) => r.id} isLoading={isLoading} />
           </div>
         )}
       </div>

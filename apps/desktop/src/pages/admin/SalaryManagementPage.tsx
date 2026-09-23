@@ -186,8 +186,20 @@ export function SalaryManagementPage(): JSX.Element {
   const YEARS = Array.from({ length: 5 }, (_, i) => (currentYear - 2 + i).toString());
 
   // Filter States
-  const [selectedYear, setSelectedYear] = useState(searchParams.get('year') || currentYear.toString());
-  const [selectedMonth, setSelectedMonth] = useState(searchParams.get('month') || String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [selectedYear, setSelectedYear] = useState(() => {
+    if (searchParams.get('year')) return searchParams.get('year')!;
+    const prev = new Date();
+    prev.setDate(1);
+    prev.setMonth(prev.getMonth() - 1);
+    return prev.getFullYear().toString();
+  });
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    if (searchParams.get('month')) return searchParams.get('month')!;
+    const prev = new Date();
+    prev.setDate(1);
+    prev.setMonth(prev.getMonth() - 1);
+    return String(prev.getMonth() + 1).padStart(2, '0');
+  });
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>(searchParams.get('employeeId') || 'all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
@@ -239,7 +251,7 @@ export function SalaryManagementPage(): JSX.Element {
       { value: 'all', label: 'All Employees' },
       ...sorted.map(emp => ({ 
         value: emp.id, 
-        label: `${emp.firstName || ''} ${emp.lastName || ''} - ${emp.employeeCode || ''}` 
+        label: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() 
       }))
     ];
   }, [employeesData?.items]);
@@ -679,6 +691,37 @@ export function SalaryManagementPage(): JSX.Element {
   };
 
   const handleMarkPaidSingle = (card: (typeof filteredCards)[0]) => {
+    // Check for incomplete punches (punch-in without punch-out) in the month
+    const empLogs = (attendanceData?.items || []).filter(
+      (r: any) => r.employeeId === card.emp.id,
+    );
+
+    const incompleteDates: string[] = [];
+    for (const log of empLogs) {
+      const dateStr = new Date(log.attendanceDate).toLocaleDateString('en-CA');
+      const extras = log.punchPairs;
+      if (Array.isArray(extras) && extras.length > 0) {
+        // Check each pair in the punchPairs array
+        for (const pair of extras) {
+          if (pair?.punchInAt && !pair?.punchOutAt) {
+            if (!incompleteDates.includes(dateStr)) incompleteDates.push(dateStr);
+          }
+        }
+      } else if (log.punchInAt && !log.punchOutAt) {
+        // Primary single pair
+        if (!incompleteDates.includes(dateStr)) incompleteDates.push(dateStr);
+      }
+    }
+
+    if (incompleteDates.length > 0) {
+      // Redirect to attendance log with the incomplete dates highlighted
+      navigate(
+        `/admin/attendance?employee_id=${card.emp.id}&month=${parseInt(selectedMonth, 10)}&year=${selectedYear}`,
+        { state: { highlightIncompleteDates: incompleteDates, fromSalaryPage: true } },
+      );
+      return;
+    }
+
     statusMutation.mutate({ targets: [card], newStatus: 'PAID' });
   };
 
@@ -1253,25 +1296,27 @@ export function SalaryManagementPage(): JSX.Element {
             <div className="bg-white w-full max-w-[660px] rounded-2xl shadow-xl border border-slate-200 overflow-hidden mb-6 font-sans text-[13px]">
 
               {/* Header: solid blue, logo + company on left, SALARY SLIP label on right */}
-              <div className="bg-[#0f4c81] px-6 py-5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={(settings as any)?.companyLogo || defaultCompanyLogo}
-                    alt="Logo"
-                    className="h-16 w-16 rounded-xl object-contain bg-white p-1.5 shrink-0 shadow-sm"
-                  />
-                  <div>
-                    <div className="text-base font-bold text-white leading-tight">
+              <div className="bg-[#0f4c81] pl-5 pr-3.5 sm:pl-6 sm:pr-4 py-4 sm:py-5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="bg-white rounded-xl px-2.5 py-1.5 shrink-0 shadow-sm flex items-center justify-center">
+                    <img
+                      src={(settings as any)?.companyLogo || defaultCompanyLogo}
+                      alt="Logo"
+                      className="h-11 sm:h-12 w-auto max-w-[150px] sm:max-w-[180px] object-contain block"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-base font-bold text-white leading-tight truncate">
                       {settings?.companyName || 'BMAP Pvt Ltd'}
                     </div>
-                    <div className="text-[10px] text-blue-100 mt-0.5 leading-snug max-w-[280px]">
+                    <div className="text-[10px] text-blue-100 mt-0.5 leading-snug line-clamp-3">
                       {(settings as any)?.companyAddress || '206 Sunrise Commercial Complex, Mota Varachha, Surat – 394105'}
                     </div>
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-4">
-                  <div className="text-[11px] font-bold tracking-widest uppercase text-white/80">Salary Slip</div>
-                  <div className="text-[11px] font-semibold text-blue-200 mt-0.5">
+                <div className="text-right shrink-0 ml-auto pr-0.5">
+                  <div className="text-[11px] sm:text-xs font-bold tracking-widest uppercase text-white/90">Salary Slip</div>
+                  <div className="text-[11px] sm:text-xs font-semibold text-blue-100 mt-0.5">
                     {MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}
                   </div>
                 </div>

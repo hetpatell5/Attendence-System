@@ -63,6 +63,7 @@ export interface CompanySettings {
   fromName?: string | null;
   fromEmail?: string | null;
   adminEmail?: string | null;
+  recoveryEmail?: string | null;
   mailFormat?: string | null;
   salarySlipFormat?: string | null;
   createdAt: string;

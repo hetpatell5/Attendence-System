@@ -71,8 +71,8 @@ export function LeaveManagementPage(): JSX.Element {
   const requestColumns: DataTableColumn<Row>[] = [
     { key: 'employee', header: 'Employee', render: (r) => <div className="font-medium">{r.employee.firstName} {r.employee.lastName}</div> },
     { key: 'leaveType', header: 'Type', render: (r) => r.leaveType?.name ?? '' },
-    { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString() },
-    { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString() },
+    { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString('en-GB') },
+    { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString('en-GB') },
     { key: 'totalDays', header: 'Days', render: (r) => <span className="font-semibold">{r.totalDays}</span> },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
@@ -202,7 +202,7 @@ export function LeaveManagementPage(): JSX.Element {
               <div className="p-3 bg-muted/50 rounded-md text-sm mb-4">
                 <p><strong>Employee:</strong> {reviewTarget.row.employee.firstName} {reviewTarget.row.employee.lastName}</p>
                 <p><strong>Leave Type:</strong> {reviewTarget.row.leaveType?.name}</p>
-                <p><strong>Dates:</strong> {new Date(reviewTarget.row.startDate).toLocaleDateString()} to {new Date(reviewTarget.row.endDate).toLocaleDateString()} ({reviewTarget.row.totalDays} days)</p>
+                <p><strong>Dates:</strong> {new Date(reviewTarget.row.startDate).toLocaleDateString('en-GB')} to {new Date(reviewTarget.row.endDate).toLocaleDateString('en-GB')} ({reviewTarget.row.totalDays} days)</p>
                 {reviewTarget.row.reason && <p><strong>Reason:</strong> {reviewTarget.row.reason}</p>}
               </div>
             )}

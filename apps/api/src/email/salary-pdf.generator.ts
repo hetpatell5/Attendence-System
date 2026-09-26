@@ -4,14 +4,8 @@ import * as fs from 'fs';
 import type { SalaryTemplateVariables } from './email.service';
 
 /**
- * `nest build` (sourceRoot "src", no rootDir override) compiles this file to
- * `dist/src/email/salary-pdf.generator.js` while the nest-cli "assets" copy step puts
- * static files at `dist/assets/...` — one directory shallower than `__dirname` would
- * suggest. A single hardcoded `path.join(__dirname, '..', 'assets', ...)` (what this file
- * used to do for the default logo) resolves to `dist/src/assets/...`, which never exists,
- * so the fallback logo has silently never loaded in a production build. Trying both depths
- * makes this resilient to that build-layout quirk and to running via ts-node in dev, where
- * `__dirname` is `src/email` and only one `..` is needed.
+ * Resolves a static asset path that works both in dev (ts-node, __dirname = src/email)
+ * and in the compiled dist build (dist/src/email).
  */
 function resolveAssetPath(...segments: string[]): string {
   const candidates = [
@@ -21,48 +15,33 @@ function resolveAssetPath(...segments: string[]): string {
   return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]!;
 }
 
-// Helvetica (PDFKit's built-in font) is a Type1/WinAnsi font with no glyph for the Indian
-// Rupee sign (U+20B9) — it silently substitutes a wrong glyph (renders as "¹"). Noto Sans
-// is bundled here specifically because it covers ₹, and used for every string in this
-// document (not just the ones with ₹) so headings/body text stay visually consistent
-// rather than mixing two different typefaces.
+// NotoSans is used so the Rupee sign (₹, U+20B9) renders correctly.
 const FONT_REGULAR_PATH = resolveAssetPath('fonts', 'NotoSans-Regular.ttf');
-const FONT_BOLD_PATH = resolveAssetPath('fonts', 'NotoSans-Bold.ttf');
+const FONT_BOLD_PATH    = resolveAssetPath('fonts', 'NotoSans-Bold.ttf');
 const FONT_REGULAR = 'NotoSans';
-const FONT_BOLD = 'NotoSans-Bold';
+const FONT_BOLD    = 'NotoSans-Bold';
 
 /**
- * Fills a rect with a translucent color. PDFKit's `fillColor()` does not parse CSS-style
- * `rgba(...)` strings the way a browser does — passing one silently fails and falls back
- * to solid black, which is why the logo background and "SALARY SLIP" pill used to render
- * as solid black / blank boxes. The correct PDFKit idiom is a solid hex fillColor plus a
- * separate fillOpacity call, reset back to 1 afterward so it doesn't leak into later draws.
- */
-function fillTranslucent(
-  doc: PDFKit.PDFDocument,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  hexColor: string,
-  opacity: number,
-  radius?: number,
-): void {
-  doc.save();
-  if (radius !== undefined) {
-    doc.roundedRect(x, y, w, h, radius);
-  } else {
-    doc.rect(x, y, w, h);
-  }
-  doc.fillColor(hexColor).fillOpacity(opacity).fill();
-  doc.restore();
-}
-
-/**
- * Generates a clean, professional salary slip PDF.
- * Design: white card with dark blue header band, simple info grid, two-column table.
- * Mirrors the "Salary Slip Document Preview" React modal (SalaryManagementPage.tsx /
- * MySalaryPage.tsx) as closely as PDFKit's coordinate-based drawing allows.
+ * Generates a salary slip PDF matching the OLD system format:
+ *
+ *  ┌────────────────────────────────────────────────────────────┐
+ *  │                    [LOGO  centered]                        │
+ *  │                   Company Name (bold)                      │
+ *  │                   Company Address (gray)                   │
+ *  │                      Salary Slip                           │
+ *  ├───────────────────────────┬────────────────────────────────┤
+ *  │ Pay Period:   Aug 2026    │ Pay Date:      15 Sep 2026     │
+ *  │ Employee Name: Het Patel  │ Employee ID:   38              │
+ *  │ Shift:  Full Day ...      │ Status:        Paid            │
+ *  ├───────────────────────────┴────────────────────────────────┤
+ *  │    Earnings (blue)        │   Attendance & Hours (orange)  │
+ *  │ Monthly Salary    ₹ X    │ Total Days in Month        31  │
+ *  │ ...                       │ ...                            │
+ *  │ Net Salary                          ₹ X,XXX /-            │  <- full-width green row
+ *  ├────────────────────────────────────────────────────────────┤
+ *  │ Payment Status: Paid   Paid On: 15 Sep 2026, 11:02 AM     │
+ *  │ Remarks:                                                   │
+ *  └────────────────────────────────────────────────────────────┘
  */
 export function generateSalarySlipPdf(vars: SalaryTemplateVariables): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -80,268 +59,222 @@ export function generateSalarySlipPdf(vars: SalaryTemplateVariables): Promise<Bu
 
     const chunks: Buffer[] = [];
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('end',  () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    // Layout constants
-    const pageW = 595.28;
-    const margin = 32;
-    const cardX = margin;
-    const cardW = pageW - margin * 2;
-    let y = margin;
+    const pageW   = 595.28;
+    const marginX = 40;
+    const contentW = pageW - marginX * 2;
+    let y = 36;
 
-    // ─── Outer card border ────────────────────────────────────────────────────
-    doc.save();
-    doc.roundedRect(cardX, y, cardW, 760, 10)
-      .lineWidth(1)
-      .strokeColor('#e2e8f0')
-      .fillColor('#ffffff')
-      .fillAndStroke();
-    doc.restore();
-
-    // ─── Header band (dark blue) ──────────────────────────────────────────────
-    const headerH = 92;
-    doc.save();
-    doc.roundedRect(cardX, y, cardW, headerH, 10).fill('#0f4c81');
-    // mask bottom corners to stay square
-    doc.rect(cardX, y + headerH - 10, cardW, 10).fill('#0f4c81');
-    doc.restore();
-
-    // Logo (left side of header) — sized to fill most of the header height (matches the
-    // React preview's h-12/h-14 logo box) rather than a small icon lost in the band.
+    // ── Logo (centered) ───────────────────────────────────────────────────────
     let logoBuffer: Buffer | null = null;
     if (vars.company_logo && vars.company_logo.startsWith('data:image')) {
       try {
-        const base64Data = vars.company_logo.split(',')[1];
-        if (base64Data) logoBuffer = Buffer.from(base64Data, 'base64');
+        const b64 = vars.company_logo.split(',')[1];
+        if (b64) logoBuffer = Buffer.from(b64, 'base64');
       } catch { logoBuffer = null; }
     }
     if (!logoBuffer) {
-      const defaultLogoPath = resolveAssetPath('logo.jpeg');
-      if (fs.existsSync(defaultLogoPath)) {
-        try { logoBuffer = fs.readFileSync(defaultLogoPath); } catch { logoBuffer = null; }
+      const p = resolveAssetPath('logo.jpeg');
+      if (fs.existsSync(p)) {
+        try { logoBuffer = fs.readFileSync(p); } catch { logoBuffer = null; }
       }
     }
-
-    const logoW = 120;
-    const logoH = 46;
-    const logoPadX = 8;
-    const logoPadY = 6;
-    const logoX = cardX + 16;
-    const logoY = y + (headerH - logoH) / 2;
 
     if (logoBuffer) {
       try {
-        // Solid white plate behind the logo - independent width for horizontal logos
-        doc.save();
-        doc.roundedRect(logoX, logoY, logoW, logoH, 6).fillColor('#ffffff').fill();
-        doc.restore();
-        doc.image(logoBuffer, logoX + logoPadX / 2, logoY + logoPadY / 2, {
-          fit: [logoW - logoPadX, logoH - logoPadY],
+        const logoMaxW = 180;
+        const logoMaxH = 70;
+        doc.image(logoBuffer, (pageW - logoMaxW) / 2, y, {
+          fit: [logoMaxW, logoMaxH],
           align: 'center',
           valign: 'center',
         });
-      } catch { /* ignore a corrupt logo image, header still renders without it */ }
+        y += logoMaxH + 8;
+      } catch {
+        y += 8;
+      }
+    } else {
+      y += 8;
     }
 
-    // Company name + address (right of logo)
-    const textX = logoBuffer ? logoX + logoW + 12 : cardX + 16;
-    doc.font(FONT_BOLD)
-      .fontSize(16)
-      .fillColor('#ffffff')
-      .text(vars.company_name || 'BMAP Pvt Ltd', textX, y + 20, { width: cardW - (textX - cardX) - 95 });
-
-    const address = vars.company_address || '';
-    doc.font(FONT_REGULAR)
-      .fontSize(7.5)
-      .fillColor('#dcebff')
-      .text(address, textX, y + 40, { width: cardW - (textX - cardX) - 95, lineGap: 1 });
-
-    // "SALARY SLIP" pill (right of header) - pushed closer to right edge
-    const pillW = 92;
-    const pillH = 22;
-    const pillX = cardX + cardW - pillW - 10;
-    const pillY = y + (headerH - pillH) / 2;
-    fillTranslucent(doc, pillX, pillY, pillW, pillH, '#ffffff', 0.16, 11);
-    doc.font(FONT_BOLD)
-      .fontSize(8.5)
-      .fillColor('#ffffff')
-      .text('SALARY SLIP', pillX, pillY + 7, { width: pillW, align: 'center' });
-
-    y += headerH + 4;
-
-    // Month badge below header band (right aligned)
-    doc.font(FONT_BOLD)
-      .fontSize(8.5)
-      .fillColor('#1a6fba')
-      .text(vars.month_name || '', cardX, y + 6, { width: cardW - 8, align: 'right' });
-
+    // ── Company Name (centered, bold, navy) ───────────────────────────────────
+    doc.font(FONT_BOLD).fontSize(16).fillColor('#1a3a6b')
+      .text(vars.company_name || 'Company', marginX, y, { width: contentW, align: 'center' });
     y += 22;
 
-    // ─── Employee info grid (2×2) ─────────────────────────────────────────────
-    const gridX = cardX + 14;
-    const gridW = cardW - 28;
-    const colW = gridW / 2;
-    const gridRowH = 36;
+    // ── Company Address (centered, gray) ──────────────────────────────────────
+    const address = vars.company_address || '';
+    if (address) {
+      doc.font(FONT_REGULAR).fontSize(8).fillColor('#555555')
+        .text(address, marginX, y, { width: contentW, align: 'center', lineGap: 1 });
+      y += doc.heightOfString(address, { width: contentW }) + 6;
+    }
 
-    const shiftDisplay = vars.shift_time
-      ? `${vars.shift_name} (${vars.shift_time})`
-      : vars.shift_name || 'Full Day';
+    // ── Thin divider ──────────────────────────────────────────────────────────
+    doc.save();
+    doc.moveTo(marginX, y).lineTo(pageW - marginX, y).lineWidth(0.8).strokeColor('#cbd5e1').stroke();
+    doc.restore();
+    y += 8;
 
-    const payDateDisplay = vars.pay_date || vars.pay_period;
+    // ── "Salary Slip" heading (centered) ─────────────────────────────────────
+    doc.font(FONT_BOLD).fontSize(13).fillColor('#1e293b')
+      .text('Salary Slip', marginX, y, { width: contentW, align: 'center' });
+    y += 20;
 
-    const infoItems: [string, string][] = [
-      ['EMPLOYEE NAME', vars.employee_name || ''],
-      ['EMPLOYEE ID', vars.employee_id || ''],
-      ['SHIFT', shiftDisplay],
-      ['PAY DATE', payDateDisplay || ''],
+    // ── Thin divider ──────────────────────────────────────────────────────────
+    doc.save();
+    doc.moveTo(marginX, y).lineTo(pageW - marginX, y).lineWidth(0.8).strokeColor('#cbd5e1').stroke();
+    doc.restore();
+    y += 10;
+
+    // ── Info grid (3 rows × 2 cols) ───────────────────────────────────────────
+    // Each row: [Label, Value, Label, Value]
+    const colL  = marginX;
+    const colM  = pageW / 2 + 10;
+    const infoRowH = 16;
+    const labelColor = '#374151';
+    const valueColor = '#111827';
+
+    const infoRows: [string, string, string, string][] = [
+      ['Pay Period:',    vars.pay_period || vars.month_name || '',   'Pay Date:',    vars.pay_date || ''],
+      ['Employee Name:', vars.employee_name || '',                   'Employee ID:', vars.employee_id || ''],
+      ['Shift:',         vars.shift_time ? `${vars.shift_name} (${vars.shift_time})` : vars.shift_name || '', 'Status:', vars.payment_status || ''],
     ];
 
-    infoItems.forEach((item, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
-      const ix = gridX + col * colW;
-      const iy = y + row * gridRowH;
+    infoRows.forEach(([lLabel, lVal, rLabel, rVal]) => {
+      // left label bold
+      doc.font(FONT_BOLD).fontSize(9).fillColor(labelColor).text(lLabel, colL, y);
+      // left value
+      doc.font(FONT_REGULAR).fontSize(9).fillColor(valueColor)
+        .text(lVal, colL + 90, y, { width: contentW / 2 - 90 });
 
-      // light border
-      doc.save();
-      doc.rect(ix, iy, colW, gridRowH).strokeColor('#f0f4f8').lineWidth(0.5).stroke();
-      doc.restore();
+      // right label bold
+      doc.font(FONT_BOLD).fontSize(9).fillColor(labelColor).text(rLabel, colM, y);
+      // right value
+      doc.font(FONT_REGULAR).fontSize(9).fillColor(valueColor)
+        .text(rVal, colM + 82, y, { width: contentW / 2 - 82 });
 
-      doc.font(FONT_REGULAR)
-        .fontSize(7)
-        .fillColor('#94a3b8')
-        .text(item[0], ix + 10, iy + 7, { width: colW - 14 });
-
-      doc.font(FONT_BOLD)
-        .fontSize(9.5)
-        .fillColor('#1e293b')
-        .text(item[1], ix + 10, iy + 18, { width: colW - 14 });
+      y += infoRowH;
     });
 
-    y += 2 * gridRowH + 8;
+    y += 10;
 
-    // ─── Section headers ──────────────────────────────────────────────────────
-    const tableX = cardX + 14;
-    const tableW = cardW - 28;
-    const halfW = tableW / 2;
-    const rowH = 21;
-
-    // Earnings header
+    // ── Thin divider ──────────────────────────────────────────────────────────
     doc.save();
-    doc.rect(tableX, y, halfW, 20).fill('#f0f7ff');
+    doc.moveTo(marginX, y).lineTo(pageW - marginX, y).lineWidth(0.8).strokeColor('#cbd5e1').stroke();
     doc.restore();
-    doc.font(FONT_BOLD).fontSize(8).fillColor('#1563ac')
-      .text('EARNINGS', tableX + 8, y + 6);
+    y += 6;
 
-    // Attendance header
+    // ── Table ─────────────────────────────────────────────────────────────────
+    const tableX = marginX;
+    const tableW = contentW;
+    const halfW  = tableW / 2;
+    const rowH   = 20;
+
+    // Section header row
+    // Left: EARNINGS (blue on light blue)
     doc.save();
-    doc.rect(tableX + halfW, y, halfW, 20).fill('#fff7ed');
+    doc.rect(tableX, y, halfW, 20).fill('#dbeafe');
     doc.restore();
-    doc.font(FONT_BOLD).fontSize(8).fillColor('#c2570a')
-      .text('ATTENDANCE & HOURS', tableX + halfW + 8, y + 6);
+    doc.font(FONT_BOLD).fontSize(9).fillColor('#1d4ed8')
+      .text('Earnings', tableX, y + 5, { width: halfW, align: 'center' });
+
+    // Right: ATTENDANCE & HOURS (orange on light orange)
+    doc.save();
+    doc.rect(tableX + halfW, y, halfW, 20).fill('#ffedd5');
+    doc.restore();
+    doc.font(FONT_BOLD).fontSize(9).fillColor('#c2410c')
+      .text('Attendance & Hours', tableX + halfW, y + 5, { width: halfW, align: 'center' });
 
     y += 20;
 
-    // ─── Table rows ───────────────────────────────────────────────────────────
-    const rows = [
-      { eL: 'Monthly Salary',       eV: `₹ ${vars.monthly_salary}`,        bold: true,   aL: 'Total Days in Month',   aV: vars.total_days },
-      { eL: 'Salary Per Day',        eV: `₹ ${vars.per_day_salary}`,        bold: false,  aL: 'Salary Per Hour',       aV: `₹ ${vars.per_hour_salary}` },
-      { eL: 'Basic Salary',          eV: `₹ ${vars.basic_salary}`,          bold: false,  aL: 'Total Working Days',    aV: vars.working_days },
-      { eL: 'Sunday & Holiday Pay',  eV: `₹ ${vars.sunday_holiday_pay}`,    bold: false,  aL: 'Mon-Sat Present Days',  aV: vars.present_days },
-      { eL: 'Overtime Payout',       eV: `₹ ${vars.overtime_pay}`,          bold: false,  aL: 'Overtime Hours',        aV: vars.overtime_hours },
-      { eL: 'Commission / Extra',    eV: `₹ ${vars.commission}`,            bold: false,  aL: 'Total Hours Worked',    aV: vars.total_hours_worked },
-      { eL: 'Advance Deducted',      eV: `– ₹ ${vars.advance_deducted}`, deduct: true, aL: 'Expected Hours', aV: vars.expected_hours },
+    // Data rows
+    const tableRows = [
+      { eL: 'Monthly Salary',       eV: `\u20B9 ${vars.monthly_salary}`,            deduct: false, aL: 'Total Days in Month',  aV: vars.total_days },
+      { eL: 'Salary Per Day',        eV: `\u20B9 ${vars.per_day_salary}`,            deduct: false, aL: 'Salary Per Hour',      aV: `\u20B9 ${vars.per_hour_salary}` },
+      { eL: 'Basic Salary',          eV: `\u20B9 ${vars.basic_salary}`,              deduct: false, aL: 'Total Working Days',   aV: vars.working_days },
+      { eL: 'Sunday & Holiday Pay',  eV: `\u20B9 ${vars.sunday_holiday_pay}`,        deduct: false, aL: 'Mon-Sat Present Days', aV: vars.present_days },
+      { eL: 'Overtime Payout',       eV: `\u20B9 ${vars.overtime_pay}`,              deduct: false, aL: 'Overtime Hours',       aV: vars.overtime_hours },
+      { eL: 'Commission/Pending',    eV: `\u20B9 ${vars.commission}`,                deduct: false, aL: 'Total Hours Worked',   aV: vars.total_hours_worked },
+      { eL: 'Advance Deducted',      eV: `- \u20B9 ${vars.advance_deducted}`,        deduct: true,  aL: 'Expected Hours',       aV: vars.expected_hours },
     ];
 
-    rows.forEach((r, idx) => {
-      const isEven = idx % 2 === 0;
-      if (isEven) {
-        doc.save();
-        doc.rect(tableX, y, tableW, rowH).fill('#f8fafc');
-        doc.restore();
-      }
+    tableRows.forEach((r, idx) => {
+      const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      doc.save();
+      doc.rect(tableX, y, tableW, rowH).fill(bg);
+      doc.restore();
 
-      // Left: Earnings
-      doc.font(FONT_REGULAR).fontSize(8.5)
-        .fillColor(r.deduct ? '#dc2626' : '#475569')
-        .text(r.eL, tableX + 8, y + 6);
+      // Border between left and right columns
+      doc.save();
+      doc.moveTo(tableX + halfW, y).lineTo(tableX + halfW, y + rowH)
+        .lineWidth(0.4).strokeColor('#e2e8f0').stroke();
+      doc.restore();
 
-      doc.font(r.bold || r.deduct ? FONT_BOLD : FONT_REGULAR).fontSize(8.5)
-        .fillColor(r.deduct ? '#dc2626' : '#0f172a')
-        .text(r.eV, tableX + 8, y + 6, { width: halfW - 16, align: 'right' });
+      // Left: earnings label
+      doc.font(FONT_REGULAR).fontSize(9).fillColor(r.deduct ? '#dc2626' : '#374151')
+        .text(r.eL, tableX + 8, y + 5);
 
-      // Right: Attendance
-      doc.font(FONT_REGULAR).fontSize(8.5)
-        .fillColor('#475569')
-        .text(r.aL, tableX + halfW + 8, y + 6);
+      // Left: earnings value (right-aligned)
+      doc.font(FONT_REGULAR).fontSize(9).fillColor(r.deduct ? '#dc2626' : '#111827')
+        .text(r.eV, tableX + 8, y + 5, { width: halfW - 16, align: 'right' });
 
-      doc.font(FONT_REGULAR).fontSize(8.5)
-        .fillColor('#0f172a')
-        .text(r.aV, tableX + halfW + 8, y + 6, { width: halfW - 16, align: 'right' });
+      // Right: attendance label
+      doc.font(FONT_REGULAR).fontSize(9).fillColor('#374151')
+        .text(r.aL, tableX + halfW + 8, y + 5);
 
-      // row bottom border
+      // Right: attendance value (right-aligned)
+      doc.font(FONT_REGULAR).fontSize(9).fillColor('#111827')
+        .text(r.aV, tableX + halfW + 8, y + 5, { width: halfW - 16, align: 'right' });
+
+      // Row bottom border
       doc.save();
       doc.moveTo(tableX, y + rowH).lineTo(tableX + tableW, y + rowH)
-        .lineWidth(0.4).strokeColor('#e9eef3').stroke();
+        .lineWidth(0.4).strokeColor('#e2e8f0').stroke();
       doc.restore();
 
       y += rowH;
     });
 
-    // ─── Net Salary band ──────────────────────────────────────────────────────
-    const netH = 36;
+    // ── Net Salary row (full-width, light green) ──────────────────────────────
+    const netH = 22;
     doc.save();
-    doc.rect(tableX, y, tableW, netH).fill('#e8f5ee');
+    doc.rect(tableX, y, tableW, netH).fill('#dcfce7');
     doc.restore();
 
-    doc.font(FONT_BOLD).fontSize(9).fillColor('#059669')
-      .text('NET SALARY', tableX + 10, y + 8);
-    doc.font(FONT_BOLD).fontSize(16).fillColor('#047857')
-      .text(`₹ ${vars.net_salary} /-`, tableX + 10, y + 18);
+    doc.font(FONT_BOLD).fontSize(9.5).fillColor('#16a34a')
+      .text('Net Salary', tableX + 8, y + 6);
 
-    // Status pill (mirrors the React preview's rounded "Paid"/"Pending" badge instead of
-    // plain colored text)
-    const isPaid = vars.payment_status.toLowerCase() === 'paid';
-    const statusColor = isPaid ? '#16a34a' : '#d97706';
-    const statusLabel = isPaid ? 'Paid' : 'Pending';
-    const statusPillW = doc.font(FONT_BOLD).fontSize(8.5).widthOfString(statusLabel) + 20;
-    const statusPillH = 18;
-    const statusPillX = tableX + tableW - 10 - statusPillW;
-    const statusPillY = y + 8;
+    doc.font(FONT_BOLD).fontSize(10).fillColor('#15803d')
+      .text(`\u20B9 ${vars.net_salary} /-`, tableX + 8, y + 6, { width: tableW - 16, align: 'right' });
+
+    // bottom border of net row
     doc.save();
-    doc.roundedRect(statusPillX, statusPillY, statusPillW, statusPillH, 9)
-      .fillColor(isPaid ? '#16a34a' : '#fef3c7')
-      .fill();
+    doc.moveTo(tableX, y + netH).lineTo(tableX + tableW, y + netH)
+      .lineWidth(0.8).strokeColor('#cbd5e1').stroke();
     doc.restore();
-    doc.font(FONT_BOLD).fontSize(8.5)
-      .fillColor(isPaid ? '#ffffff' : '#92400e')
-      .text(statusLabel, statusPillX, statusPillY + 5, { width: statusPillW, align: 'center' });
-
-    doc.font(FONT_REGULAR).fontSize(7.5).fillColor('#6b7280')
-      .text('All amounts in INR', tableX, statusPillY + statusPillH + 3, { width: tableW - 10, align: 'right' });
 
     y += netH + 12;
 
-    // ─── Payment footer ───────────────────────────────────────────────────────
-    const footerX = tableX;
-    doc.font(FONT_BOLD).fontSize(8.5).fillColor('#64748b').text('Payment Status:', footerX, y);
-    doc.font(FONT_BOLD).fontSize(8.5).fillColor(statusColor).text(statusLabel, footerX + 90, y);
+    // ── Payment Status footer ─────────────────────────────────────────────────
+    const isPaid      = vars.payment_status.toLowerCase() === 'paid';
+    const statusColor = isPaid ? '#16a34a' : '#d97706';
+    const statusLabel = isPaid ? 'Paid' : 'Pending';
 
-    doc.font(FONT_BOLD).fontSize(8.5).fillColor('#64748b').text('Paid On:', footerX + 240, y);
-    doc.font(FONT_REGULAR).fontSize(8.5).fillColor('#1e293b').text(vars.paid_on || 'Pending', footerX + 290, y, { width: 160 });
+    doc.font(FONT_BOLD).fontSize(9).fillColor('#374151').text('Payment Status:', tableX, y);
+    doc.font(FONT_BOLD).fontSize(9).fillColor(statusColor).text(statusLabel, tableX + 96, y);
 
-    if (vars.remarks) {
-      y += 15;
-      doc.font(FONT_BOLD).fontSize(8.5).fillColor('#64748b').text('Remarks:', footerX, y);
-      doc.font(FONT_REGULAR).fontSize(8.5).fillColor('#1e293b').text(vars.remarks, footerX + 58, y, { width: tableW - 58 });
-    }
+    doc.font(FONT_BOLD).fontSize(9).fillColor('#374151').text('Paid On:', tableX + 250, y);
+    doc.font(FONT_REGULAR).fontSize(9).fillColor('#111827')
+      .text(vars.paid_on || 'Pending', tableX + 300, y, { width: tableW - 300 });
 
-    y += 24;
+    y += 16;
 
-    // ─── Footer note ──────────────────────────────────────────────────────────
-    doc.font(FONT_REGULAR).fontSize(7).fillColor('#94a3b8')
-      .text('This is a computer-generated salary slip and does not require a signature.', cardX, y, { width: cardW, align: 'center' });
+    doc.font(FONT_BOLD).fontSize(9).fillColor('#374151').text('Remarks:', tableX, y);
+    doc.font(FONT_REGULAR).fontSize(9).fillColor('#111827')
+      .text(vars.remarks || '', tableX + 58, y, { width: tableW - 58 });
 
     doc.end();
   });

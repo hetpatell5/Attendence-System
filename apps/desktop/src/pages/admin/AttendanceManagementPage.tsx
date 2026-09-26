@@ -240,8 +240,8 @@ export function AttendanceManagementPage(): JSX.Element {
   const to = `${selectedYear}-${selectedMonth.padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
 
   const { data: employeesData } = useQuery({ 
-    queryKey: ['employees', 'all'], 
-    queryFn: () => employeesApi.list({ pageSize: '1000' }) 
+    queryKey: ['employees', 'all', 'ACTIVE'], 
+    queryFn: () => employeesApi.list({ pageSize: '1000', status: 'ACTIVE' }) 
   });
 
   const { data: attendanceData } = useQuery({

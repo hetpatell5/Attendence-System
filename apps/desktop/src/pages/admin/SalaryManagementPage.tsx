@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import JSZip from 'jszip';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -891,6 +892,100 @@ export function SalaryManagementPage(): JSX.Element {
     statusMutation.mutate({ targets, newStatus: 'PENDING' });
   };
 
+  const [bulkZipLoading, setBulkZipLoading] = useState(false);
+
+  const handleBulkDownloadZip = async () => {
+    const monthLabel = MONTHS.find(m => m.value === selectedMonth)?.label || 'Month';
+    const paidTargets = calculatedCards.filter(
+      c => selectedIds.includes(c.emp.id) && c.status === 'PAID'
+    );
+    const skipped = selectedIds.length - paidTargets.length;
+
+    if (paidTargets.length === 0) {
+      alert('No PAID employees are selected. Only paid employees are included in the zip.');
+      return;
+    }
+
+    if (skipped > 0) {
+      alert(`Note: ${skipped} unpaid employee(s) will be skipped. Downloading PDFs for ${paidTargets.length} paid employee(s).`);
+    }
+
+    setBulkZipLoading(true);
+    try {
+      const zip = new JSZip();
+      const errors: string[] = [];
+
+      for (const card of paidTargets) {
+        const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
+        const payload = {
+          company_name: settings?.companyName || 'BMAP Pvt Ltd',
+          company_logo: (settings as any)?.companyLogo || '',
+          company_address: (settings as any)?.companyAddress || '',
+          employee_name: empFullName,
+          employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
+          employee_email: card.emp.email || '',
+          month_name: `${monthLabel} ${selectedYear}`,
+          pay_period: `${monthLabel} ${selectedYear}`,
+          pay_date: card.paymentDate
+            ? new Date(card.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+            : `${monthLabel} ${selectedYear}`,
+          shift_name: card.shiftName || 'Full Day',
+          shift_time: card.shiftStartTime && card.shiftEndTime ? `${fmt12h(card.shiftStartTime)} - ${fmt12h(card.shiftEndTime)}` : '9:00 AM - 7:30 PM',
+          payment_status: 'Paid',
+          monthly_salary: Number(card.monthlySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          total_days: String(card.totalDaysInMonth),
+          per_day_salary: Number(card.perDaySalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          per_hour_salary: Number(card.hourRate).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          basic_salary: Number(card.basicSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          working_days: String(card.totalWorkingDays),
+          sunday_holiday_pay: Number(card.sundayHolidayPay).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          present_days: String(card.presentRegularDays),
+          overtime_pay: Number(card.overtimePayout).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          overtime_hours: String(card.overtimeHours),
+          commission: Number(card.commission).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          total_hours_worked: String(card.totalHours),
+          advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+          expected_hours: String(card.expectedHours),
+          net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
+          paid_on: card.paymentDate
+            ? new Date(card.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+            : 'Paid',
+          remarks: card.remarks || '',
+        };
+
+        try {
+          const res = await salaryApi.downloadCustomSlipPdf(payload);
+          if (!res?.base64) throw new Error('No PDF data');
+          const binary = atob(res.base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const safeEmp = empFullName.replace(/[^A-Za-z0-9_\-]/g, '_');
+          zip.file(`${safeEmp}_${selectedYear}-${selectedMonth}.pdf`, bytes);
+        } catch {
+          errors.push(empFullName);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = window.URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${monthLabel}-${selectedYear}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      if (errors.length > 0) {
+        alert(`Zip downloaded. Failed to generate PDF for: ${errors.join(', ')}`);
+      }
+    } catch (err: any) {
+      alert(`Bulk download failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setBulkZipLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-16">
       {/* 1. Top Summary Stat Cards */}
@@ -987,6 +1082,18 @@ export function SalaryManagementPage(): JSX.Element {
           className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-6 shadow-sm"
         >
           Bulk Pending
+        </Button>
+
+        <Button
+          onClick={handleBulkDownloadZip}
+          disabled={bulkZipLoading}
+          className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-6 shadow-sm gap-2"
+        >
+          {bulkZipLoading ? (
+            <><Loader2 size={15} className="animate-spin" /> Generating Zip...</>
+          ) : (
+            <><Download size={15} /> Bulk Zip Download</>
+          )}
         </Button>
 
         <Button 
@@ -1291,132 +1398,127 @@ export function SalaryManagementPage(): JSX.Element {
               </div>
             </div>
 
-          {/* Salary Slip Preview – Professional Clean Design */}
+          {/* Salary Slip Preview – OLD SYSTEM FORMAT (Image 2) */}
           <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-gradient-to-b from-slate-50 to-slate-100 flex justify-center items-start">
             <div className="bg-white w-full max-w-[660px] rounded-2xl shadow-xl border border-slate-200 overflow-hidden mb-6 font-sans text-[13px]">
 
-              {/* Header: solid blue, logo + company on left, SALARY SLIP label on right */}
-              <div className="bg-[#0f4c81] pl-5 pr-3.5 sm:pl-6 sm:pr-4 py-4 sm:py-5 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="bg-white rounded-xl px-2.5 py-1.5 shrink-0 shadow-sm flex items-center justify-center">
-                    <img
-                      src={(settings as any)?.companyLogo || defaultCompanyLogo}
-                      alt="Logo"
-                      className="h-11 sm:h-12 w-auto max-w-[150px] sm:max-w-[180px] object-contain block"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-base font-bold text-white leading-tight truncate">
-                      {settings?.companyName || 'BMAP Pvt Ltd'}
-                    </div>
-                    <div className="text-[10px] text-blue-100 mt-0.5 leading-snug line-clamp-3">
-                      {(settings as any)?.companyAddress || '206 Sunrise Commercial Complex, Mota Varachha, Surat – 394105'}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right shrink-0 ml-auto pr-0.5">
-                  <div className="text-[11px] sm:text-xs font-bold tracking-widest uppercase text-white/90">Salary Slip</div>
-                  <div className="text-[11px] sm:text-xs font-semibold text-blue-100 mt-0.5">
-                    {MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}
-                  </div>
-                </div>
+              {/* ── OLD SYSTEM FORMAT: centered logo, company info, Salary Slip heading ── */}
+
+              {/* Centered logo */}
+              <div className="flex justify-center pt-6 pb-2">
+                <img
+                  src={(settings as any)?.companyLogo || defaultCompanyLogo}
+                  alt="Logo"
+                  className="h-[72px] w-auto max-w-[220px] object-contain"
+                />
               </div>
 
-              {/* Employee Info Grid: 2×2 */}
-              <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
-                {[
-                  { label: 'EMPLOYEE NAME', value: `${slipModalTarget.emp.firstName} ${slipModalTarget.emp.lastName}` },
-                  { label: 'EMPLOYEE ID', value: displayIdMap[slipModalTarget.emp.id] || slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 8) },
-                  { label: 'SHIFT', value: `${slipModalTarget.shiftName} (${fmt12h(slipModalTarget.shiftStartTime)} – ${fmt12h(slipModalTarget.shiftEndTime)})` },
-                  { label: 'PAY DATE', value: slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
-                    ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                    : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}` },
-                ].map(({ label, value }) => (
-                  <div key={label} className="px-5 py-3 bg-white">
-                    <div className="text-[9px] font-semibold tracking-wider text-slate-400">{label}</div>
-                    <div className="text-[13px] font-semibold text-slate-800 mt-0.5">{value}</div>
+              {/* Company name – centered bold navy */}
+              <div className="text-center font-bold text-[#1a3a6b] text-[17px] leading-tight px-6 pb-0.5">
+                {settings?.companyName || 'BMAP Pvt Ltd'}
+              </div>
+
+              {/* Company address – centered gray */}
+              <div className="text-center text-[10px] text-slate-500 px-8 pb-2 leading-snug">
+                {(settings as any)?.companyAddress || ''}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-slate-200 mx-5" />
+
+              {/* "Salary Slip" heading – centered */}
+              <div className="text-center font-bold text-[14px] text-slate-800 py-2">
+                Salary Slip
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-slate-200 mx-5 mb-3" />
+
+              {/* Info grid – 3 rows × 2 cols */}
+              <div className="px-5 space-y-1 pb-3 text-[12px]">
+                {([
+                  ['Pay Period:',    `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`,
+                   'Pay Date:',      slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
+                     ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                     : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`],
+                  ['Employee Name:', `${slipModalTarget.emp.firstName} ${slipModalTarget.emp.lastName}`,
+                   'Employee ID:',   displayIdMap[slipModalTarget.emp.id] || slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 8)],
+                  ['Shift:',         `${slipModalTarget.shiftName} (${fmt12h(slipModalTarget.shiftStartTime)} - ${fmt12h(slipModalTarget.shiftEndTime)})`,
+                   'Status:',        slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'],
+                ] as [string, string, string, string][]).map(([lLabel, lVal, rLabel, rVal], i) => (
+                  <div key={i} className="flex">
+                    <div className="w-1/2 flex gap-1 pr-2">
+                      <span className="font-bold text-slate-700 whitespace-nowrap shrink-0">{lLabel}</span>
+                      <span className="text-slate-800">{lVal}</span>
+                    </div>
+                    <div className="w-1/2 flex gap-1">
+                      <span className="font-bold text-slate-700 whitespace-nowrap shrink-0">{rLabel}</span>
+                      <span className={rVal === 'Paid' ? 'text-emerald-600 font-bold' : rVal === 'Pending' ? 'text-amber-600 font-bold' : 'text-slate-800'}>{rVal}</span>
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {/* Table section headers */}
-              <div className="grid grid-cols-2 border-t border-slate-100">
-                <div className="bg-[#f0f7ff] px-5 py-2 text-[10px] font-bold text-[#1563ac] tracking-wider uppercase">Earnings</div>
-                <div className="bg-[#fff7ed] px-5 py-2 text-[10px] font-bold text-[#c2570a] tracking-wider uppercase border-l border-slate-100">Attendance & Hours</div>
+              {/* Divider */}
+              <div className="border-t border-slate-200" />
+
+              {/* Table section headers – centered text */}
+              <div className="grid grid-cols-2">
+                <div className="bg-[#dbeafe] py-2 text-[10px] font-bold text-[#1d4ed8] text-center border-r border-slate-200">Earnings</div>
+                <div className="bg-[#ffedd5] py-2 text-[10px] font-bold text-[#c2410c] text-center">Attendance & Hours</div>
               </div>
 
-              {/* Earnings + Attendance rows */}
-              <div className="divide-y divide-slate-50">
+              {/* Data rows */}
+              <div className="divide-y divide-slate-100">
                 {([
-                  [['Monthly Salary', `₹ ${slipModalTarget.monthlySalary.toFixed(2)}`, false, true], ['Total Days in Month', String(slipModalTarget.totalDaysInMonth)]],
-                  [['Salary Per Day',  `₹ ${slipModalTarget.perDaySalary.toFixed(2)}`],   ['Salary Per Hour',      `₹ ${slipModalTarget.hourRate.toFixed(2)}`]],
-                  [['Basic Salary',    `₹ ${slipModalTarget.basicSalary.toFixed(2)}`],     ['Total Working Days',   String(slipModalTarget.totalWorkingDays)]],
-                  [['Sunday & Holiday Pay', `₹ ${slipModalTarget.sundayHolidayPay.toFixed(2)}`], ['Mon-Sat Present Days', String(slipModalTarget.presentRegularDays)]],
-                  [['Overtime Payout', `₹ ${slipModalTarget.overtimePayout.toFixed(2)}`], ['Overtime Hours',       String(slipModalTarget.overtimeHours)]],
-                  [['Commission / Extra', `₹ ${slipModalTarget.commission.toFixed(2)}`],   ['Total Hours Worked',   String(slipModalTarget.totalHours)]],
-                  [['Advance Deducted', `– ₹ ${slipModalTarget.advance.toFixed(2)}`, true], ['Expected Hours',      String(slipModalTarget.expectedHours)]],
-                ] as [string, string, boolean?, boolean?][][]).map((row, i) => {
-                  const [lLabel, lVal, isRed, isBold] = row[0] as [string, string, boolean?, boolean?];
-                  const [rLabel, rVal] = row[1] as [string, string];
+                  [['Monthly Salary',      `₹ ${slipModalTarget.monthlySalary.toFixed(2)}`,    false], ['Total Days in Month',  String(slipModalTarget.totalDaysInMonth)]],
+                  [['Salary Per Day',       `₹ ${slipModalTarget.perDaySalary.toFixed(2)}`,    false], ['Salary Per Hour',      `₹ ${slipModalTarget.hourRate.toFixed(2)}`]],
+                  [['Basic Salary',         `₹ ${slipModalTarget.basicSalary.toFixed(2)}`,      false], ['Total Working Days',   String(slipModalTarget.totalWorkingDays)]],
+                  [['Sunday & Holiday Pay', `₹ ${slipModalTarget.sundayHolidayPay.toFixed(2)}`, false], ['Mon-Sat Present Days', String(slipModalTarget.presentRegularDays)]],
+                  [['Overtime Payout',      `₹ ${slipModalTarget.overtimePayout.toFixed(2)}`,  false], ['Overtime Hours',       String(slipModalTarget.overtimeHours)]],
+                  [['Commission/Pending',   `₹ ${slipModalTarget.commission.toFixed(2)}`,       false], ['Total Hours Worked',   String(slipModalTarget.totalHours)]],
+                  [['Advance Deducted',     `- ₹ ${slipModalTarget.advance.toFixed(2)}`,        true],  ['Expected Hours',       String(slipModalTarget.expectedHours)]],
+                ] as Array<[[string, string, boolean], [string, string]]>).map((row, i) => {
+                  const [lLabel, lVal, isRed] = row[0];
+                  const [rLabel, rVal] = row[1];
                   return (
-                    <div key={i} className={`grid grid-cols-2 divide-x divide-slate-50 ${i % 2 === 0 ? 'bg-slate-50/50' : 'bg-white'}`}>
-                      <div className="flex items-center justify-between px-5 py-2">
-                        <span className={isRed ? 'text-red-600 font-medium' : 'text-slate-500'}>{lLabel}</span>
-                        <span className={`font-semibold tabular-nums ${isRed ? 'text-red-600' : isBold ? 'text-slate-900' : 'text-slate-700'}`}>{lVal}</span>
+                    <div key={i} className={`grid grid-cols-2 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}>
+                      <div className="flex items-center justify-between px-4 py-1.5 border-r border-slate-100">
+                        <span className={`text-[12px] ${isRed ? 'text-red-600' : 'text-slate-600'}`}>{lLabel}</span>
+                        <span className={`tabular-nums text-[12px] ${isRed ? 'text-red-600' : 'text-slate-800'}`}>{lVal}</span>
                       </div>
-                      <div className="flex items-center justify-between px-5 py-2">
-                        <span className="text-slate-500">{rLabel}</span>
-                        <span className="font-semibold text-slate-700 tabular-nums">{rVal}</span>
+                      <div className="flex items-center justify-between px-4 py-1.5">
+                        <span className="text-slate-600 text-[12px]">{rLabel}</span>
+                        <span className="tabular-nums text-slate-800 text-[12px]">{rVal}</span>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Net Salary row */}
-              <div className="bg-[#e8f5ee] flex items-center justify-between px-5 py-3 border-t border-emerald-100">
-                <div>
-                  <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">Net Salary</div>
-                  <div className="text-xl font-bold text-emerald-700 mt-0.5">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</div>
-                </div>
-                <div className="text-right">
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded ${slipModalTarget.status === 'PAID' ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}>
-                    {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
-                  </span>
-                  {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate && (
-                    <div className="text-[10px] text-slate-400 mt-1">
-                      Paid on {new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    </div>
-                  )}
-                  <div className="text-[10px] text-slate-400 mt-0.5">All amounts in INR</div>
-                </div>
+              {/* Net Salary – full-width green row spanning both columns */}
+              <div className="bg-[#dcfce7] flex items-center justify-between px-4 py-2 border-t border-green-200">
+                <span className="font-bold text-emerald-700 text-[13px]">Net Salary</span>
+                <span className="font-bold text-emerald-800 text-[14px]">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</span>
               </div>
 
-              {/* Payment footer line */}
-              <div className="flex items-center justify-between px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-500">
+              {/* Payment footer */}
+              <div className="px-4 pt-2.5 pb-1 border-t border-slate-100 text-[11px] flex flex-wrap gap-x-8 gap-y-0.5">
                 <span>
-                  <span className="font-semibold text-slate-600">Payment Status: </span>
-                  <span className={slipModalTarget.status === 'PAID' ? 'text-emerald-600 font-semibold' : 'text-amber-600 font-semibold'}>
+                  <span className="font-bold text-slate-700">Payment Status: </span>
+                  <span className={slipModalTarget.status === 'PAID' ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>
                     {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
                   </span>
                 </span>
                 <span>
-                  <span className="font-semibold text-slate-600">Paid On: </span>
+                  <span className="font-bold text-slate-700">Paid On: </span>
                   {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
-                    ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                    ? new Date(slipModalTarget.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                     : 'Pending'}
                 </span>
               </div>
-
-              {slipModalTarget.remarks && (
-                <div className="px-5 pb-3 text-[11px] text-slate-500">
-                  <span className="font-semibold text-slate-600">Remarks: </span>{slipModalTarget.remarks}
-                </div>
-              )}
-
-              {/* Footer */}
-              <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-100 text-center text-[10px] text-slate-400">
-                This is a computer-generated salary slip and does not require a signature.
+              <div className="px-4 pb-4 text-[11px] text-slate-500">
+                <span className="font-bold text-slate-700">Remarks: </span>{slipModalTarget.remarks || ''}
               </div>
             </div>
           </div>

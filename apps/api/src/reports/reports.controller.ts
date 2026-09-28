@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { ExcelExporterService } from './export/excel-exporter.service';
 import { PdfExporterService } from './export/pdf-exporter.service';
+import { AttendanceReportService } from './export/attendance-report.service';
 import { AuditService } from '../audit/audit.service';
 import { ReportQueryDto, ExportReportQueryDto } from './dto/report-query.dto';
 import type { ReportEnvelope } from './report-envelope.type';
@@ -33,6 +34,7 @@ export class ReportsController {
     private readonly reportsService: ReportsService,
     private readonly excelExporter: ExcelExporterService,
     private readonly pdfExporter: PdfExporterService,
+    private readonly attendanceReport: AttendanceReportService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -56,6 +58,43 @@ export class ReportsController {
   ) {
     const parsedYear = year ? parseInt(year, 10) : undefined;
     return this.reportsService.employeePerformance(employeeId, parsedYear);
+  }
+
+  /**
+   * Downloads the "Employee Performance Report" PDF — the exact report the old
+   * system's Performance page downloads from its Last 30 Days / Last 3 Months /
+   * Custom Date buttons (admin/perf_range.php's PDF export).
+   */
+  @Get('performance/export')
+  async exportPerformancePdf(
+    @Query('employeeId') employeeId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('rangeLabel') rangeLabel: string | undefined,
+    @Res() res: Response,
+    @CurrentUser() user: RequestWithUser['user'],
+  ): Promise<void> {
+    if (!employeeId || !from || !to) {
+      throw new BadRequestException('employeeId, from and to are required.');
+    }
+    const { buffer, fileName } = await this.attendanceReport.generate(
+      employeeId,
+      from,
+      to,
+      rangeLabel || 'Custom',
+    );
+
+    await this.auditService.logChange({
+      eventType: 'REPORT_EXPORTED',
+      actorUserId: user.sub,
+      entityType: 'Report',
+      entityId: 'performance',
+      newValue: { employeeId, from, to, rangeLabel },
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
   }
 
   @Get(':reportType')

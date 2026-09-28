@@ -376,5 +376,8 @@ export const reportsApi = {
     const query = params.toString();
     return request<EmployeePerformancePayload>(`/reports/performance${query ? `?${query}` : ''}`);
   },
+  /** Path (for electronApi.files.download) to the old-system-format Employee Performance Report PDF. */
+  performanceExportPath: (employeeId: string, from: string, to: string, rangeLabel: string) =>
+    `/reports/performance/export?${new URLSearchParams({ employeeId, from, to, rangeLabel })}`,
 };
 

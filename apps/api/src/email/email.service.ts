@@ -3,7 +3,7 @@ import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_EMAIL_TEMPLATE, DEFAULT_SALARY_SLIP_TEMPLATE } from './salary-template.defaults';
-import { generateSalarySlipPdf } from './salary-pdf.generator';
+import { renderHtmlToPdf } from '../common/html-to-pdf.util';
 
 export interface SmtpConfigInput {
   smtpHost: string;
@@ -193,10 +193,19 @@ export class EmailService {
   }
 
   /**
-   * Generates a 1:1 legacy replica PDF buffer for the salary slip.
+   * Generates the salary slip PDF by printing the EXACT same HTML used for the on-screen
+   * preview (renderSalarySlipHtml) through a real browser engine — see html-to-pdf.util.ts.
+   * This used to call a hand-drawn PDFKit re-implementation that inevitably drifted from
+   * the preview (no shadows, different fonts/spacing); this guarantees they can't diverge.
    */
   async generateSalarySlipPdf(vars: SalaryTemplateVariables): Promise<Buffer> {
-    return generateSalarySlipPdf(vars);
+    const slipHtml = await this.renderSalarySlipHtml(vars);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: #ffffff; }
+      body { padding: 24px 0; }
+    </style></head><body>${slipHtml}</body></html>`;
+    return renderHtmlToPdf(html, { margin: { top: '0', bottom: '0', left: '0', right: '0' } });
   }
 
   /**

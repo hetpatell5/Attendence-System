@@ -48,10 +48,9 @@ export class SettingsController {
     const settings = await this.settingsService.getSettings();
     let logo = settings.companyLogo || '';
     if (!logo) {
-      // See salary-pdf.generator.ts's resolveAssetPath comment: `nest build` compiles this
-      // file to dist/src/settings/..., but assets are copied to dist/assets/ — one level
-      // shallower than a single `..` reaches. Trying both depths keeps this working under
-      // both the production build layout and ts-node in dev.
+      // `nest build` compiles this file to dist/src/settings/..., but assets are copied to
+      // dist/assets/ — one level shallower than a single `..` reaches. Trying both depths
+      // keeps this working under both the production build layout and ts-node in dev.
       const candidates = [
         path.join(__dirname, '..', 'assets', 'logo.jpeg'),
         path.join(__dirname, '..', '..', 'assets', 'logo.jpeg'),

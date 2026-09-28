@@ -21,6 +21,7 @@ import {
   Wallet,
   Award,
   TrendingUp,
+  Download,
 } from 'lucide-react';
 import { cn, compareEmployeesByName, to12h } from '@/lib/utils';
 
@@ -408,6 +409,50 @@ export function ReportsPage(): JSX.Element {
     queryFn: () => reportsApi.performance(effectiveEmployeeId || undefined, selectedYear),
     enabled: Boolean(effectiveEmployeeId),
   });
+
+  // ─── Performance Report PDF download — same 3 quick-range options as the old
+  // system's Performance page (Last 30 Days / Last 3 Months / Custom Date). ───
+  const [isDownloadingPerfPdf, setIsDownloadingPerfPdf] = useState(false);
+  const [showCustomRange, setShowCustomRange] = useState(false);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  const downloadPerformancePdf = async (from: string, to: string, rangeLabel: string): Promise<void> => {
+    if (!effectiveEmployeeId) return;
+    const emp = employeeList.find((e: Employee) => e.id === effectiveEmployeeId);
+    const empName = emp ? `${emp.firstName}_${emp.lastName}`.replace(/[^A-Za-z0-9_-]/g, '_') : 'Employee';
+    const safeLabel = rangeLabel.replace(/[^A-Za-z0-9_-]/g, '_');
+
+    setIsDownloadingPerfPdf(true);
+    try {
+      const path = reportsApi.performanceExportPath(effectiveEmployeeId, from, to, rangeLabel);
+      const result = await (window as any).electronApi?.files?.download(
+        path,
+        `Employee_Performance_${empName}_${safeLabel}.pdf`,
+      );
+      if (!result) alert('PDF download is only available in the desktop app.');
+    } catch (err: any) {
+      alert(`Download failed: ${err?.message || 'Error downloading PDF'}`);
+    } finally {
+      setIsDownloadingPerfPdf(false);
+    }
+  };
+
+  const handleQuickRangeDownload = (days: number, rangeLabel: string): void => {
+    setShowCustomRange(false);
+    const today = new Date();
+    const from = new Date(today.getTime() - (days - 1) * 24 * 3600 * 1000);
+    const fmt = (d: Date) => d.toLocaleDateString('en-CA');
+    void downloadPerformancePdf(fmt(from), fmt(today), rangeLabel);
+  };
+
+  const handleCustomRangeDownload = (): void => {
+    if (!customFrom || !customTo || customFrom > customTo) {
+      alert('Please pick a valid From/To date range.');
+      return;
+    }
+    void downloadPerformancePdf(customFrom, customTo, 'Custom');
+  };
 
   // ─── 4. SALARY INCREMENT & BASE PAY PROGRESSION TIMELINE ─────────────────
   const { incrementTimelineData, incrementStats } = useMemo(() => {
@@ -1095,20 +1140,85 @@ export function ReportsPage(): JSX.Element {
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetchPerformance()}
-              className="h-9 text-xs gap-1.5 bg-background self-end"
-              disabled={isRefetchingPerf}
-            >
-              <RefreshCw
-                size={12}
-                className={cn(isRefetchingPerf && 'animate-spin')}
-              />
-              <span>Refresh Report</span>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2 self-end">
+              {/* Same 3 quick-range PDF options as the old system's Performance page */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickRangeDownload(30, 'Last 30 Days')}
+                className="h-9 text-xs gap-1.5 bg-background"
+                disabled={isDownloadingPerfPdf || !effectiveEmployeeId}
+              >
+                <Download size={12} className={cn(isDownloadingPerfPdf && 'animate-pulse')} />
+                <span>Last 30 Days</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleQuickRangeDownload(90, 'Last 3 Months')}
+                className="h-9 text-xs gap-1.5 bg-background"
+                disabled={isDownloadingPerfPdf || !effectiveEmployeeId}
+              >
+                <Download size={12} className={cn(isDownloadingPerfPdf && 'animate-pulse')} />
+                <span>Last 3 Months</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCustomRange((v) => !v)}
+                className={cn('h-9 text-xs gap-1.5 bg-background', showCustomRange && 'border-primary text-primary')}
+                disabled={isDownloadingPerfPdf || !effectiveEmployeeId}
+              >
+                <Download size={12} />
+                <span>Custom Date</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchPerformance()}
+                className="h-9 text-xs gap-1.5 bg-background"
+                disabled={isRefetchingPerf}
+              >
+                <RefreshCw
+                  size={12}
+                  className={cn(isRefetchingPerf && 'animate-spin')}
+                />
+                <span>Refresh Report</span>
+              </Button>
+            </div>
           </div>
+
+          {showCustomRange && (
+            <div className="flex flex-wrap items-end gap-3 bg-card/60 p-3.5 rounded-2xl border border-border/60">
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground block">From</span>
+                <Input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="h-9 text-xs w-40"
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground block">To</span>
+                <Input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="h-9 text-xs w-40"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={handleCustomRangeDownload}
+                className="h-9 text-xs gap-1.5"
+                disabled={isDownloadingPerfPdf || !customFrom || !customTo}
+              >
+                <Download size={12} className={cn(isDownloadingPerfPdf && 'animate-pulse')} />
+                <span>{isDownloadingPerfPdf ? 'Preparing PDF…' : 'Download PDF'}</span>
+              </Button>
+            </div>
+          )}
 
           {isLoadingPerf || !perfData ? (
             <div className="p-16 text-center text-xs text-muted-foreground bg-card rounded-2xl border border-border/60">

@@ -9,4 +9,5 @@ allowBuilds:
   electron: true
   esbuild: true
   prisma: true
+  puppeteer: true
   unrs-resolver: true

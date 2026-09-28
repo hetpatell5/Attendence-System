@@ -1398,128 +1398,160 @@ export function SalaryManagementPage(): JSX.Element {
               </div>
             </div>
 
-          {/* Salary Slip Preview – OLD SYSTEM FORMAT (Image 2) */}
+          {/* ── Salary Slip Preview – exact OLD SYSTEM format ── */}
           <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-gradient-to-b from-slate-50 to-slate-100 flex justify-center items-start">
-            <div className="bg-white w-full max-w-[660px] rounded-2xl shadow-xl border border-slate-200 overflow-hidden mb-6 font-sans text-[13px]">
-
-              {/* ── OLD SYSTEM FORMAT: centered logo, company info, Salary Slip heading ── */}
-
+            <div
+              style={{
+                maxWidth: 650, margin: '16px auto', background: '#fff',
+                borderRadius: 15, boxShadow: '0 4px 24px #b8d4ef23',
+                border: '1.5px solid #e6eaf4',
+                fontFamily: 'Segoe UI, Arial, sans-serif', padding: 0,
+              }}
+            >
               {/* Centered logo */}
-              <div className="flex justify-center pt-6 pb-2">
+              <div style={{ textAlign: 'center', paddingTop: 16, paddingBottom: 4 }}>
                 <img
                   src={(settings as any)?.companyLogo || defaultCompanyLogo}
                   alt="Logo"
-                  className="h-[72px] w-auto max-w-[220px] object-contain"
+                  style={{ height: 72, width: 'auto', maxWidth: 280, borderRadius: 6, border: '1.5px solid #dbe7f6', background: '#f7fafc', boxShadow: '0 1px 6px #bfdcff33', display: 'inline-block' }}
                 />
               </div>
 
-              {/* Company name – centered bold navy */}
-              <div className="text-center font-bold text-[#1a3a6b] text-[17px] leading-tight px-6 pb-0.5">
+              {/* Company name */}
+              <div style={{ fontSize: 21, fontWeight: 700, color: '#1968a7', letterSpacing: 1, marginTop: 6, textAlign: 'center' }}>
                 {settings?.companyName || 'BMAP Pvt Ltd'}
               </div>
 
-              {/* Company address – centered gray */}
-              <div className="text-center text-[10px] text-slate-500 px-8 pb-2 leading-snug">
+              {/* Address */}
+              <div style={{ fontSize: 12, color: '#757a8a', marginTop: 1, textAlign: 'center', padding: '0 16px 8px' }}>
                 {(settings as any)?.companyAddress || ''}
               </div>
 
-              {/* Divider */}
-              <div className="border-t border-slate-200 mx-5" />
-
-              {/* "Salary Slip" heading – centered */}
-              <div className="text-center font-bold text-[14px] text-slate-800 py-2">
+              {/* "Salary Slip" heading */}
+              <div style={{ marginTop: 18, textAlign: 'center', fontSize: 19, color: '#2e415a', fontWeight: 700 }}>
                 Salary Slip
               </div>
 
-              {/* Divider */}
-              <div className="border-t border-slate-200 mx-5 mb-3" />
+              {/* 4-column info table */}
+              <table style={{ width: '82%', margin: '18px auto 6px auto', fontSize: 13.5 }}>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: '1px 6px' }}><b>Pay Period:</b></td>
+                    <td style={{ padding: '1px 6px' }}>{MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}</td>
+                    <td style={{ padding: '1px 6px' }}><b>Pay Date:</b></td>
+                    <td style={{ padding: '1px 6px' }}>
+                      {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
+                        ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '1px 6px' }}><b>Employee Name:</b></td>
+                    <td style={{ padding: '1px 6px' }}>{slipModalTarget.emp.firstName} {slipModalTarget.emp.lastName}</td>
+                    <td style={{ padding: '1px 6px' }}><b>Employee ID:</b></td>
+                    <td style={{ padding: '1px 6px' }}>{displayIdMap[slipModalTarget.emp.id] || slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 8)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '1px 6px' }}><b>Shift:</b></td>
+                    <td style={{ padding: '1px 6px' }}>{slipModalTarget.shiftName} ({fmt12h(slipModalTarget.shiftStartTime)} - {fmt12h(slipModalTarget.shiftEndTime)})</td>
+                    <td style={{ padding: '1px 6px' }}><b>Status:</b></td>
+                    <td style={{ padding: '1px 6px' }}>
+                      <span style={{ color: 'green', fontWeight: 700 }}>
+                        {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
-              {/* Info grid – 3 rows × 2 cols */}
-              <div className="px-5 space-y-1 pb-3 text-[12px]">
-                {([
-                  ['Pay Period:',    `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`,
-                   'Pay Date:',      slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
-                     ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                     : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`],
-                  ['Employee Name:', `${slipModalTarget.emp.firstName} ${slipModalTarget.emp.lastName}`,
-                   'Employee ID:',   displayIdMap[slipModalTarget.emp.id] || slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 8)],
-                  ['Shift:',         `${slipModalTarget.shiftName} (${fmt12h(slipModalTarget.shiftStartTime)} - ${fmt12h(slipModalTarget.shiftEndTime)})`,
-                   'Status:',        slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'],
-                ] as [string, string, string, string][]).map(([lLabel, lVal, rLabel, rVal], i) => (
-                  <div key={i} className="flex">
-                    <div className="w-1/2 flex gap-1 pr-2">
-                      <span className="font-bold text-slate-700 whitespace-nowrap shrink-0">{lLabel}</span>
-                      <span className="text-slate-800">{lVal}</span>
-                    </div>
-                    <div className="w-1/2 flex gap-1">
-                      <span className="font-bold text-slate-700 whitespace-nowrap shrink-0">{rLabel}</span>
-                      <span className={rVal === 'Paid' ? 'text-emerald-600 font-bold' : rVal === 'Pending' ? 'text-amber-600 font-bold' : 'text-slate-800'}>{rVal}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* Earnings + Attendance table */}
+              <table style={{ width: '88%', margin: '12px auto 0', borderCollapse: 'collapse', fontSize: 13.2 }}>
+                <tbody>
+                  {/* Header row */}
+                  <tr style={{ background: '#e9f4fb' }}>
+                    <th colSpan={2} style={{ padding: '7px 6px', color: '#1563ac', fontWeight: 600 }}>Earnings</th>
+                    <th colSpan={2} style={{ padding: '7px 6px', color: '#d67412', fontWeight: 600 }}>Attendance &amp; Hours</th>
+                  </tr>
+                  {/* Row 1 */}
+                  <tr style={{ background: '#f7fafc' }}>
+                    <td style={{ padding: '6px 4px' }}>Monthly Salary</td>
+                    <td style={{ padding: '6px 4px', fontWeight: 700 }}>₹ {slipModalTarget.monthlySalary.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Total Days in Month</td>
+                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.totalDaysInMonth}</td>
+                  </tr>
+                  {/* Row 2 */}
+                  <tr>
+                    <td style={{ padding: '6px 4px' }}>Salary Per Day</td>
+                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.perDaySalary.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Salary Per Hour</td>
+                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.hourRate.toFixed(2)}</td>
+                  </tr>
+                  {/* Row 3 */}
+                  <tr style={{ background: '#f7fafc' }}>
+                    <td style={{ padding: '6px 4px' }}>Basic Salary</td>
+                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.basicSalary.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Total Working Days</td>
+                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.totalWorkingDays}</td>
+                  </tr>
+                  {/* Row 4 */}
+                  <tr>
+                    <td style={{ padding: '6px 4px' }}>Sunday &amp; Holiday Pay</td>
+                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.sundayHolidayPay.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Mon-Sat Present Days</td>
+                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.presentRegularDays}</td>
+                  </tr>
+                  {/* Row 5 */}
+                  <tr style={{ background: '#f7fafc' }}>
+                    <td style={{ padding: '6px 4px' }}>Overtime Payout</td>
+                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.overtimePayout.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Overtime Hours</td>
+                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.overtimeHours}</td>
+                  </tr>
+                  {/* Row 6 */}
+                  <tr>
+                    <td style={{ padding: '6px 4px' }}>Commission/Pending</td>
+                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.commission.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Total Hours Worked</td>
+                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.totalHours}</td>
+                  </tr>
+                  {/* Row 7 – Advance Deducted (red) */}
+                  <tr style={{ background: '#f7fafc' }}>
+                    <td style={{ padding: '6px 4px' }}>Advance Deducted</td>
+                    <td style={{ padding: '6px 4px', color: '#c93030' }}>- ₹ {slipModalTarget.advance.toFixed(2)}</td>
+                    <td style={{ padding: '6px 4px' }}>Expected Hours</td>
+                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.expectedHours}</td>
+                  </tr>
+                  {/* Net Salary row – green, spans left 2 cols */}
+                  <tr style={{ background: '#d8f0e8' }}>
+                    <td style={{ padding: '7px 4px', fontWeight: 700, color: '#217f44' }}>Net Salary</td>
+                    <td style={{ padding: '7px 4px', fontWeight: 700, color: '#217f44' }}>₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tbody>
+              </table>
 
-              {/* Divider */}
-              <div className="border-t border-slate-200" />
-
-              {/* Table section headers – centered text */}
-              <div className="grid grid-cols-2">
-                <div className="bg-[#dbeafe] py-2 text-[10px] font-bold text-[#1d4ed8] text-center border-r border-slate-200">Earnings</div>
-                <div className="bg-[#ffedd5] py-2 text-[10px] font-bold text-[#c2410c] text-center">Attendance & Hours</div>
-              </div>
-
-              {/* Data rows */}
-              <div className="divide-y divide-slate-100">
-                {([
-                  [['Monthly Salary',      `₹ ${slipModalTarget.monthlySalary.toFixed(2)}`,    false], ['Total Days in Month',  String(slipModalTarget.totalDaysInMonth)]],
-                  [['Salary Per Day',       `₹ ${slipModalTarget.perDaySalary.toFixed(2)}`,    false], ['Salary Per Hour',      `₹ ${slipModalTarget.hourRate.toFixed(2)}`]],
-                  [['Basic Salary',         `₹ ${slipModalTarget.basicSalary.toFixed(2)}`,      false], ['Total Working Days',   String(slipModalTarget.totalWorkingDays)]],
-                  [['Sunday & Holiday Pay', `₹ ${slipModalTarget.sundayHolidayPay.toFixed(2)}`, false], ['Mon-Sat Present Days', String(slipModalTarget.presentRegularDays)]],
-                  [['Overtime Payout',      `₹ ${slipModalTarget.overtimePayout.toFixed(2)}`,  false], ['Overtime Hours',       String(slipModalTarget.overtimeHours)]],
-                  [['Commission/Pending',   `₹ ${slipModalTarget.commission.toFixed(2)}`,       false], ['Total Hours Worked',   String(slipModalTarget.totalHours)]],
-                  [['Advance Deducted',     `- ₹ ${slipModalTarget.advance.toFixed(2)}`,        true],  ['Expected Hours',       String(slipModalTarget.expectedHours)]],
-                ] as Array<[[string, string, boolean], [string, string]]>).map((row, i) => {
-                  const [lLabel, lVal, isRed] = row[0];
-                  const [rLabel, rVal] = row[1];
-                  return (
-                    <div key={i} className={`grid grid-cols-2 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}>
-                      <div className="flex items-center justify-between px-4 py-1.5 border-r border-slate-100">
-                        <span className={`text-[12px] ${isRed ? 'text-red-600' : 'text-slate-600'}`}>{lLabel}</span>
-                        <span className={`tabular-nums text-[12px] ${isRed ? 'text-red-600' : 'text-slate-800'}`}>{lVal}</span>
-                      </div>
-                      <div className="flex items-center justify-between px-4 py-1.5">
-                        <span className="text-slate-600 text-[12px]">{rLabel}</span>
-                        <span className="tabular-nums text-slate-800 text-[12px]">{rVal}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Net Salary – full-width green row spanning both columns */}
-              <div className="bg-[#dcfce7] flex items-center justify-between px-4 py-2 border-t border-green-200">
-                <span className="font-bold text-emerald-700 text-[13px]">Net Salary</span>
-                <span className="font-bold text-emerald-800 text-[14px]">₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</span>
-              </div>
-
-              {/* Payment footer */}
-              <div className="px-4 pt-2.5 pb-1 border-t border-slate-100 text-[11px] flex flex-wrap gap-x-8 gap-y-0.5">
-                <span>
-                  <span className="font-bold text-slate-700">Payment Status: </span>
-                  <span className={slipModalTarget.status === 'PAID' ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>
-                    {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
-                  </span>
-                </span>
-                <span>
-                  <span className="font-bold text-slate-700">Paid On: </span>
-                  {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
-                    ? new Date(slipModalTarget.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                    : 'Pending'}
-                </span>
-              </div>
-              <div className="px-4 pb-4 text-[11px] text-slate-500">
-                <span className="font-bold text-slate-700">Remarks: </span>{slipModalTarget.remarks || ''}
-              </div>
+              {/* Footer – Payment Status / Paid On / Remarks */}
+              <table style={{ width: '88%', margin: '10px auto 0', fontSize: 13 }}>
+                <tbody>
+                  <tr>
+                    <td style={{ width: '44%' }}>
+                      <b>Payment Status:</b>{' '}
+                      <span style={{ color: 'green' }}>
+                        {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
+                      </span>
+                    </td>
+                    <td style={{ width: '56%' }}>
+                      <b>Paid On:</b>{' '}
+                      {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
+                        ? new Date(slipModalTarget.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : 'Pending'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={2}><b>Remarks:</b> {slipModalTarget.remarks || ''}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

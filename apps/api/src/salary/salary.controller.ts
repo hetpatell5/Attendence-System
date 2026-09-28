@@ -241,7 +241,7 @@ export class SalaryController {
     res.send(buffer);
   }
 
-  /** Convert HH:MM → H:MM AM/PM */
+  /** Convert "HH:MM" or "HH:MM:SS" → "H:MM AM/PM". Seconds (if present) are ignored. */
   private to12h(t: string | undefined): string {
     if (!t) return '';
     const parts = t.split(':');

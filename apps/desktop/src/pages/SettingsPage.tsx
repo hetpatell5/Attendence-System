@@ -29,99 +29,56 @@ const DEFAULT_EMAIL_TEMPLATE = `<p>Hello {{employee_name}},</p>
 <p>Please find attached your salary slip for the month of {{month_name}}.</p>
 <p>Regards,<br>{{company_name}}</p>`;
 
-const DEFAULT_SALARY_SLIP_TEMPLATE = `<div style="max-width:650px;margin:16px auto;background:#fff;border-radius:15px;box-shadow:0 4px 24px rgba(184, 212, 239, 0.25);border:1.5px solid #e6eaf4;font-family:Segoe UI,Arial,sans-serif;padding:0;overflow:hidden;">
-  <div style="text-align:center;padding:16px 20px 8px 20px;">
+// This MUST stay byte-identical to apps/api/src/email/salary-template.defaults.ts's
+// DEFAULT_SALARY_SLIP_TEMPLATE — a mechanical transcription of the old system's PHP source
+// (AttenOld/employee/download_salary_slip.php), not an approximation. This copy has
+// diverged from that source TWICE before by "improving" it (added colors/padding/borders
+// that don't exist in the original, an added max-height that shrank the logo, header cells
+// force-left-aligned when the browser default is center, an added "All amounts in INR"
+// line that isn't in the PHP). If they ever need to diverge again, copy the backend's
+// current string over here, not the other way round — and if this needs re-verifying,
+// diff against the PHP file directly, not memory.
+const DEFAULT_SALARY_SLIP_TEMPLATE = `<div style="max-width:650px;margin:16px auto;background:#fff;border-radius:15px;box-shadow:0 4px 24px #b8d4ef23;border:1.5px solid #e6eaf4;font-family:Segoe UI,Arial,sans-serif;padding:0;">
+  <div style="text-align:center;padding-top:8px;">
     {{#if company_logo}}
-      <img src="{{company_logo}}" width="320" style="max-height:80px;object-fit:contain;border-radius:8px;display:block;margin:0 auto 10px auto;">
+      <img src="{{company_logo}}" width="340" style="border-radius:10px;border:2.5px solid #dbe7f6;background:#f7fafc;box-shadow:0 2px 12px #bfdcff44;">
     {{/if}}
-    <div style="font-size:21px;font-weight:700;color:#1968a7;letter-spacing:1px;margin-top:4px;">{{company_name}}</div>
-    <div style="font-size:12px;color:#757a8a;margin-top:3px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.4;">{{company_address}}</div>
+    <div style="font-size:21px;font-weight:700;color:#1968a7;letter-spacing:1px;margin-top:6px;">{{company_name}}</div>
+    <div style="font-size:12px;color:#757a8a;margin-top:1px;">{{company_address}}</div>
   </div>
-  <div style="margin-top:14px;text-align:center;font-size:18px;color:#2e415a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Salary Slip</div>
-  
-  <table style="width:88%;margin:16px auto 6px auto;font-size:13px;border-collapse:collapse;">
-    <tr>
-      <td style="padding:3px 6px;color:#4a5568;width:20%;"><b>Pay Period:</b></td>
-      <td style="padding:3px 6px;color:#1a202c;width:30%;">{{pay_period}}</td>
-      <td style="padding:3px 6px;color:#4a5568;width:20%;"><b>Pay Date:</b></td>
-      <td style="padding:3px 6px;color:#1a202c;width:30%;">{{pay_date}}</td>
-    </tr>
-    <tr>
-      <td style="padding:3px 6px;color:#4a5568;"><b>Employee Name:</b></td>
-      <td style="padding:3px 6px;color:#1a202c;font-weight:600;">{{employee_name}}</td>
-      <td style="padding:3px 6px;color:#4a5568;"><b>Employee ID:</b></td>
-      <td style="padding:3px 6px;color:#1a202c;">{{employee_id}}</td>
-    </tr>
-    <tr>
-      <td style="padding:3px 6px;color:#4a5568;"><b>Shift:</b></td>
-      <td style="padding:3px 6px;color:#1a202c;">{{shift_name}} ({{shift_time}})</td>
-      <td style="padding:3px 6px;color:#4a5568;"><b>Status:</b></td>
-      <td style="padding:3px 6px;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600;font-size:11px;">{{payment_status}}</span></td>
-    </tr>
+  <div style="margin-top:18px;text-align:center;font-size:19px;color:#2e415a;font-weight:700;">Salary Slip</div>
+  <table style="width:82%;margin:18px auto 6px auto;font-size:13.5px;">
+    <tr><td style="padding:1px 6px;"><b>Pay Period:</b></td><td style="padding:1px 6px;">{{pay_period}}</td>
+        <td style="padding:1px 6px;"><b>Pay Date:</b></td><td style="padding:1px 6px;">{{pay_date}}</td></tr>
+    <tr><td style="padding:1px 6px;"><b>Employee Name:</b></td><td style="padding:1px 6px;">{{employee_name}}</td>
+        <td style="padding:1px 6px;"><b>Employee ID:</b></td><td style="padding:1px 6px;">{{employee_id}}</td></tr>
+    <tr><td style="padding:1px 6px;"><b>Shift:</b></td><td style="padding:1px 6px;">{{shift_name}} ({{shift_time}})</td>
+        <td style="padding:1px 6px;"><b>Status:</b></td><td style="padding:1px 6px;"><span style="color:green;font-weight:700;">{{payment_status}}</span></td></tr>
   </table>
-
-  <table style="width:90%;margin:14px auto 0 auto;border-collapse:collapse;font-size:13px;">
-    <tr style="background:#e9f4fb;">
-      <th colspan="2" style="padding:8px 8px;color:#1563ac;font-weight:600;text-align:left;border-radius:6px 0 0 0;">Earnings</th>
-      <th colspan="2" style="padding:8px 8px;color:#d67412;font-weight:600;text-align:left;border-radius:0 6px 0 0;">Attendance & Hours</th>
-    </tr>
-    <tr style="background:#f7fafc;">
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Monthly Salary</td>
-      <td style="padding:7px 8px;font-weight:700;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{monthly_salary}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Total Days in Month</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{total_days}}</td>
-    </tr>
-    <tr>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Salary Per Day</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{per_day_salary}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Salary Per Hour</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{per_hour_salary}}</td>
-    </tr>
-    <tr style="background:#f7fafc;">
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Basic Salary</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{basic_salary}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Total Working Days</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{working_days}}</td>
-    </tr>
-    <tr>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Sunday & Holiday Pay</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{sunday_holiday_pay}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Mon-Sat Present Days</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{present_days}}</td>
-    </tr>
-    <tr style="background:#f7fafc;">
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Overtime Payout</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{overtime_pay}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Overtime Hours</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{overtime_hours}}</td>
-    </tr>
-    <tr>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Commission / Extra</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">₹ {{commission}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Total Hours Worked</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{total_hours_worked}}</td>
-    </tr>
-    <tr style="background:#f7fafc;">
-      <td style="padding:7px 8px;color:#c93030;font-weight:600;border-bottom:1px solid #edf2f7;">Advance Deducted</td>
-      <td style="padding:7px 8px;color:#c93030;font-weight:700;border-bottom:1px solid #edf2f7;">- ₹ {{advance_deducted}}</td>
-      <td style="padding:7px 8px;color:#4a5568;border-bottom:1px solid #edf2f7;">Expected Hours</td>
-      <td style="padding:7px 8px;color:#2d3748;border-bottom:1px solid #edf2f7;">{{expected_hours}}</td>
-    </tr>
-    <tr style="background:#d8f0e8;">
-      <td style="padding:10px 8px;font-weight:700;color:#217f44;font-size:14px;border-radius:0 0 0 6px;">Net Salary</td>
-      <td style="padding:10px 8px;font-weight:700;color:#217f44;font-size:15px;">₹ {{net_salary}} /-</td>
-      <td colspan="2" style="padding:10px 8px;text-align:right;color:#217f44;font-size:12px;font-weight:600;border-radius:0 6px 0 0;">All amounts in INR</td>
-    </tr>
+  <table style="width:88%;margin:12px auto 0;border-collapse:collapse;font-size:13.2px;">
+    <tr style="background:#e9f4fb;"><th colspan="2" style="padding:7px 6px;color:#1563ac;font-weight:600;border-radius:7px 0 0 0;">Earnings</th>
+        <th colspan="2" style="padding:7px 6px;color:#d67412;font-weight:600;">Attendance & Hours</th></tr>
+    <tr style="background:#f7fafc;"><td style="padding:6px 4px;">Monthly Salary</td><td style="padding:6px 4px;font-weight:700;">₹ {{monthly_salary}}</td>
+        <td style="padding:6px 4px;">Total Days in Month</td><td style="padding:6px 4px;">{{total_days}}</td></tr>
+    <tr><td style="padding:6px 4px;">Salary Per Day</td><td style="padding:6px 4px;">₹ {{per_day_salary}}</td>
+        <td style="padding:6px 4px;">Salary Per Hour</td><td style="padding:6px 4px;">₹ {{per_hour_salary}}</td></tr>
+    <tr style="background:#f7fafc;"><td style="padding:6px 4px;">Basic Salary</td><td style="padding:6px 4px;">₹ {{basic_salary}}</td>
+        <td style="padding:6px 4px;">Total Working Days</td><td style="padding:6px 4px;">{{working_days}}</td></tr>
+    <tr><td style="padding:6px 4px;">Sunday & Holiday Pay</td><td style="padding:6px 4px;">₹ {{sunday_holiday_pay}}</td>
+        <td style="padding:6px 4px;">Mon-Sat Present Days</td><td style="padding:6px 4px;">{{present_days}}</td></tr>
+    <tr style="background:#f7fafc;"><td style="padding:6px 4px;">Overtime Payout</td><td style="padding:6px 4px;">₹ {{overtime_pay}}</td>
+        <td style="padding:6px 4px;">Overtime Hours</td><td style="padding:6px 4px;">{{overtime_hours}}</td></tr>
+    <tr><td style="padding:6px 4px;">Commission/Pending</td><td style="padding:6px 4px;">₹ {{commission}}</td>
+        <td style="padding:6px 4px;">Total Hours Worked</td><td style="padding:6px 4px;">{{total_hours_worked}}</td></tr>
+    <tr style="background:#f7fafc;"><td style="padding:6px 4px;">Advance Deducted</td><td style="padding:6px 4px;color:#c93030;">- ₹ {{advance_deducted}}</td>
+        <td style="padding:6px 4px;">Expected Hours</td><td style="padding:6px 4px;">{{expected_hours}}</td></tr>
+    <tr style="background:#d8f0e8;"><td style="padding:7px 4px;font-weight:700;color:#217f44;">Net Salary</td>
+        <td style="padding:7px 4px;font-weight:700;color:#217f44;">₹ {{net_salary}} /-</td><td colspan="2"></td></tr>
   </table>
-
-  <table style="width:90%;margin:12px auto 16px auto;font-size:12.5px;border-collapse:collapse;">
-    <tr>
-      <td style="width:40%;padding:4px 6px;color:#4a5568;"><b>Payment Status:</b> <span style="color:#059669;font-weight:600;">{{payment_status}}</span></td>
-      <td style="width:60%;padding:4px 6px;color:#4a5568;"><b>Paid On:</b> {{paid_on}}</td>
-    </tr>
-    <tr>
-      <td colspan="2" style="padding:4px 6px;color:#4a5568;"><b>Remarks:</b> <span style="color:#2d3748;">{{remarks}}</span></td>
-    </tr>
+  <table style="width:88%;margin:10px auto 0;font-size:13px;">
+    <tr><td style="width:44%;"><b>Payment Status:</b> <span style="color:green;">{{payment_status}}</span></td>
+        <td style="width:56%;"><b>Paid On:</b> {{paid_on}}</td></tr>
+    <tr><td colspan="2"><b>Remarks:</b> {{remarks}}</td></tr>
   </table>
 </div>`;
 

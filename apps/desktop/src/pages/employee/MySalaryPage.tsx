@@ -278,10 +278,16 @@ export function MySalaryPage(): JSX.Element {
     if (!sm) return;
 
     const isPaid = record.status === 'PAID' || record.status === 'paid';
+    // Fresh, not the cached `settings` in scope — a race here (building the slip off
+    // whatever `settings` happened to be loaded at click time, rather than what's actually
+    // saved) has already caused a missing logo and a missing company name on the admin
+    // side, so every slip-building spot now re-fetches immediately before use instead of
+    // trusting the query cache's timing.
+    const freshSettings = await settingsApi.get().catch(() => settings);
     const payload = {
-      company_name: settings?.companyName || 'BMAP Pvt Ltd',
-      company_logo: (settings as any)?.companyLogo || '',
-      company_address: (settings as any)?.companyAddress || '',
+      company_name: freshSettings?.companyName || 'BMAP Pvt Ltd',
+      company_logo: (freshSettings as any)?.companyLogo || '',
+      company_address: (freshSettings as any)?.companyAddress || '',
       employee_name: empFullName,
       employee_id: employee?.employeeCode || 'BMA-1',
       employee_email: employee?.email || '',

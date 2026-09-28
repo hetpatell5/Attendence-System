@@ -746,11 +746,13 @@ export function SalaryManagementPage(): JSX.Element {
     const monthLabel = MONTHS.find(m => m.value === selectedMonth)?.label || 'Month';
     const monthName = `${monthLabel} ${selectedYear}`;
     const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
+    // Fresh, not the cached `settings` in scope — see buildSlipVars' comment.
+    const s = await settingsApi.get().catch(() => settings);
 
     const payload = {
-      company_name: settings?.companyName || 'BMAP EDUSERVICES',
-      company_logo: (settings as any)?.companyLogo || '',
-      company_address: (settings as any)?.companyAddress || '',
+      company_name: s?.companyName || 'BMAP EDUSERVICES',
+      company_logo: (s as any)?.companyLogo || '',
+      company_address: (s as any)?.companyAddress || '',
       employee_name: empFullName,
       employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
       employee_email: card.emp.email,
@@ -798,15 +800,24 @@ export function SalaryManagementPage(): JSX.Element {
   // Single source of truth for the slip's data — shared by the PDF download AND the
   // on-screen preview (which fetches the real rendered HTML via this same payload) so the
   // two can never drift apart again the way the old hand-coded JSX preview did.
-  const buildSlipVars = (card: (typeof calculatedCards)[0]) => {
+  //
+  // `settingsOverride` exists because the outer `settings` query (React Query, cached, can
+  // be stale/still-loading depending on timing) was the actual cause of two separate bugs
+  // here already — a missing logo, then a missing company name, both from building the
+  // slip off of whatever `settings` happened to be in scope at that exact render instead
+  // of what's actually in the database right now. Every caller below fetches a fresh copy
+  // via `settingsApi.get()` immediately before building the slip and passes it in here, so
+  // this can't happen a third time regardless of query cache timing.
+  const buildSlipVars = (card: (typeof calculatedCards)[0], settingsOverride?: typeof settings) => {
+    const s = settingsOverride ?? settings;
     const monthLabel = MONTHS.find(m => m.value === selectedMonth)?.label || 'Month';
     const monthName = `${monthLabel} ${selectedYear}`;
     const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
 
     return {
-      company_name: settings?.companyName || 'BMAP Pvt Ltd',
-      company_logo: (settings as any)?.companyLogo || '',
-      company_address: (settings as any)?.companyAddress || '',
+      company_name: s?.companyName || 'BMAP Pvt Ltd',
+      company_logo: (s as any)?.companyLogo || '',
+      company_address: (s as any)?.companyAddress || '',
       employee_name: empFullName,
       employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
       employee_email: card.emp.email || '',
@@ -842,10 +853,12 @@ export function SalaryManagementPage(): JSX.Element {
 
   const handleDownloadPdf = async (card: (typeof calculatedCards)[0]) => {
     const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
-    const payload = buildSlipVars(card);
 
     setDownloadingEmpId(card.emp.id);
     try {
+      // Fresh, not the cached `settings` in scope — see buildSlipVars' comment.
+      const freshSettings = await settingsApi.get().catch(() => settings);
+      const payload = buildSlipVars(card, freshSettings);
       const res = await salaryApi.downloadCustomSlipPdf(payload);
       if (!res?.base64) throw new Error('No PDF data received from server');
 
@@ -874,9 +887,15 @@ export function SalaryManagementPage(): JSX.Element {
   // Live preview HTML for the "Salary Slip Document Preview" modal — the exact same
   // rendered markup the PDF is printed from (see buildSlipVars above), via an isolated
   // iframe so the app's own stylesheet can never bleed into it and cause a mismatch.
+  // Fetches settings fresh inside queryFn (see buildSlipVars' comment) rather than reading
+  // the outer cached `settings`, so it can't render with a missing/stale logo or company
+  // name depending on which query happened to finish loading first.
   const { data: slipPreviewData, isLoading: isSlipPreviewLoading } = useQuery({
     queryKey: ['salary', 'slip-preview', slipModalTarget?.emp?.id, selectedMonth, selectedYear],
-    queryFn: () => salaryApi.previewCustomSlip(buildSlipVars(slipModalTarget)),
+    queryFn: async () => {
+      const freshSettings = await settingsApi.get().catch(() => settings);
+      return salaryApi.previewCustomSlip(buildSlipVars(slipModalTarget, freshSettings));
+    },
     enabled: Boolean(slipModalTarget),
   });
 
@@ -928,15 +947,18 @@ export function SalaryManagementPage(): JSX.Element {
 
     setBulkZipLoading(true);
     try {
+      // Fresh, not the cached `settings` in scope — see buildSlipVars' comment. Fetched
+      // once outside the loop since it won't change mid-batch.
+      const freshSettings = await settingsApi.get().catch(() => settings);
       const zip = new JSZip();
       const errors: string[] = [];
 
       for (const card of paidTargets) {
         const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
         const payload = {
-          company_name: settings?.companyName || 'BMAP Pvt Ltd',
-          company_logo: (settings as any)?.companyLogo || '',
-          company_address: (settings as any)?.companyAddress || '',
+          company_name: freshSettings?.companyName || 'BMAP Pvt Ltd',
+          company_logo: (freshSettings as any)?.companyLogo || '',
+          company_address: (freshSettings as any)?.companyAddress || '',
           employee_name: empFullName,
           employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
           employee_email: card.emp.email || '',

@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import puppeteer, { Browser } from 'puppeteer';
+import puppeteer, { Browser, type LaunchOptions } from 'puppeteer-core';
 
 const logger = new Logger('HtmlToPdf');
 
@@ -14,18 +14,40 @@ const logger = new Logger('HtmlToPdf');
  * A single headless Chromium instance is kept warm and reused across requests — launching
  * one per PDF (roughly 1-2s and a chunk of memory) would make every download noticeably
  * slower under load.
+ *
+ * On Linux (production) this uses @sparticuz/chromium's statically-linked Chromium build
+ * instead of Puppeteer's own bundled one — the bundled one is dynamically linked against
+ * system libraries (libatk-1.0.so.0, libnss3, ...) that most VPS/CloudPanel boxes don't
+ * have installed, and won't unless someone has root/sudo to apt-get them. The static build
+ * needs nothing beyond what's already there. On Windows/macOS (local dev) it falls back to
+ * the full `puppeteer` package's own downloaded Chrome, since @sparticuz/chromium is
+ * Linux-only.
  */
+async function resolveLaunchOptions(): Promise<LaunchOptions> {
+  if (process.platform === 'linux') {
+    const chromium = (await import('@sparticuz/chromium')).default;
+    return {
+      executablePath: await chromium.executablePath(),
+      args: chromium.args,
+      headless: true,
+    };
+  }
+  // Local dev fallback (Windows/macOS): reuse the full `puppeteer` package's own
+  // downloaded Chrome, via its executablePath, launched through puppeteer-core.
+  const fullPuppeteer = (await import('puppeteer')).default;
+  return {
+    executablePath: await fullPuppeteer.executablePath(),
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    headless: true,
+  };
+}
+
 let browserPromise: Promise<Browser> | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = puppeteer
-      .launch({
-        headless: true,
-        // --no-sandbox is required to run Chromium as root, which is how most VPS/pm2
-        // deployments run Node — without it Chromium refuses to start at all there.
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      })
+    browserPromise = resolveLaunchOptions()
+      .then((options) => puppeteer.launch(options))
       .catch((err) => {
         // Don't cache a rejected launch — the next PDF request should retry rather than
         // fail forever until the process restarts.

@@ -255,8 +255,10 @@ model AuditLog {
 model CompanySettings {
   id                   String   @id @default(uuid())
   companyName          String   @default("My Company")
-  companyLogo          String?  @db.Text
-  companyFavicon       String?  @db.Text
+  // LongText, not Text: Text caps at 64KB, and a base64-encoded logo image routinely
+  // exceeds that (a modest ~50KB PNG already inflates past it once base64-encoded).
+  companyLogo          String?  @db.LongText
+  companyFavicon       String?  @db.LongText
   companyAddress       String?  @db.Text
   timezone             String   @default("Asia/Kolkata")
   currencyCode         String   @default("INR")

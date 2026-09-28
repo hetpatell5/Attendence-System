@@ -79,6 +79,29 @@ async function refreshSession(session: StoredSession): Promise<StoredSession> {
   return newSession;
 }
 
+// Refresh tokens rotate on every use — the server returns a new one and revokes the old
+// one, and using an already-revoked token trips TOKEN_REUSE_DETECTED, which revokes the
+// entire token family and force-logs the user out. `getSession`, `apiRequest` and
+// `downloadFile` each independently call `refreshSession` on a 401, and `readSession`
+// re-reads the same on-disk token every time with no in-memory cache — so a burst of
+// requests whose access token has just expired (routine: any screen that fires several
+// queries at once) each read the SAME still-valid-looking refresh token, all hit 401
+// together, and each tries to redeem that one token. Only the first succeeds; every other
+// concurrent attempt redeems an already-rotated token and appears to the server as reuse,
+// tearing down the session the first call just re-established. This dedupes concurrent
+// refreshes into a single in-flight request so every caller shares the same result instead
+// of racing to spend the same token.
+let inFlightRefresh: Promise<StoredSession> | null = null;
+
+async function refreshSessionDeduped(session: StoredSession): Promise<StoredSession> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = refreshSession(session).finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
+}
+
 async function fetchProfile(accessToken: string): Promise<AuthUser> {
   const apiUrl = getApiUrl();
   const response = await fetch(`${apiUrl}/auth/me`, {
@@ -111,7 +134,7 @@ export async function getSession(): Promise<AuthUser | null> {
   const isExpired = session.accessTokenExpiresAt <= Date.now() + 5000;
   if (isExpired) {
     try {
-      session = await refreshSession(session);
+      session = await refreshSessionDeduped(session);
     } catch {
       await clearSession();
       return null;
@@ -123,7 +146,7 @@ export async function getSession(): Promise<AuthUser | null> {
   } catch (error) {
     if (error instanceof AuthApiError && error.status === 401) {
       try {
-        session = await refreshSession(session);
+        session = await refreshSessionDeduped(session);
         return await fetchProfile(session.accessToken);
       } catch {
         await clearSession();
@@ -169,7 +192,7 @@ export async function apiRequest<T>(pathname: string, init: ApiRequestInit = {})
   let response = await doFetch(session.accessToken);
 
   if (response.status === 401) {
-    session = await refreshSession(session);
+    session = await refreshSessionDeduped(session);
     response = await doFetch(session.accessToken);
   }
 
@@ -211,7 +234,7 @@ export async function downloadFile(
 
   let response = await doFetch(session.accessToken);
   if (response.status === 401) {
-    session = await refreshSession(session);
+    session = await refreshSessionDeduped(session);
     response = await doFetch(session.accessToken);
   }
   if (!response.ok) {

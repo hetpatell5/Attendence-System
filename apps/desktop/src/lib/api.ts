@@ -191,6 +191,9 @@ export const salaryApi = {
     request<{ success: boolean; message: string }>('/salary/send-custom-slip', { method: 'POST', body }),
   downloadCustomSlipPdf: (body: unknown) =>
     request<{ success: boolean; base64: string; filename: string }>('/salary/download-custom-slip-pdf', { method: 'POST', body }),
+  /** Renders the exact same HTML the PDF is printed from, for a live on-screen preview. */
+  previewCustomSlip: (body: unknown) =>
+    request<{ html: string }>('/salary/preview-custom-slip', { method: 'POST', body }),
 };
 
 

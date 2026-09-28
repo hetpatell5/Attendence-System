@@ -17,7 +17,6 @@ import {
   Loader2
 } from 'lucide-react';
 import { useRef } from 'react';
-import defaultCompanyLogo from '@/assets/logo.jpeg';
 import { compareEmployeesByName } from '@/lib/utils';
 
 // Custom Searchable Select
@@ -796,12 +795,15 @@ export function SalaryManagementPage(): JSX.Element {
   };
 
   // Handle PDF Download (Exact 1:1 Legacy Slip)
-  const handleDownloadPdf = async (card: (typeof calculatedCards)[0]) => {
+  // Single source of truth for the slip's data — shared by the PDF download AND the
+  // on-screen preview (which fetches the real rendered HTML via this same payload) so the
+  // two can never drift apart again the way the old hand-coded JSX preview did.
+  const buildSlipVars = (card: (typeof calculatedCards)[0]) => {
     const monthLabel = MONTHS.find(m => m.value === selectedMonth)?.label || 'Month';
     const monthName = `${monthLabel} ${selectedYear}`;
     const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
 
-    const payload = {
+    return {
       company_name: settings?.companyName || 'BMAP Pvt Ltd',
       company_logo: (settings as any)?.companyLogo || '',
       company_address: (settings as any)?.companyAddress || '',
@@ -836,6 +838,11 @@ export function SalaryManagementPage(): JSX.Element {
         : 'Pending',
       remarks: card.remarks || '',
     };
+  };
+
+  const handleDownloadPdf = async (card: (typeof calculatedCards)[0]) => {
+    const empFullName = [card.emp.firstName, card.emp.lastName].filter(Boolean).join(' ');
+    const payload = buildSlipVars(card);
 
     setDownloadingEmpId(card.emp.id);
     try {
@@ -863,6 +870,15 @@ export function SalaryManagementPage(): JSX.Element {
       setDownloadingEmpId(null);
     }
   };
+
+  // Live preview HTML for the "Salary Slip Document Preview" modal — the exact same
+  // rendered markup the PDF is printed from (see buildSlipVars above), via an isolated
+  // iframe so the app's own stylesheet can never bleed into it and cause a mismatch.
+  const { data: slipPreviewData, isLoading: isSlipPreviewLoading } = useQuery({
+    queryKey: ['salary', 'slip-preview', slipModalTarget?.emp?.id, selectedMonth, selectedYear],
+    queryFn: () => salaryApi.previewCustomSlip(buildSlipVars(slipModalTarget)),
+    enabled: Boolean(slipModalTarget),
+  });
 
   // Handle Bulk Actions
   const handleBulkSave = () => {
@@ -1398,161 +1414,23 @@ export function SalaryManagementPage(): JSX.Element {
               </div>
             </div>
 
-          {/* ── Salary Slip Preview – exact OLD SYSTEM format ── */}
+          {/* ── Salary Slip Preview — the exact HTML the PDF is printed from (see
+              buildSlipVars / previewCustomSlip), rendered in an isolated iframe so the
+              app's own stylesheet can't bleed in and cause a mismatch. ── */}
           <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-gradient-to-b from-slate-50 to-slate-100 flex justify-center items-start">
-            <div
-              style={{
-                maxWidth: 650, margin: '16px auto', background: '#fff',
-                borderRadius: 15, boxShadow: '0 4px 24px #b8d4ef23',
-                border: '1.5px solid #e6eaf4',
-                fontFamily: 'Segoe UI, Arial, sans-serif', padding: 0,
-              }}
-            >
-              {/* Centered logo */}
-              <div style={{ textAlign: 'center', paddingTop: 16, paddingBottom: 4 }}>
-                <img
-                  src={(settings as any)?.companyLogo || defaultCompanyLogo}
-                  alt="Logo"
-                  style={{ height: 72, width: 'auto', maxWidth: 280, borderRadius: 6, border: '1.5px solid #dbe7f6', background: '#f7fafc', boxShadow: '0 1px 6px #bfdcff33', display: 'inline-block' }}
-                />
+            {isSlipPreviewLoading || !slipPreviewData ? (
+              <div className="w-full max-w-[650px] h-[500px] flex items-center justify-center text-sm text-slate-400">
+                Loading preview…
               </div>
-
-              {/* Company name */}
-              <div style={{ fontSize: 21, fontWeight: 700, color: '#1968a7', letterSpacing: 1, marginTop: 6, textAlign: 'center' }}>
-                {settings?.companyName || 'BMAP Pvt Ltd'}
-              </div>
-
-              {/* Address */}
-              <div style={{ fontSize: 12, color: '#757a8a', marginTop: 1, textAlign: 'center', padding: '0 16px 8px' }}>
-                {(settings as any)?.companyAddress || ''}
-              </div>
-
-              {/* "Salary Slip" heading */}
-              <div style={{ marginTop: 18, textAlign: 'center', fontSize: 19, color: '#2e415a', fontWeight: 700 }}>
-                Salary Slip
-              </div>
-
-              {/* 4-column info table */}
-              <table style={{ width: '82%', margin: '18px auto 6px auto', fontSize: 13.5 }}>
-                <tbody>
-                  <tr>
-                    <td style={{ padding: '1px 6px' }}><b>Pay Period:</b></td>
-                    <td style={{ padding: '1px 6px' }}>{MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}</td>
-                    <td style={{ padding: '1px 6px' }}><b>Pay Date:</b></td>
-                    <td style={{ padding: '1px 6px' }}>
-                      {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
-                        ? new Date(slipModalTarget.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                        : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear}`}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '1px 6px' }}><b>Employee Name:</b></td>
-                    <td style={{ padding: '1px 6px' }}>{slipModalTarget.emp.firstName} {slipModalTarget.emp.lastName}</td>
-                    <td style={{ padding: '1px 6px' }}><b>Employee ID:</b></td>
-                    <td style={{ padding: '1px 6px' }}>{displayIdMap[slipModalTarget.emp.id] || slipModalTarget.emp.employeeCode || slipModalTarget.emp.id.slice(0, 8)}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '1px 6px' }}><b>Shift:</b></td>
-                    <td style={{ padding: '1px 6px' }}>{slipModalTarget.shiftName} ({fmt12h(slipModalTarget.shiftStartTime)} - {fmt12h(slipModalTarget.shiftEndTime)})</td>
-                    <td style={{ padding: '1px 6px' }}><b>Status:</b></td>
-                    <td style={{ padding: '1px 6px' }}>
-                      <span style={{ color: 'green', fontWeight: 700 }}>
-                        {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Earnings + Attendance table */}
-              <table style={{ width: '88%', margin: '12px auto 0', borderCollapse: 'collapse', fontSize: 13.2 }}>
-                <tbody>
-                  {/* Header row */}
-                  <tr style={{ background: '#e9f4fb' }}>
-                    <th colSpan={2} style={{ padding: '7px 6px', color: '#1563ac', fontWeight: 600 }}>Earnings</th>
-                    <th colSpan={2} style={{ padding: '7px 6px', color: '#d67412', fontWeight: 600 }}>Attendance &amp; Hours</th>
-                  </tr>
-                  {/* Row 1 */}
-                  <tr style={{ background: '#f7fafc' }}>
-                    <td style={{ padding: '6px 4px' }}>Monthly Salary</td>
-                    <td style={{ padding: '6px 4px', fontWeight: 700 }}>₹ {slipModalTarget.monthlySalary.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Total Days in Month</td>
-                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.totalDaysInMonth}</td>
-                  </tr>
-                  {/* Row 2 */}
-                  <tr>
-                    <td style={{ padding: '6px 4px' }}>Salary Per Day</td>
-                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.perDaySalary.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Salary Per Hour</td>
-                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.hourRate.toFixed(2)}</td>
-                  </tr>
-                  {/* Row 3 */}
-                  <tr style={{ background: '#f7fafc' }}>
-                    <td style={{ padding: '6px 4px' }}>Basic Salary</td>
-                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.basicSalary.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Total Working Days</td>
-                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.totalWorkingDays}</td>
-                  </tr>
-                  {/* Row 4 */}
-                  <tr>
-                    <td style={{ padding: '6px 4px' }}>Sunday &amp; Holiday Pay</td>
-                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.sundayHolidayPay.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Mon-Sat Present Days</td>
-                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.presentRegularDays}</td>
-                  </tr>
-                  {/* Row 5 */}
-                  <tr style={{ background: '#f7fafc' }}>
-                    <td style={{ padding: '6px 4px' }}>Overtime Payout</td>
-                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.overtimePayout.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Overtime Hours</td>
-                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.overtimeHours}</td>
-                  </tr>
-                  {/* Row 6 */}
-                  <tr>
-                    <td style={{ padding: '6px 4px' }}>Commission/Pending</td>
-                    <td style={{ padding: '6px 4px' }}>₹ {slipModalTarget.commission.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Total Hours Worked</td>
-                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.totalHours}</td>
-                  </tr>
-                  {/* Row 7 – Advance Deducted (red) */}
-                  <tr style={{ background: '#f7fafc' }}>
-                    <td style={{ padding: '6px 4px' }}>Advance Deducted</td>
-                    <td style={{ padding: '6px 4px', color: '#c93030' }}>- ₹ {slipModalTarget.advance.toFixed(2)}</td>
-                    <td style={{ padding: '6px 4px' }}>Expected Hours</td>
-                    <td style={{ padding: '6px 4px' }}>{slipModalTarget.expectedHours}</td>
-                  </tr>
-                  {/* Net Salary row – green, spans left 2 cols */}
-                  <tr style={{ background: '#d8f0e8' }}>
-                    <td style={{ padding: '7px 4px', fontWeight: 700, color: '#217f44' }}>Net Salary</td>
-                    <td style={{ padding: '7px 4px', fontWeight: 700, color: '#217f44' }}>₹ {slipModalTarget.thisMonthNet.toLocaleString('en-IN')} /-</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Footer – Payment Status / Paid On / Remarks */}
-              <table style={{ width: '88%', margin: '10px auto 0', fontSize: 13 }}>
-                <tbody>
-                  <tr>
-                    <td style={{ width: '44%' }}>
-                      <b>Payment Status:</b>{' '}
-                      <span style={{ color: 'green' }}>
-                        {slipModalTarget.status === 'PAID' ? 'Paid' : 'Pending'}
-                      </span>
-                    </td>
-                    <td style={{ width: '56%' }}>
-                      <b>Paid On:</b>{' '}
-                      {slipModalTarget.status === 'PAID' && slipModalTarget.paymentDate
-                        ? new Date(slipModalTarget.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : 'Pending'}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan={2}><b>Remarks:</b> {slipModalTarget.remarks || ''}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            ) : (
+              <iframe
+                title="Salary Slip Preview"
+                srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:24px 0;background:transparent;}</style></head><body>${slipPreviewData.html}</body></html>`}
+                className="w-full max-w-[650px] border-0"
+                style={{ height: '90vh' }}
+                sandbox=""
+              />
+            )}
           </div>
         </div>
       </div>,

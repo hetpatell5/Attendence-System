@@ -203,6 +203,19 @@ export class SalaryController {
     return this.emailService.sendSalarySlipEmail(vars, vars.employee_email);
   }
 
+  /**
+   * Renders the same HTML the PDF is printed from (renderSalarySlipHtml) for the given
+   * employee's real numbers, so an on-screen preview can never drift from the actual PDF —
+   * a hand-coded JSX re-implementation of the slip is exactly what caused the preview and
+   * the download to repeatedly go out of sync.
+   */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR', 'EMPLOYEE')
+  @Post('preview-custom-slip')
+  async previewCustomSlip(@Body() vars: SalaryTemplateVariables): Promise<{ html: string }> {
+    const html = await this.emailService.renderSalarySlipHtml(vars);
+    return { html };
+  }
+
   @Roles('SUPER_ADMIN', 'ADMIN', 'HR', 'EMPLOYEE')
   @Post('download-custom-slip-pdf')
   async downloadCustomSlipPdf(

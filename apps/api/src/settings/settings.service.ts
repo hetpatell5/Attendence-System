@@ -294,6 +294,16 @@ export class SettingsService {
       this.logger.warn(`salary record sync failed (import itself still succeeded): ${err?.message ?? err}`);
     }
 
+    // Same reasoning again for holidays: they live in the legacy `holidays` table, but
+    // nothing ever copied them into `app_holidays`, which is what the Holidays page, the
+    // salary calculations, and attendance status all actually read from.
+    try {
+      const synced = await this.syncHolidaysFromLegacy();
+      this.logger.log(`Holiday sync: ${synced.upserted} holiday(s) upserted`);
+    } catch (err: any) {
+      this.logger.warn(`holiday sync failed (import itself still succeeded): ${err?.message ?? err}`);
+    }
+
     return result;
   }
 
@@ -521,6 +531,54 @@ export class SettingsService {
     }
 
     return { upserted: changes.length, baseSalaryUpdated };
+  }
+
+  /**
+   * Mirrors the legacy `holidays` table (id, date, reason) into `app_holidays`. Nothing
+   * else in the import/migration pipeline ever populates this table — the SQL import only
+   * copies rows into the legacy mirror tables, and Step 2c's holiday backfill reads
+   * `app_holidays` assuming it's already populated. Without this, every holiday the old
+   * system had is invisible to the new one (still shows ABSENT for everyone on that date)
+   * until an admin re-enters it by hand via the Holidays page.
+   *
+   * Matches on `date` (company-wide legacy holidays have no department) via an explicit
+   * lookup rather than Prisma's upsert-by-compound-unique-key, because MySQL treats NULL
+   * as distinct from itself in a unique index — an upsert keyed on (date, departmentId:
+   * null) would not reliably find an existing NULL-department row and could insert a
+   * duplicate on every re-import instead of updating it.
+   */
+  private async syncHolidaysFromLegacy(): Promise<{ upserted: number }> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ date: string; reason: string | null }>>(
+      `SELECT CAST(date AS CHAR) AS date, reason FROM holidays`,
+    ).catch(() => []);
+    if (rows.length === 0) return { upserted: 0 };
+
+    const existing = await this.prisma.holiday.findMany({
+      where: { departmentId: null },
+      select: { id: true, date: true, name: true },
+    });
+    const existingByDate = new Map(existing.map((h) => [h.date.toISOString().slice(0, 10), h]));
+
+    let upserted = 0;
+    for (const row of rows) {
+      const dateKey = String(row.date).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      const name = (row.reason || '').trim() || 'Holiday';
+      const found = existingByDate.get(dateKey);
+      if (found) {
+        if (found.name !== name) {
+          await this.prisma.holiday.update({ where: { id: found.id }, data: { name } });
+          upserted++;
+        }
+        continue;
+      }
+      const [y, m, d] = dateKey.split('-').map(Number);
+      await this.prisma.holiday.create({
+        data: { name, date: new Date(Date.UTC(y!, m! - 1, d!)) },
+      });
+      upserted++;
+    }
+    return { upserted };
   }
 
   /**
@@ -826,9 +884,25 @@ export class SettingsService {
     const res2b = await this.prisma.$executeRawUnsafe(sqlAttendanceSummary);
     this.logger.log(`Step 2b (attendance summary, log-less days only): ${res2b} rows inserted`);
 
-    // 2c: Holiday backfill — mark HOLIDAY status for all employees on holiday dates
-    // Only inserts where no attendance record exists yet (INSERT IGNORE),
-    // and never overwrites a day where the employee actually punched in.
+    // 2c-pre: bring `app_holidays` up to date with the legacy `holidays` table first —
+    // nothing else in this pipeline does, and the backfill right below is a no-op for any
+    // holiday it doesn't already know about.
+    try {
+      const holidaySync = await this.syncHolidaysFromLegacy();
+      this.logger.log(`Step 2c-pre (holiday sync): ${holidaySync.upserted} holiday(s) upserted`);
+    } catch (err: any) {
+      result.errors.push(`Holiday sync: ${err?.message ?? err}`);
+    }
+
+    // 2c: Holiday backfill — mark HOLIDAY status for all employees on holiday dates.
+    // Two passes: INSERT IGNORE fills in a day with no attendance record at all (never
+    // overwrites a day the employee actually punched), then the UPDATE below corrects a day
+    // that was already imported as ABSENT before the holiday sync above ran — e.g. 2a/2b
+    // import ran first and created ABSENT rows for a holiday date, and without this the
+    // insert-only backfill would see a row already exists and silently skip it forever,
+    // leaving the day stuck as ABSENT. Only flips genuine no-punch ABSENT rows — never a
+    // day with a punchInAt, and never anything other than ABSENT (a manual LEAVE/HALF_DAY
+    // adjustment is left alone).
     const sqlHolidayBackfill = `
       INSERT IGNORE INTO app_attendance
         (id, employeeId, attendanceDate, status, workedMinutes, lateMinutes,
@@ -849,6 +923,17 @@ export class SettingsService {
       )
     `;
     const res2c = await this.prisma.$executeRawUnsafe(sqlHolidayBackfill);
+
+    const sqlHolidayCorrection = `
+      UPDATE app_attendance a
+      JOIN app_holidays h ON h.date = a.attendanceDate
+      SET a.status = 'HOLIDAY', a.holidayId = h.id, a.updatedAt = NOW()
+      WHERE a.status = 'ABSENT'
+        AND a.punchInAt IS NULL
+        AND (a.punchPairs IS NULL OR JSON_LENGTH(a.punchPairs) = 0)
+    `;
+    const res2cFix = await this.prisma.$executeRawUnsafe(sqlHolidayCorrection);
+    this.logger.log(`Step 2c-fix (holiday correction): ${res2cFix} already-imported ABSENT day(s) corrected to HOLIDAY`);
     this.logger.log(`Step 2c (holiday backfill): ${res2c} attendance rows marked as HOLIDAY`);
 
     // Step 3: salary history — runs after the employee import above so brand-new

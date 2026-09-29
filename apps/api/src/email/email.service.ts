@@ -1,9 +1,51 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_EMAIL_TEMPLATE, DEFAULT_SALARY_SLIP_TEMPLATE } from './salary-template.defaults';
 import { renderHtmlToPdf } from '../common/html-to-pdf.util';
+
+/**
+ * Resolves a bundled asset path across both `nest build`'s dist layout (dist/src/email/...,
+ * with assets copied to dist/assets/) and dev/ts-node (src/email/...).
+ */
+function resolveAssetPath(...segments: string[]): string {
+  const candidates = [
+    path.join(__dirname, '..', 'assets', ...segments),
+    path.join(__dirname, '..', '..', 'assets', ...segments),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]!;
+}
+
+/**
+ * The slip template's CSS says `font-family: Segoe UI, Arial, sans-serif` — an exact
+ * transcription of the old system's own template. That's fine wherever "Segoe UI"
+ * actually exists (Windows, where the desktop app's on-screen preview runs — it looks
+ * correct there), but this PDF is rendered server-side by headless Chromium on Linux,
+ * which has neither "Segoe UI" (Windows-only) nor necessarily "Arial", so it silently
+ * substitutes a different, visually heavier font. Embedding an actual font file and
+ * forcing it with `!important` (inline styles otherwise win over an external rule) makes
+ * the PDF render identically regardless of what's installed on whatever machine builds
+ * it — the same fix already applied once before for the now-deleted PDFKit generator.
+ */
+let cachedFontFaceCss: string | null = null;
+function getEmbeddedFontFaceCss(): string {
+  if (cachedFontFaceCss !== null) return cachedFontFaceCss;
+  try {
+    const regular = fs.readFileSync(resolveAssetPath('fonts', 'NotoSans-Regular.ttf')).toString('base64');
+    const bold = fs.readFileSync(resolveAssetPath('fonts', 'NotoSans-Bold.ttf')).toString('base64');
+    cachedFontFaceCss = `
+      @font-face { font-family: 'SlipSans'; src: url(data:font/ttf;base64,${regular}) format('truetype'); font-weight: 400; }
+      @font-face { font-family: 'SlipSans'; src: url(data:font/ttf;base64,${bold}) format('truetype'); font-weight: 700; }
+      * { font-family: 'SlipSans', Segoe UI, Arial, sans-serif !important; }
+    `;
+  } catch {
+    cachedFontFaceCss = ''; // Missing font files shouldn't break PDF generation — falls back to system fonts.
+  }
+  return cachedFontFaceCss;
+}
 
 export interface SmtpConfigInput {
   smtpHost: string;
@@ -175,12 +217,18 @@ export class EmailService {
   }
 
   /**
-   * Renders the complete Salary Slip HTML using either the custom template from settings or the default legacy format.
+   * Renders the complete Salary Slip HTML using either the custom template from settings or
+   * the default legacy format. The embedded-font <style> tag is baked in here — not just in
+   * the PDF wrapper — so every consumer of this HTML (the PDF, the admin's live preview
+   * iframe, the template editor's own preview) renders with the identical font regardless
+   * of what's installed on whatever machine displays it. See getEmbeddedFontFaceCss's
+   * comment for why that matters.
    */
   async renderSalarySlipHtml(vars: SalaryTemplateVariables): Promise<string> {
     const settings = await this.prisma.companySettings.findFirst();
     const template = settings?.salarySlipFormat?.trim() || DEFAULT_SALARY_SLIP_TEMPLATE;
-    return this.substituteTemplate(template, vars);
+    const body = this.substituteTemplate(template, vars);
+    return `<style>${getEmbeddedFontFaceCss()}</style>${body}`;
   }
 
   /**

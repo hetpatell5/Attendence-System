@@ -779,7 +779,7 @@ export function ReportsPage(): JSX.Element {
       {tab === 'attendance' && (
         <div className="space-y-4">
           {/* ── 6 Clickable Filter Stat Cards ─────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
             {/* TOTAL STAFF */}
             <button
               type="button"
@@ -1330,7 +1330,7 @@ export function ReportsPage(): JSX.Element {
               </div>
 
               {/* ── 2x2 Performance Charts Suite ─────────────────────── */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {/* ── Chart 1: Monthly Attendance (Presents) ─────────────── */}
                 <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-visible">
                   <CardHeader className="p-4 border-b border-border/40 pb-3">
@@ -1545,7 +1545,7 @@ export function ReportsPage(): JSX.Element {
               </div>
 
               {/* ── 2-Column Secondary Charts Suite ─────────────────────── */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
                 {/* ── Chart 3: Salary Increment & Base Pay Progression Graph ── */}
                 <Card className="border border-border/60 shadow-xs rounded-2xl bg-card overflow-visible flex flex-col">
                   <CardHeader className="p-4 border-b border-border/40 pb-3">

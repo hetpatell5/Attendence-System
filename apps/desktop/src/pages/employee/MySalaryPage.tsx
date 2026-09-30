@@ -289,7 +289,7 @@ export function MySalaryPage(): JSX.Element {
       company_logo: (freshSettings as any)?.companyLogo || '',
       company_address: (freshSettings as any)?.companyAddress || '',
       employee_name: empFullName,
-      employee_id: employee?.employeeCode || 'BMA-1',
+      employee_id: (employee?.employeeCode || '').replace(/[^0-9]/g, '') || '1',
       employee_email: employee?.email || '',
       month_name: monthName,
       pay_period: monthName,
@@ -525,7 +525,7 @@ export function MySalaryPage(): JSX.Element {
                   : '9:00 AM – 7:30 PM';
                 const shiftName = latestShift?.name || 'Full Day';
                 const empFullName = employee ? [employee.firstName, employee.lastName].filter(Boolean).join(' ') : (user?.name || 'Employee');
-                const empCode = employee?.employeeCode || 'BMA-1';
+                const empCode = (employee?.employeeCode || '').replace(/[^0-9]/g, '') || '1';
                 const payDate = isPaid && selected.paymentDate
                   ? new Date(selected.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                   : monthLabel;

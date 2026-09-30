@@ -194,6 +194,10 @@ export const salaryApi = {
   /** Renders the exact same HTML the PDF is printed from, for a live on-screen preview. */
   previewCustomSlip: (body: unknown) =>
     request<{ html: string }>('/salary/preview-custom-slip', { method: 'POST', body }),
+  /** Preview/download for an already-saved SalaryRecord by id — built server-side, no attendance recompute needed. */
+  previewSlipById: (id: string) => request<{ html: string }>(`/salary/${id}/slip-preview`),
+  downloadSlipPdfById: (id: string) =>
+    request<{ success: boolean; base64: string; filename: string }>(`/salary/${id}/slip-pdf-base64`),
 };
 
 

@@ -136,6 +136,49 @@ export class SalaryController {
     return this.salaryService.findByIdOrThrow(id);
   }
 
+  /**
+   * Same rendered HTML the PDF is printed from, built purely from the persisted SalaryRecord
+   * (via buildSlipVariables) — used by the Employee Detail page's Salary tab so it doesn't
+   * need to replicate SalaryManagementPage's month-by-month attendance recomputation just to
+   * preview an already-saved record.
+   */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Get(':id/slip-preview')
+  async previewSlipById(@Param('id') id: string): Promise<{ html: string }> {
+    const record = await this.salaryService.findByIdOrThrow(id);
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: record.employeeId },
+      include: { employeeShifts: { include: { shift: true } }, department: true },
+    });
+    const settings = await this.settingsService.getSettings();
+    const vars = this.buildSlipVariables(record, employee, settings);
+    const html = await this.emailService.renderSalarySlipHtml(vars);
+    return { html };
+  }
+
+  /**
+   * Base64 PDF (matches the download-custom-slip-pdf convention) for a saved record — used
+   * where GET can't be routed through the authenticated JSON request helper for a raw PDF
+   * stream (the old `:id/slip` route sent bytes directly and had no way to attach the
+   * Authorization header when opened via window.open, which is why that download silently
+   * hung on a blank popup).
+   */
+  @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
+  @Get(':id/slip-pdf-base64')
+  async slipPdfBase64ById(@Param('id') id: string): Promise<{ success: boolean; base64: string; filename: string }> {
+    const record = await this.salaryService.findByIdOrThrow(id);
+    const buffer = await this.buildSlip(record);
+    const employee = await this.prisma.employee.findUnique({ where: { id: record.employeeId } });
+    const safeEmp = ([employee?.firstName, employee?.lastName].filter(Boolean).join('_') || 'employee').replace(/[^A-Za-z0-9_-]/g, '_');
+    const monthDate = new Date(record.month);
+    const safeMonth = monthDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).replace(/[^A-Za-z0-9_-]/g, '_');
+    return {
+      success: true,
+      base64: buffer.toString('base64'),
+      filename: `Salary_Slip_${safeEmp}_${safeMonth}.pdf`,
+    };
+  }
+
   @Roles('SUPER_ADMIN', 'ADMIN')
   @Post()
   create(
@@ -343,7 +386,9 @@ export class SalaryController {
       company_logo: settings?.companyLogo || '',
       company_address: (settingsObj.companyAddress as string) || '',
       employee_name: empFullName,
-      employee_id: employee?.employeeCode || `EMP-${(empObj?.legacySourceId as number | undefined) ?? employee?.id.slice(0, 5) ?? '001'}`,
+      // GST-portal submissions flagged the letter-prefixed employee codes (e.g. "BMA-23") as a
+      // concern, so the slip shows the numeric portion only, never the "BMA"/"EMP" prefix.
+      employee_id: (employee?.employeeCode || `${(empObj?.legacySourceId as number | undefined) ?? '001'}`).replace(/[^0-9]/g, '') || '1',
       employee_email: recipientEmail || employee?.email || '',
       month_name: monthName,
       pay_period: `01 ${monthName} - ${monthDate.getDate()} ${monthName}`,

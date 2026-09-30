@@ -124,11 +124,6 @@ export function MyLeavesPage(): JSX.Element {
 
   const columns: DataTableColumn<LeaveRequest>[] = [
     {
-      key: 'leaveType',
-      header: 'Type',
-      render: (r) => <span className="font-medium">{r.leaveType?.name ?? 'Leave'}</span>,
-    },
-    {
       key: 'startDate',
       header: 'Duration',
       render: (r) => (

@@ -530,7 +530,8 @@ export function SalaryManagementPage(): JSX.Element {
     lastPendingMap,
   ]);
 
-  // Alphabetical sequential IDs (BMA-1, BMA-2…) — same logic as EmployeesPage
+  // Alphabetical sequential numeric IDs for the slip only — GST-portal submissions flagged the
+  // letter-prefixed employee codes (e.g. "BMA-23") as a concern, so the slip shows a plain number.
   const displayIdMap = useMemo<Record<string, string>>(() => {
     if (!employeesData?.items) return {};
     const sorted = [...employeesData.items].sort((a, b) => {
@@ -539,7 +540,7 @@ export function SalaryManagementPage(): JSX.Element {
       return na.localeCompare(nb);
     });
     const map: Record<string, string> = {};
-    sorted.forEach((emp, idx) => { map[emp.id] = `BMA-${idx + 1}`; });
+    sorted.forEach((emp, idx) => { map[emp.id] = String(idx + 1); });
     return map;
   }, [employeesData?.items]);
 
@@ -754,7 +755,7 @@ export function SalaryManagementPage(): JSX.Element {
       company_logo: (s as any)?.companyLogo || '',
       company_address: (s as any)?.companyAddress || '',
       employee_name: empFullName,
-      employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
+      employee_id: displayIdMap[card.emp.id] || (card.emp.employeeCode || '').replace(/[^0-9]/g, '') || card.emp.id.slice(0, 5),
       employee_email: card.emp.email,
       month_name: monthName,
       pay_period: `01 ${monthLabel} ${selectedYear} - ${card.totalDaysInMonth} ${monthLabel} ${selectedYear}`,
@@ -819,7 +820,7 @@ export function SalaryManagementPage(): JSX.Element {
       company_logo: (s as any)?.companyLogo || '',
       company_address: (s as any)?.companyAddress || '',
       employee_name: empFullName,
-      employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
+      employee_id: displayIdMap[card.emp.id] || (card.emp.employeeCode || '').replace(/[^0-9]/g, '') || card.emp.id.slice(0, 5),
       employee_email: card.emp.email || '',
       month_name: monthName,
       pay_period: `${monthLabel} ${selectedYear}`,
@@ -960,7 +961,7 @@ export function SalaryManagementPage(): JSX.Element {
           company_logo: (freshSettings as any)?.companyLogo || '',
           company_address: (freshSettings as any)?.companyAddress || '',
           employee_name: empFullName,
-          employee_id: displayIdMap[card.emp.id] || card.emp.employeeCode || `EMP-${card.emp.id.slice(0, 5)}`,
+          employee_id: displayIdMap[card.emp.id] || (card.emp.employeeCode || '').replace(/[^0-9]/g, '') || card.emp.id.slice(0, 5),
           employee_email: card.emp.email || '',
           month_name: `${monthLabel} ${selectedYear}`,
           pay_period: `${monthLabel} ${selectedYear}`,
@@ -1026,8 +1027,8 @@ export function SalaryManagementPage(): JSX.Element {
 
   return (
     <div className="space-y-6 pb-16">
-      {/* 1. Top Summary Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 1. Top Summary Stat Cards — scrolls away normally, not sticky */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Card className="bg-white border-slate-200 shadow-sm">
           <CardContent className="p-4">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Due (All)</div>
@@ -1057,6 +1058,11 @@ export function SalaryManagementPage(): JSX.Element {
         </Card>
       </div>
 
+      {/* Sticky header block: Filters + Bulk Toolbar stay pinned while the employee cards
+          list below scrolls, so month/status filters and bulk actions never scroll out of
+          reach on long employee lists. Stat cards above are intentionally excluded so they
+          scroll away normally instead of taking up permanent header space. */}
+      <div className="sticky -top-6 z-30 -mx-6 bg-white px-6 pt-4 pb-4 space-y-6 border-b border-slate-200 shadow-[0_8px_12px_-8px_rgba(0,0,0,0.08)]">
       {/* 2. Filters Bar */}
       <Card className="bg-white border-slate-200 shadow-sm">
         <CardContent className="p-4 flex flex-wrap items-center gap-3">
@@ -1096,28 +1102,30 @@ export function SalaryManagementPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      {/* 3. Bulk Buttons & Toolbar */}
+      {/* 3. Bulk Buttons & Toolbar — unified dark chrome so this strip reads as one distinct
+          toolbar instead of blending into the individual salary cards' own colorful action
+          buttons (sky/emerald/amber/indigo/fuchsia) once both are visible in the same frame. */}
       <div className="flex flex-wrap items-center gap-3">
-        <Button 
+        <Button
           onClick={handleBulkSave}
           disabled={saveMutation.isPending}
-          className="bg-sky-500 hover:bg-sky-600 text-white font-bold px-6 shadow-sm"
+          className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-6 shadow-sm"
         >
           Bulk Save
         </Button>
 
-        <Button 
+        <Button
           onClick={handleBulkPaid}
           disabled={statusMutation.isPending}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 shadow-sm"
+          className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-6 shadow-sm"
         >
           Bulk Paid
         </Button>
 
-        <Button 
+        <Button
           onClick={handleBulkPending}
           disabled={statusMutation.isPending}
-          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-6 shadow-sm"
+          className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-6 shadow-sm"
         >
           Bulk Pending
         </Button>
@@ -1125,7 +1133,7 @@ export function SalaryManagementPage(): JSX.Element {
         <Button
           onClick={handleBulkDownloadZip}
           disabled={bulkZipLoading}
-          className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-6 shadow-sm gap-2"
+          className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-6 shadow-sm gap-2"
         >
           {bulkZipLoading ? (
             <><Loader2 size={15} className="animate-spin" /> Generating Zip...</>
@@ -1134,7 +1142,7 @@ export function SalaryManagementPage(): JSX.Element {
           )}
         </Button>
 
-        <Button 
+        <Button
           variant="outline"
           onClick={handleSelectAll}
           className="font-bold border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -1142,7 +1150,7 @@ export function SalaryManagementPage(): JSX.Element {
           Select All
         </Button>
 
-        <Button 
+        <Button
           variant="outline"
           onClick={handleClearSelection}
           className="font-bold border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -1150,16 +1158,17 @@ export function SalaryManagementPage(): JSX.Element {
           Clear
         </Button>
 
-        <Button 
+        <Button
           onClick={() => setIsReportModalOpen(true)}
-          className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold px-5 shadow-sm ml-auto gap-2"
+          className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-5 shadow-sm ml-auto gap-2"
         >
           <FileText size={16} /> Download Report
         </Button>
       </div>
+      </div>
 
       {/* 4. Employee Cards 2-Column Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {filteredCards.map(card => (
           <Card key={card.emp.id} className="bg-white border-slate-200 shadow-md hover:shadow-lg transition-shadow flex flex-col overflow-hidden">
             <CardContent className="p-5 flex flex-col flex-1 space-y-4">

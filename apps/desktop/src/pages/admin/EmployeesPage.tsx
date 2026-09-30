@@ -221,7 +221,7 @@ export function EmployeesPage(): JSX.Element {
 
       {/* Filters Bar */}
       <div className="p-4 bg-card border rounded-xl shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-center">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-center">
           {/* Search Input */}
           <div className="flex items-center space-x-2 bg-background border rounded-lg px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-primary/20 transition-all">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />

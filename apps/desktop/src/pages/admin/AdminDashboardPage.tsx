@@ -484,7 +484,7 @@ export function AdminDashboardPage(): JSX.Element {
       </Dialog>
 
       {/* 7 Key Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-3.5">
         <StatTile
           label="Total Staff"
           value={data.totalEmployees}
@@ -502,10 +502,6 @@ export function AdminDashboardPage(): JSX.Element {
           colorClass="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400"
           indicatorColor="bg-emerald-500"
           onClick={() => setActiveModal('present')}
-          topAction={{
-            label: 'View Report',
-            to: '/admin/reports',
-          }}
         />
         <StatTile
           label="Absent"
@@ -789,9 +785,9 @@ export function AdminDashboardPage(): JSX.Element {
       </div>
 
       {/* Row 3: Attendance Punch Requests (7 cols) + Recent Leaves (5 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
         {/* Attendance Punch Requests Widget */}
-        <Card className="lg:col-span-7 rounded-2xl border border-border/70 shadow-sm overflow-hidden bg-card flex flex-col justify-between">
+        <Card className="xl:col-span-7 rounded-2xl border border-border/70 shadow-sm overflow-hidden bg-card flex flex-col justify-between">
           <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-border/40 gap-3">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
@@ -1019,7 +1015,7 @@ export function AdminDashboardPage(): JSX.Element {
         </Card>
 
         {/* Recent Leave Requests */}
-        <Card className="lg:col-span-5 rounded-2xl border border-border/70 shadow-sm flex flex-col justify-between">
+        <Card className="xl:col-span-5 rounded-2xl border border-border/70 shadow-sm flex flex-col justify-between">
           <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border/40">
             <div>
               <CardTitle className="text-base font-semibold tracking-tight flex items-center gap-2">

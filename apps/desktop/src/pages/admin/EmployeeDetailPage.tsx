@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import JSZip from 'jszip';
 import { employeesApi, attendanceApi, leaveApi, salaryApi, departmentsApi, designationsApi, shiftsApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,9 +11,16 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { StatusBadge } from '@/components/StatusBadge';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
-import { User, Calendar, Clock, Banknote, Edit, Save, X, Key } from 'lucide-react';
+import { User, Calendar, Clock, Banknote, Edit, Save, X, Key, Eye, Download, Loader2, FileArchive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Attendance, LeaveRequest, SalaryRecord } from '@attendance/shared';
+
+function base64ToBlob(base64: string, contentType = 'application/pdf'): Blob {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  return new Blob([new Uint8Array(byteNumbers)], { type: contentType });
+}
 
 type Tab = 'profile' | 'attendance' | 'leaves' | 'salary';
 
@@ -83,6 +92,73 @@ export function EmployeeDetailPage(): JSX.Element {
     enabled: !!id && tab === 'salary',
   });
 
+  const [slipPreviewTarget, setSlipPreviewTarget] = useState<SalaryRecord | null>(null);
+  const [downloadingSlipId, setDownloadingSlipId] = useState<string | null>(null);
+  const [isZipDownloading, setIsZipDownloading] = useState(false);
+
+  const { data: slipPreviewData, isLoading: isSlipPreviewLoading } = useQuery({
+    queryKey: ['salary', 'slip-preview', slipPreviewTarget?.id],
+    queryFn: () => salaryApi.previewSlipById(slipPreviewTarget!.id),
+    enabled: Boolean(slipPreviewTarget),
+  });
+
+  const handleDownloadSlipPdf = async (record: SalaryRecord) => {
+    setDownloadingSlipId(record.id);
+    try {
+      const res = await salaryApi.downloadSlipPdfById(record.id);
+      const blob = base64ToBlob(res.base64);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.filename || `Salary_Slip_${record.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(`Download failed: ${err?.message || 'Error downloading PDF'}`);
+    } finally {
+      setDownloadingSlipId(null);
+    }
+  };
+
+  const handleDownloadAllSlipsZip = async () => {
+    const records = salary?.items || [];
+    if (records.length === 0) return;
+    setIsZipDownloading(true);
+    try {
+      const zip = new JSZip();
+      const errors: string[] = [];
+      for (const record of records) {
+        const monthLabel = new Date(record.month).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+        try {
+          const res = await salaryApi.downloadSlipPdfById(record.id);
+          const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+          zip.file(res.filename || `Salary_Slip_${monthLabel}.pdf`, bytes);
+        } catch {
+          errors.push(monthLabel);
+        }
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = window.URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      const empName = [employee?.firstName, employee?.lastName].filter(Boolean).join('_').replace(/[^A-Za-z0-9_-]/g, '_');
+      a.download = `Salary_Slips_${empName || 'employee'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      if (errors.length > 0) {
+        alert(`Zip downloaded. Failed to generate PDF for: ${errors.join(', ')}`);
+      }
+    } catch (err: any) {
+      alert(`Bulk download failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsZipDownloading(false);
+    }
+  };
+
   const deactivateMutation = useMutation({
     mutationFn: (reason: string) => employeesApi.deactivate(id!, reason),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['employee', id] }),
@@ -143,7 +219,6 @@ export function EmployeeDetailPage(): JSX.Element {
   ];
 
   const leaveColumns: DataTableColumn<LeaveRequest & any>[] = [
-    { key: 'type', header: 'Type', render: (r) => r.leaveType?.name ?? '—' },
     { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString('en-GB') },
     { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString('en-GB') },
     { key: 'days', header: 'Days', render: (r) => r.totalDays },
@@ -156,7 +231,9 @@ export function EmployeeDetailPage(): JSX.Element {
     { key: 'net', header: 'Net Salary', render: (r) => `₹${r.netSalary}` },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     { key: 'action', header: 'Slip', render: (r) => (
-      <Button variant="outline" size="sm" onClick={() => window.open(`/api/salary/${r.id}/slip`, '_blank')}>Download</Button>
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSlipPreviewTarget(r)}>
+        <Eye size={13} /> Preview
+      </Button>
     )},
   ];
 
@@ -520,12 +597,74 @@ export function EmployeeDetailPage(): JSX.Element {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Salary Slips</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={isZipDownloading || (salary?.items || []).length === 0}
+                  onClick={handleDownloadAllSlipsZip}
+                >
+                  {isZipDownloading ? (
+                    <><Loader2 size={13} className="animate-spin" /> Generating Zip...</>
+                  ) : (
+                    <><FileArchive size={13} /> Download All (Zip)</>
+                  )}
+                </Button>
               </div>
               <DataTable columns={salaryColumns} rows={salary?.items || []} getRowKey={(r) => r.id} isLoading={isSalaryLoading} />
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Salary Slip Preview Modal — same rendered HTML the PDF is printed from */}
+      {slipPreviewTarget && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity" onClick={() => setSlipPreviewTarget(null)} />
+          <div className="relative z-10 bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b bg-slate-50 shrink-0">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                📄 <span>Salary Slip Document Preview</span>
+              </h3>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => handleDownloadSlipPdf(slipPreviewTarget)}
+                  className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                  disabled={downloadingSlipId === slipPreviewTarget.id}
+                >
+                  {downloadingSlipId === slipPreviewTarget.id ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Download size={15} />
+                  )}
+                  <span>Download PDF</span>
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSlipPreviewTarget(null)}>
+                  ✕
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 bg-gradient-to-b from-slate-50 to-slate-100 flex justify-center items-start">
+              {isSlipPreviewLoading || !slipPreviewData ? (
+                <div className="w-full max-w-[650px] h-[500px] flex items-center justify-center text-sm text-slate-400">
+                  Loading preview…
+                </div>
+              ) : (
+                <iframe
+                  title="Salary Slip Preview"
+                  srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:24px 0;background:transparent;}</style></head><body>${slipPreviewData.html}</body></html>`}
+                  className="w-full max-w-[650px] border-0"
+                  style={{ height: '90vh' }}
+                  sandbox=""
+                />
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

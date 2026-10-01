@@ -142,7 +142,7 @@ export function MyLeavesPage(): JSX.Element {
       key: 'reason',
       header: 'Reason',
       render: (r) => (
-        <span className="text-muted-foreground text-sm truncate max-w-[200px] inline-block">{r.reason}</span>
+        <span title={r.reason} className="text-muted-foreground text-sm truncate max-w-[200px] inline-block">{r.reason}</span>
       ),
     },
     {

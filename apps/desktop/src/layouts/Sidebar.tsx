@@ -7,7 +7,7 @@ import { authClient } from '@/lib/auth-client';
 import { settingsApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { EMPLOYEE_NAV, ADMIN_NAV } from './nav-config';
-import { LogOut, AlertCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LogOut, AlertCircle, PanelLeft } from 'lucide-react';
 import defaultCompanyLogo from '@/assets/logo.png';
 import { Button } from '@/components/ui/button';
 import {
@@ -63,38 +63,60 @@ export function Sidebar(): JSX.Element {
     <>
       <aside
         className={cn(
-          'relative flex h-full flex-col border-r bg-card/60 backdrop-blur-md p-4 select-none transition-all duration-200',
+          'relative flex h-full flex-col border-r bg-card/60 backdrop-blur-md p-4 select-none',
           isCollapsed ? 'w-[68px] px-2' : 'w-48',
         )}
       >
-        {/* Collapse/Expand Toggle */}
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="absolute -right-3 top-6 z-10 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm hover:text-primary hover:border-primary/40 transition-colors"
-        >
-          {isCollapsed ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />}
-        </button>
-
-        {/* Top Company Logo Branding */}
-        <div
-          className={cn(
-            'mb-6 pt-2 pb-4 flex items-center border-b border-border/40',
-            isCollapsed ? 'px-0 justify-center' : 'px-2 justify-start',
+        {/* Top Header: Logo + Collapse Toggle grouped together in one row so they read as one
+            unit instead of the toggle floating off alone across an empty gap. Collapsed shows
+            just the brand icon mark (cropped from the left of the wordmark logo) stacked above
+            the toggle, since the full wordmark doesn't read well squeezed into a 44px rail. */}
+        <div className="mb-6 pt-2 pb-4 border-b border-border/40">
+          {isCollapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-10 w-10 overflow-hidden shrink-0">
+                <img
+                  src={defaultCompanyLogo}
+                  alt={companyName}
+                  style={{
+                    width: '143px',
+                    height: '49px',
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                    marginTop: '-4px',
+                    marginLeft: 0,
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                title="Expand sidebar"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm hover:text-primary hover:border-primary/40 hover:bg-secondary transition-colors"
+              >
+                <PanelLeft size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2 px-2">
+              <img
+                src={activeLogo}
+                alt={companyName}
+                className="h-12 w-auto max-w-[130px] object-contain object-left"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = defaultCompanyLogo;
+                }}
+              />
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                title="Collapse sidebar"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm hover:text-primary hover:border-primary/40 hover:bg-secondary transition-colors"
+              >
+                <PanelLeft size={14} />
+              </button>
+            </div>
           )}
-        >
-          <img
-            src={activeLogo}
-            alt={companyName}
-            className={cn(
-              'h-12 object-contain',
-              isCollapsed ? 'w-auto max-w-[44px] object-center' : 'w-auto max-w-[180px] object-left',
-            )}
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = defaultCompanyLogo;
-            }}
-          />
         </div>
 
         {/* Navigation items list */}

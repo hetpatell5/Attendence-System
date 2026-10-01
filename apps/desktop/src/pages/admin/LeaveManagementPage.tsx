@@ -44,7 +44,7 @@ export function LeaveManagementPage(): JSX.Element {
     { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString('en-GB') },
     { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString('en-GB') },
     { key: 'totalDays', header: 'Days', render: (r) => <span className="font-semibold">{r.totalDays}</span> },
-    { key: 'reason', header: 'Reason', render: (r) => <span className="text-muted-foreground text-sm truncate max-w-[220px] inline-block">{r.reason}</span> },
+    { key: 'reason', header: 'Reason', render: (r) => <span title={r.reason} className="text-muted-foreground text-sm truncate max-w-[220px] inline-block">{r.reason}</span> },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
       key: 'actions',

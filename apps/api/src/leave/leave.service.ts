@@ -170,10 +170,17 @@ export class LeaveService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
 
+    // Exclude former (deactivated) employees from the general leave list so they don't clutter
+    // admin views — but still show them when a specific employeeId is requested (e.g. the
+    // Employee Detail page's own leave history tab, which should show everything regardless
+    // of the employee's current active status).
     const where: Prisma.LeaveRequestWhereInput = {
       status: query.status,
       employeeId: query.employeeId,
-      employee: query.departmentId ? { departmentId: query.departmentId } : undefined,
+      employee: {
+        ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+        ...(query.employeeId ? {} : { status: 'ACTIVE' }),
+      },
     };
 
     const [items, total] = await Promise.all([

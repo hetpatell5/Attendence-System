@@ -547,6 +547,37 @@ export class SettingsService {
    * null) would not reliably find an existing NULL-department row and could insert a
    * duplicate on every re-import instead of updating it.
    */
+  /**
+   * One-off `legacy-migration` scripts (apps/api/scripts/legacy-migration/phases/04-leave.ts)
+   * generated reason text like "[Legacy partial-day leave 09:00–17:00] sick leave" for any
+   * leave request that had from/to times — meant as an internal debug marker, but it shipped
+   * straight into the admin-facing Reason column and reads as confusing junk to an admin.
+   * Rewords it to "Partial-day leave (09:00–17:00): sick leave" (or just the time range if
+   * there was no original reason text) for any row still carrying the old format.
+   */
+  private async cleanupLegacyLeaveReasons(): Promise<{ updated: number }> {
+    const rows = await this.prisma.leaveRequest.findMany({
+      where: { reason: { startsWith: '[Legacy partial-day leave' } },
+      select: { id: true, reason: true },
+    });
+
+    let updated = 0;
+    const pattern = /^\[Legacy partial-day leave\s+([\d:]+)\s*[–-]\s*([\d:]+)\]\s*(.*)$/s;
+    for (const row of rows) {
+      const match = row.reason?.match(pattern);
+      if (!match) continue;
+      const [, from, to, rest] = match;
+      const trimmedRest = (rest ?? '').trim();
+      const cleanReason = trimmedRest
+        ? `Partial-day leave (${from}–${to}): ${trimmedRest}`
+        : `Partial-day leave (${from}–${to})`;
+      if (cleanReason === row.reason) continue;
+      await this.prisma.leaveRequest.update({ where: { id: row.id }, data: { reason: cleanReason } });
+      updated++;
+    }
+    return { updated };
+  }
+
   private async syncHolidaysFromLegacy(): Promise<{ upserted: number }> {
     const rows = await this.prisma.$queryRawUnsafe<Array<{ date: string; reason: string | null }>>(
       `SELECT CAST(date AS CHAR) AS date, reason FROM holidays`,
@@ -953,6 +984,15 @@ export class SettingsService {
       this.logger.log(`Step 4 (salary record inputs): ${synced.updated} record(s) reconciled`);
     } catch (err: any) {
       result.errors.push(`Salary record sync: ${err?.message ?? err}`);
+    }
+
+    // Step 5: rewrite the confusing "[Legacy partial-day leave HH:MM–HH:MM] ..." reason text
+    // the one-off leave-import script generated into something an admin can actually read.
+    try {
+      const cleaned = await this.cleanupLegacyLeaveReasons();
+      this.logger.log(`Step 5 (legacy leave reason cleanup): ${cleaned.updated} leave request(s) reworded`);
+    } catch (err: any) {
+      result.errors.push(`Legacy leave reason cleanup: ${err?.message ?? err}`);
     }
 
     this.logger.log(

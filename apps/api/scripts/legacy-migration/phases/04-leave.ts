@@ -54,7 +54,9 @@ export async function runLeave(ctx: MigrationContext): Promise<PhaseResult> {
 
     let reason = row.reason;
     if (row.from_time && row.to_time) {
-      reason = `[Legacy partial-day leave ${row.from_time}–${row.to_time}] ${reason}`;
+      reason = reason?.trim()
+        ? `Partial-day leave (${row.from_time}–${row.to_time}): ${reason.trim()}`
+        : `Partial-day leave (${row.from_time}–${row.to_time})`;
     }
 
     const totalDays = inclusiveDayCount(fromRepair.date, row.to_date);

@@ -688,6 +688,12 @@ export function MyAttendancePage(): JSX.Element {
 
         const dObj = new Date(r.attendanceDate);
         const dateStr = typeof r.attendanceDate === 'string' ? r.attendanceDate.slice(0, 10) : dObj.toLocaleDateString('en-CA');
+
+        // Block future Sundays and any future date from punch edit
+        if (dateStr > todayStr) {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
+
         const req = requestsByDate.get(dateStr);
 
         if (req?.status === 'PENDING') {

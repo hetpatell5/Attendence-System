@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { dashboardApi, attendanceApi, announcementsApi, holidaysApi, employeesApi } from '@/lib/api';
@@ -28,6 +28,99 @@ import {
 import { ShutdownPunchOutModal } from '@/components/ShutdownPunchOutModal';
 import { AttendanceCalendarCard } from '@/components/AttendanceCalendarCard';
 import { RequestsStatusCard } from '@/components/RequestsStatusCard';
+
+// ── Custom SVG Punch Emoji ──────────────────────────────────────────────────
+function LaughingEmoji({ size = 54 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={{ overflow: 'visible', display: 'block' }}>
+      <defs>
+        <radialGradient id="lge" cx="36%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#FFD580" />
+          <stop offset="45%" stopColor="#FF7B3A" />
+          <stop offset="100%" stopColor="#B83000" />
+        </radialGradient>
+      </defs>
+      <ellipse cx="51" cy="93" rx="34" ry="6" fill="rgba(0,0,0,0.10)" />
+      <circle cx="50" cy="50" r="43" fill="url(#lge)" />
+      <ellipse cx="30" cy="27" rx="15" ry="9" fill="rgba(255,255,255,0.22)" transform="rotate(-22,30,27)" />
+      {/* Closed laughing eyes — ^ arcs */}
+      <path d="M21 44 Q33 28 45 44" stroke="white" strokeWidth="4.8" fill="none" strokeLinecap="round" />
+      <path d="M55 44 Q67 28 79 44" stroke="white" strokeWidth="4.8" fill="none" strokeLinecap="round" />
+      {/* Squint stress lines */}
+      <path d="M23 49 Q33 45 43 49" stroke="rgba(160,60,10,0.45)" strokeWidth="2" fill="none" strokeLinecap="round" />
+      <path d="M57 49 Q67 45 77 49" stroke="rgba(160,60,10,0.45)" strokeWidth="2" fill="none" strokeLinecap="round" />
+      {/* Huge open mouth */}
+      <path d="M18 65 Q50 99 82 65 L80 71 Q50 96 20 71 Z" fill="rgba(0,0,0,0.28)" />
+      {/* Teeth row */}
+      <path d="M22 68 Q50 88 78 68 Q50 85 22 68 Z" fill="rgba(255,255,255,0.62)" />
+      {/* Tongue */}
+      <ellipse cx="50" cy="85" rx="15" ry="9.5" fill="rgba(215,70,70,0.72)" />
+      <ellipse cx="50" cy="83" rx="8" ry="4" fill="rgba(235,110,110,0.45)" />
+      {/* Rosy cheeks */}
+      <ellipse cx="12" cy="70" rx="12" ry="8" fill="#FF2000" opacity="0.28" />
+      <ellipse cx="88" cy="70" rx="12" ry="8" fill="#FF2000" opacity="0.28" />
+      {/* Laugh tears squirting sideways from outer eye corners */}
+      <g className="px-ltear-l">
+        <ellipse cx="18" cy="43" rx="3.2" ry="4.8" fill="rgba(195,235,255,0.9)" />
+        <path d="M18 48 C15 53 14 57 18 61 C22 57 21 53 18 48 Z" fill="rgba(195,235,255,0.75)" />
+      </g>
+      <g className="px-ltear-r">
+        <ellipse cx="82" cy="43" rx="3.2" ry="4.8" fill="rgba(195,235,255,0.9)" />
+        <path d="M82 48 C79 53 78 57 82 61 C86 57 85 53 82 48 Z" fill="rgba(195,235,255,0.75)" />
+      </g>
+    </svg>
+  );
+}
+
+function CryingEmoji({ size = 54 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={{ overflow: 'visible', display: 'block' }}>
+      <defs>
+        <radialGradient id="cge" cx="36%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#B8A4F8" />
+          <stop offset="50%" stopColor="#7C3AED" />
+          <stop offset="100%" stopColor="#1E0B55" />
+        </radialGradient>
+      </defs>
+      <ellipse cx="51" cy="93" rx="34" ry="6" fill="rgba(0,0,0,0.12)" />
+      <circle cx="50" cy="50" r="43" fill="url(#cge)" />
+      <ellipse cx="30" cy="27" rx="14" ry="9" fill="rgba(255,255,255,0.18)" transform="rotate(-22,30,27)" />
+      {/* Heavy knitted brows */}
+      <path d="M15 30 Q27 38 35 31" stroke="white" strokeWidth="5.2" fill="none" strokeLinecap="round" />
+      <path d="M65 31 Q73 38 85 30" stroke="white" strokeWidth="5.2" fill="none" strokeLinecap="round" />
+      {/* Big sad eyes */}
+      <ellipse cx="32" cy="44" rx="10.5" ry="11.5" fill="white" opacity="0.94" />
+      <ellipse cx="33" cy="45" rx="6.2" ry="7" fill="#130035" />
+      <circle cx="37" cy="42" r="2.4" fill="white" opacity="0.82" />
+      <ellipse cx="68" cy="44" rx="10.5" ry="11.5" fill="white" opacity="0.94" />
+      <ellipse cx="67" cy="45" rx="6.2" ry="7" fill="#130035" />
+      <circle cx="63" cy="42" r="2.4" fill="white" opacity="0.82" />
+      {/* Open sobbing mouth */}
+      <path d="M27 77 Q50 62 73 77 L71 83 Q50 70 29 83 Z" fill="rgba(0,0,0,0.30)" />
+      <path d="M31 80 Q50 69 69 80" stroke="rgba(255,255,255,0.42)" strokeWidth="2" fill="none" strokeLinecap="round" />
+      {/* Continuous tear streams — 3 drops per eye with staggered delays */}
+      <g className="px-ctear">
+        <path d="M27 57 C23 66 23 77 27 83 C31 77 31 66 27 57 Z" fill="rgba(200,232,255,0.82)" />
+      </g>
+      <g className="px-ctear" style={{ animationDelay: '0.55s' }}>
+        <path d="M27 57 C23 66 23 77 27 83 C31 77 31 66 27 57 Z" fill="rgba(200,232,255,0.82)" />
+      </g>
+      <g className="px-ctear" style={{ animationDelay: '1.1s' }}>
+        <path d="M27 57 C23 66 23 77 27 83 C31 77 31 66 27 57 Z" fill="rgba(200,232,255,0.82)" />
+      </g>
+      <g className="px-ctear" style={{ animationDelay: '0.28s' }}>
+        <path d="M73 57 C69 66 69 77 73 83 C77 77 77 66 73 57 Z" fill="rgba(200,232,255,0.82)" />
+      </g>
+      <g className="px-ctear" style={{ animationDelay: '0.83s' }}>
+        <path d="M73 57 C69 66 69 77 73 83 C77 77 77 66 73 57 Z" fill="rgba(200,232,255,0.82)" />
+      </g>
+      <g className="px-ctear" style={{ animationDelay: '1.38s' }}>
+        <path d="M73 57 C69 66 69 77 73 83 C77 77 77 66 73 57 Z" fill="rgba(200,232,255,0.82)" />
+      </g>
+    </svg>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -62,6 +155,10 @@ export function EmployeeDashboardPage(): JSX.Element {
   const [isPunchInConfirmOpen, setIsPunchInConfirmOpen] = useState(false);
   const [isPunchOutConfirmOpen, setIsPunchOutConfirmOpen] = useState(false);
   const [punchErrorMessage, setPunchErrorMessage] = useState<string | null>(null);
+  const [punchEmojiState, setPunchEmojiState] = useState<'happy' | 'sad' | null>(null);
+  const punchEmojiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingInEmojiRef = useRef<'happy' | 'sad'>('happy');
+  const pendingOutEmojiRef = useRef<'happy' | 'sad'>('happy');
   // Shutdown-gate: shown when the OS tries to shut down while employee is clocked in
   const [showShutdownModal, setShowShutdownModal] = useState(false);
   const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
@@ -144,9 +241,18 @@ export function EmployeeDashboardPage(): JSX.Element {
     void queryClient.invalidateQueries({ queryKey: ['attendance'] });
   };
 
+  const showPunchEmoji = (type: 'happy' | 'sad') => {
+    if (punchEmojiTimerRef.current) clearTimeout(punchEmojiTimerRef.current);
+    setPunchEmojiState(type);
+    punchEmojiTimerRef.current = setTimeout(() => setPunchEmojiState(null), 5000);
+  };
+
+  useEffect(() => () => { if (punchEmojiTimerRef.current) clearTimeout(punchEmojiTimerRef.current); }, []);
+
   const punchInMutation = useMutation({
     mutationFn: attendanceApi.punchIn,
     onSuccess: () => {
+      showPunchEmoji(pendingInEmojiRef.current);
       setPunchErrorMessage(null);
       invalidate();
       // Keep punch-status file in sync so the shutdown-gate helper knows
@@ -164,6 +270,7 @@ export function EmployeeDashboardPage(): JSX.Element {
   const punchOutMutation = useMutation({
     mutationFn: attendanceApi.punchOut,
     onSuccess: () => {
+      showPunchEmoji(pendingOutEmojiRef.current);
       setPunchErrorMessage(null);
       invalidate();
       setIsPunchOutConfirmOpen(false);
@@ -416,6 +523,20 @@ export function EmployeeDashboardPage(): JSX.Element {
     };
   }, [employee, punchState, monthAttendance, holidaysList, currentYear, currentMonthNum, lastDay]);
 
+  // Determine emoji mood at click time (early = happy, late = sad)
+  const getClockInEmoji = (): 'happy' | 'sad' => {
+    const parts = salaryMetrics.shiftStart.split(':').map(Number);
+    const h = parts[0] ?? 9; const m = parts[1] ?? 0;
+    const shiftMs = new Date().setHours(h, m, 0, 0);
+    return Date.now() < shiftMs ? 'happy' : 'sad';
+  };
+  const getClockOutEmoji = (): 'happy' | 'sad' => {
+    const parts = salaryMetrics.shiftEnd.split(':').map(Number);
+    const h = parts[0] ?? 18; const m = parts[1] ?? 0;
+    const shiftMs = new Date().setHours(h, m, 0, 0);
+    return Date.now() >= shiftMs ? 'happy' : 'sad';
+  };
+
   let todayWorkedMinutes = today?.workedMinutes || 0;
   if (today?.punchInAt && !today?.punchOutAt) {
     const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(today.punchInAt).getTime()) / 60000));
@@ -492,7 +613,7 @@ export function EmployeeDashboardPage(): JSX.Element {
   const streakData = useMemo(() => {
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const allRecords = [...(prevMonthAttendance as any[]), ...(monthAttendance as any[])];
+    const allRecords = [...(monthAttendance as any[])];
     const recordByDate = new Map<string, any>();
     allRecords.forEach((r: any) => {
       if (!r.attendanceDate) return;
@@ -521,12 +642,14 @@ export function EmployeeDashboardPage(): JSX.Element {
     const todayHasPunch = todayIsWorking && getDayResult(todayStr) === 'present';
     const startOffset = todayIsWorking && !todayHasPunch ? 1 : 0;
 
-    // Walk backwards to compute current streak
+    // Walk backwards within current month only (streak resets each month)
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     let currentStreak = 0;
-    for (let i = startOffset; i <= 62; i++) {
+    for (let i = startOffset; i <= 31; i++) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const dStr = d.toLocaleDateString('en-CA');
+      if (dStr < monthStart) break; // don't cross into previous month
       if (!isWorkingDay(dStr)) continue; // skip sundays & holidays
       const result = getDayResult(dStr);
       if (result === 'present') { currentStreak++; }
@@ -579,7 +702,7 @@ export function EmployeeDashboardPage(): JSX.Element {
       nextMilestone,
       isActive: currentStreak > 0,
     };
-  }, [monthAttendance, prevMonthAttendance, holidaysList, now.getDate(), now.getMonth(), now.getFullYear()]);
+  }, [monthAttendance, holidaysList, now.getDate(), now.getMonth(), now.getFullYear()]);
 
   if (isLoading || !data) {
     return <div className="p-12 text-center text-muted-foreground animate-pulse text-sm">Loading dashboard...</div>;
@@ -608,6 +731,52 @@ export function EmployeeDashboardPage(): JSX.Element {
 
   return (
     <div className="relative space-y-7 max-w-7xl mx-auto pb-8">
+      {/* Punch Emoji Animations */}
+      <style>{`
+        @keyframes emojiPop {
+          0%   { transform: scale(0.05) rotate(-30deg); opacity: 0; }
+          62%  { transform: scale(1.20) rotate(4deg); opacity: 1; }
+          82%  { transform: scale(0.94) rotate(-2deg); opacity: 1; }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        @keyframes laughRock {
+          0%,100% { transform: rotate(0deg) scale(1) translateY(0); }
+          18%     { transform: rotate(11deg) scale(1.08) translateY(-5px); }
+          36%     { transform: rotate(-9deg) scale(1.07) translateY(-4px); }
+          54%     { transform: rotate(10deg) scale(1.09) translateY(-5px); }
+          72%     { transform: rotate(-7deg) scale(1.05) translateY(-3px); }
+          90%     { transform: rotate(3deg) scale(1.02) translateY(-1px); }
+        }
+        @keyframes cryTremble {
+          0%,100% { transform: translateX(0) rotate(0deg); }
+          22%     { transform: translateX(-2.5px) rotate(-0.6deg); }
+          44%     { transform: translateX(2.5px) rotate(0.6deg); }
+          66%     { transform: translateX(-1.8px) rotate(-0.4deg); }
+          88%     { transform: translateX(1.8px) rotate(0.4deg); }
+        }
+        @keyframes ltearL {
+          0%   { transform: translate(0,0) scale(0.5); opacity: 0; }
+          18%  { opacity: 0.9; transform: translate(-1px,-1px) scale(1); }
+          100% { transform: translate(-18px, 9px) scale(0.3); opacity: 0; }
+        }
+        @keyframes ltearR {
+          0%   { transform: translate(0,0) scale(0.5); opacity: 0; }
+          18%  { opacity: 0.9; transform: translate(1px,-1px) scale(1); }
+          100% { transform: translate(18px, 9px) scale(0.3); opacity: 0; }
+        }
+        @keyframes cryDrop {
+          0%   { transform: translateY(-24px) scaleY(0.3); opacity: 0; }
+          12%  { opacity: 0.88; }
+          80%  { opacity: 0.65; }
+          100% { transform: translateY(32px) scaleY(1.5); opacity: 0; }
+        }
+        .px-laugh   { animation: emojiPop 0.55s cubic-bezier(0.34,1.56,0.64,1) both, laughRock 2.8s ease-in-out 0.55s infinite; display:flex; flex-direction:column; align-items:center; gap:2px; }
+        .px-cry     { animation: emojiPop 0.55s cubic-bezier(0.34,1.56,0.64,1) both, cryTremble 2.6s ease-in-out 0.55s infinite; display:flex; flex-direction:column; align-items:center; gap:2px; }
+        .px-ltear-l { animation: ltearL 1.5s ease-out 0.4s infinite; }
+        .px-ltear-r { animation: ltearR 1.5s ease-out 0.6s infinite; }
+        .px-ctear   { animation: cryDrop 1.65s ease-in infinite; transform-origin: top center; }
+      `}</style>
+
       {/* Ambient background glow accents for rich claymorphism depth */}
       <div className="absolute -top-12 -right-12 -z-10 w-96 h-96 bg-emerald-100/35 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-48 -left-12 -z-10 w-96 h-96 bg-sky-100/35 rounded-full blur-3xl pointer-events-none" />
@@ -825,28 +994,50 @@ export function EmployeeDashboardPage(): JSX.Element {
             {isClockedIn ? (
               <button
                 type="button"
-                className="clay-btn-circle-red w-28 h-28 sm:w-32 sm:h-32 text-white flex flex-col items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none"
-                onClick={() => setIsPunchOutConfirmOpen(true)}
+                className="clay-btn-circle-red w-28 h-28 sm:w-32 sm:h-32 text-white flex flex-col items-center justify-center gap-1 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none overflow-hidden"
+                onClick={() => { pendingOutEmojiRef.current = getClockOutEmoji(); setIsPunchOutConfirmOpen(true); }}
                 disabled={punchOutMutation.isPending}
-                title="Click to Clock Out"
               >
-                <LogOut size={28} className="stroke-[2.5]" />
-                <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
-                  {punchOutMutation.isPending ? 'Saving...' : 'Clock Out'}
-                </span>
+                {punchOutMutation.isPending ? (
+                  <>
+                    <LogOut size={26} className="stroke-[2.5]" />
+                    <span className="font-extrabold text-xs tracking-wider uppercase">Saving...</span>
+                  </>
+                ) : punchEmojiState ? (
+                  <div key={punchEmojiState} className={punchEmojiState === 'happy' ? 'px-laugh' : 'px-cry'}>
+                    {punchEmojiState === 'happy' ? <LaughingEmoji size={58} /> : <CryingEmoji size={58} />}
+                    <span className="font-extrabold text-[10px] tracking-wider uppercase leading-none">Clock Out</span>
+                  </div>
+                ) : (
+                  <>
+                    <LogOut size={26} className="stroke-[2.5]" />
+                    <span className="font-extrabold text-xs tracking-wider uppercase">Clock Out</span>
+                  </>
+                )}
               </button>
             ) : (
               <button
                 type="button"
-                className="clay-btn-circle-green w-28 h-28 sm:w-32 sm:h-32 text-white flex flex-col items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none"
-                onClick={() => setIsPunchInConfirmOpen(true)}
+                className="clay-btn-circle-green w-28 h-28 sm:w-32 sm:h-32 text-white flex flex-col items-center justify-center gap-1 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed select-none overflow-hidden"
+                onClick={() => { pendingInEmojiRef.current = getClockInEmoji(); setIsPunchInConfirmOpen(true); }}
                 disabled={punchInMutation.isPending}
-                title="Click to Clock In"
               >
-                <LogIn size={28} className="stroke-[2.5]" />
-                <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
-                  {punchInMutation.isPending ? 'Saving...' : 'Clock In'}
-                </span>
+                {punchInMutation.isPending ? (
+                  <>
+                    <LogIn size={26} className="stroke-[2.5]" />
+                    <span className="font-extrabold text-xs tracking-wider uppercase">Saving...</span>
+                  </>
+                ) : punchEmojiState ? (
+                  <div key={punchEmojiState} className={punchEmojiState === 'happy' ? 'px-laugh' : 'px-cry'}>
+                    {punchEmojiState === 'happy' ? <LaughingEmoji size={58} /> : <CryingEmoji size={58} />}
+                    <span className="font-extrabold text-[10px] tracking-wider uppercase leading-none">Clock In</span>
+                  </div>
+                ) : (
+                  <>
+                    <LogIn size={26} className="stroke-[2.5]" />
+                    <span className="font-extrabold text-xs tracking-wider uppercase">Clock In</span>
+                  </>
+                )}
               </button>
             )}
 
@@ -1100,8 +1291,12 @@ export function EmployeeDashboardPage(): JSX.Element {
                       />
                     </div>
                     {!isFullyEarned ? (
-                      <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-                        {presentRegularDays} present · {nextThreshold! - presentRegularDays} more to {nextThreshold === 5 ? 'earn 1st paid day' : nextThreshold === 12 ? 'earn 2 paid days' : 'earn all'}
+                      <p className={`text-[10px] font-medium mt-0.5 ${presentRegularDays < 5 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+                        {presentRegularDays} present · {nextThreshold! - presentRegularDays} more to {
+                          nextThreshold === 5 ? 'earn 1st paid day' :
+                          nextThreshold === 12 ? 'claim 2 Sundays' :
+                          'claim all Sundays & holidays'
+                        }
                       </p>
                     ) : (
                       <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">

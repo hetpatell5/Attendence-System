@@ -1,195 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { departmentsApi, designationsApi, shiftsApi, holidaysApi } from '@/lib/api';
+import { shiftsApi, holidaysApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from '@/components/ui/dialog';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
-import { StatusBadge } from '@/components/StatusBadge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Building2, Briefcase, Clock, Plus, Edit2, Trash2, Calendar } from 'lucide-react';
+import { Clock, Plus, Edit2, Trash2, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Department, Designation, Shift, Holiday } from '@attendance/shared';
+import type { Shift, Holiday } from '@attendance/shared';
 
-type Tab = 'departments' | 'designations' | 'shifts' | 'holidays';
-
-function DepartmentsTab(): JSX.Element {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  
-  const { data = [], isLoading } = useQuery({ queryKey: ['departments'], queryFn: departmentsApi.list });
-
-  const saveMutation = useMutation({
-    mutationFn: () => editingId ? departmentsApi.update(editingId, { name }) : departmentsApi.create({ name }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['departments'] });
-      setOpen(false);
-      setName('');
-      setEditingId(null);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => departmentsApi.deactivate(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['departments'] }),
-  });
-
-  const columns: DataTableColumn<Department>[] = [
-    { key: 'name', header: 'Name', render: (d) => <span className="font-semibold">{d.name}</span> },
-    { key: 'isActive', header: 'Status', render: (d) => <StatusBadge status={d.isActive ? 'ACTIVE' : 'INACTIVE'} /> },
-    {
-      key: 'actions',
-      header: '',
-      render: (d) => (
-        <div className="flex gap-2">
-          <Button size="icon" variant="ghost" onClick={() => {
-            setEditingId(d.id);
-            setName(d.name);
-            setOpen(true);
-          }}>
-            <Edit2 size={16} />
-          </Button>
-          {d.isActive && (
-            <Button size="icon" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => {
-              if (confirm(`Are you sure you want to deactivate ${d.name}?`)) {
-                deleteMutation.mutate(d.id);
-              }
-            }}>
-              <Trash2 size={16} />
-            </Button>
-          )}
-        </div>
-      )
-    }
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Departments</h3>
-        <Button onClick={() => {
-          setEditingId(null);
-          setName('');
-          setOpen(true);
-        }} className="gap-2">
-          <Plus size={16} /> Add Department
-        </Button>
-      </div>
-      <div className="rounded-md border overflow-hidden">
-        <DataTable columns={columns} rows={data} getRowKey={(d) => d.id} isLoading={isLoading} />
-      </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editingId ? 'Edit' : 'Add'} Department</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="deptName">Department Name *</Label>
-              <Input id="deptName" value={name} onChange={(e) => setName(e.target.value)} required />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveMutation.mutate()} disabled={!name || saveMutation.isPending}>
-              {saveMutation.isPending ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function DesignationsTab(): JSX.Element {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
-  
-  const { data = [], isLoading } = useQuery({ queryKey: ['designations'], queryFn: designationsApi.list });
-
-  const saveMutation = useMutation({
-    mutationFn: () => editingId ? designationsApi.update(editingId, { title }) : designationsApi.create({ title }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['designations'] });
-      setOpen(false);
-      setTitle('');
-      setEditingId(null);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => designationsApi.deactivate(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['designations'] }),
-  });
-
-  const columns: DataTableColumn<Designation>[] = [
-    { key: 'title', header: 'Title', render: (d) => <span className="font-semibold">{d.title}</span> },
-    { key: 'isActive', header: 'Status', render: (d) => <StatusBadge status={d.isActive ? 'ACTIVE' : 'INACTIVE'} /> },
-    {
-      key: 'actions',
-      header: '',
-      render: (d) => (
-        <div className="flex gap-2">
-          <Button size="icon" variant="ghost" onClick={() => {
-            setEditingId(d.id);
-            setTitle(d.title);
-            setOpen(true);
-          }}>
-            <Edit2 size={16} />
-          </Button>
-          {d.isActive && (
-            <Button size="icon" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => {
-              if (confirm(`Are you sure you want to deactivate ${d.title}?`)) {
-                deleteMutation.mutate(d.id);
-              }
-            }}>
-              <Trash2 size={16} />
-            </Button>
-          )}
-        </div>
-      )
-    }
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Designations</h3>
-        <Button onClick={() => {
-          setEditingId(null);
-          setTitle('');
-          setOpen(true);
-        }} className="gap-2">
-          <Plus size={16} /> Add Designation
-        </Button>
-      </div>
-      <div className="rounded-md border overflow-hidden">
-        <DataTable columns={columns} rows={data} getRowKey={(d) => d.id} isLoading={isLoading} />
-      </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editingId ? 'Edit' : 'Add'} Designation</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="desigTitle">Designation Title *</Label>
-              <Input id="desigTitle" value={title} onChange={(e) => setTitle(e.target.value)} required />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveMutation.mutate()} disabled={!title || saveMutation.isPending}>
-              {saveMutation.isPending ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+type Tab = 'shifts' | 'holidays';
 
 function formatShiftTime(timeStr: string | undefined): string {
   if (!timeStr) return '--:--';
@@ -429,11 +252,9 @@ function HolidaysTab(): JSX.Element {
 }
 
 export function OrganizationPage(): JSX.Element {
-  const [tab, setTab] = useState<Tab>('departments');
+  const [tab, setTab] = useState<Tab>('shifts');
 
   const tabs = [
-    { id: 'departments', label: 'Departments', icon: <Building2 size={16} /> },
-    { id: 'designations', label: 'Designations', icon: <Briefcase size={16} /> },
     { id: 'shifts', label: 'Shifts', icon: <Clock size={16} /> },
     { id: 'holidays', label: 'Holidays', icon: <Calendar size={16} /> },
   ] as const;
@@ -461,8 +282,6 @@ export function OrganizationPage(): JSX.Element {
 
       <Card>
         <CardContent className="p-6">
-          {tab === 'departments' && <DepartmentsTab />}
-          {tab === 'designations' && <DesignationsTab />}
           {tab === 'shifts' && <ShiftsTab />}
           {tab === 'holidays' && <HolidaysTab />}
         </CardContent>

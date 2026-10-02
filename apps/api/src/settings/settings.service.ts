@@ -700,6 +700,7 @@ export class SettingsService {
     const legacyEmployees = await this.prisma.$queryRaw<LegEmp[]>`
       SELECT id, full_name, email, mobile_number, monthly_salary, joining_date, dob
       FROM employees
+      WHERE status = 'active'
     `;
 
     for (const leg of legacyEmployees) {

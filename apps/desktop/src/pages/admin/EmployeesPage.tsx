@@ -157,8 +157,8 @@ export function EmployeesPage(): JSX.Element {
       const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
       return nameA.localeCompare(nameB);
     });
-    // Attach sequential display ID (BMA-1, BMA-2, ...) based on alphabetical position
-    return items.map((emp, idx) => ({ ...emp, _displayId: `BMA-${idx + 1}` }));
+    // Attach sequential display number based on alphabetical position
+    return items.map((emp, idx) => ({ ...emp, _displayId: `${idx + 1}` }));
   }, [employeesData?.items, shiftFilter]);
 
   // Calculate total monthly salary of active employees in the list
@@ -273,11 +273,12 @@ export function EmployeesPage(): JSX.Element {
           <table className="w-full text-sm text-left border-collapse">
             <thead className="bg-muted/50 border-b border-border/80 uppercase text-[11px] font-semibold text-muted-foreground tracking-wider">
               <tr>
-                <th className="py-3 px-4">ID</th>
+                <th className="py-3 px-4">No.</th>
                 <th className="py-3 px-4">Full Name</th>
                 <th className="py-3 px-4">Mobile</th>
                 <th className="py-3 px-4">Shift</th>
                 <th className="py-3 px-4">Salary</th>
+                <th className="py-3 px-4">Joining Date</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -285,14 +286,14 @@ export function EmployeesPage(): JSX.Element {
             <tbody className="divide-y divide-border/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
                     <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary mb-2"></div>
                     <p>Loading employees...</p>
                   </td>
                 </tr>
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
                     No employees found matching filter criteria.
                   </td>
                 </tr>
@@ -332,6 +333,11 @@ export function EmployeesPage(): JSX.Element {
                       {/* Salary */}
                       <td className="py-3.5 px-4 font-semibold text-foreground tracking-tight">
                         ₹{Number(emp.baseSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+
+                      {/* Joining Date */}
+                      <td className="py-3.5 px-4 text-muted-foreground text-xs">
+                        {emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                       </td>
 
                       {/* Status Toggle */}
@@ -424,7 +430,7 @@ export function EmployeesPage(): JSX.Element {
                   <td className="py-3 px-4 font-semibold text-foreground font-bold text-sm tracking-tight">
                     ₹{totalMonthlySalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td colSpan={2} className="py-3 px-4 text-right text-xs text-muted-foreground">
+                  <td colSpan={3} className="py-3 px-4 text-right text-xs text-muted-foreground">
                     {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? 's' : ''} listed
                   </td>
                 </tr>

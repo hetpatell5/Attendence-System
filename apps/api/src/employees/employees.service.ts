@@ -526,12 +526,23 @@ export class EmployeesService {
 
   async remove(id: string, actorUserId: string, ip?: string): Promise<{ success: boolean }> {
     const employee = await this.findByIdOrThrow(id);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.employee.delete({ where: { id } });
-      if (employee.userId) {
-        await tx.user.delete({ where: { id: employee.userId } }).catch(() => {});
-      }
-    });
+
+    // Legacy-sourced employees must not be hard-deleted: the migration idempotency check
+    // uses legacySourceId to skip already-imported employees, so a hard delete would cause
+    // them to be re-imported on the next migration run. Soft-delete (INACTIVE) instead.
+    if (employee.legacySourceId !== null) {
+      await this.prisma.employee.update({
+        where: { id },
+        data: { status: 'INACTIVE' },
+      });
+    } else {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.employee.delete({ where: { id } });
+        if (employee.userId) {
+          await tx.user.delete({ where: { id: employee.userId } }).catch(() => {});
+        }
+      });
+    }
 
     await this.auditService.logChange({
       eventType: 'EMPLOYEE_DEACTIVATED',

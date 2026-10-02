@@ -223,6 +223,110 @@ function RecoveryDialog({
 }
 
 // ---------------------------------------------------------------------------
+// Animated rising-lines canvas for login card background
+// ---------------------------------------------------------------------------
+function LoginBgLines(): JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    type Line = { x: number; y: number; speed: number; len: number; alpha: number; w: number; hue: number };
+    const lines: Line[] = [];
+
+    const makeLine = (i: number, count: number, seedY?: number): Line => ({
+      x: (i + 0.5 + Math.random() * 0.4 - 0.2) / count,
+      y: seedY !== undefined ? seedY : 1 + Math.random() * 0.5,
+      speed: 0.0012 + Math.random() * 0.0014,
+      len: 0.18 + Math.random() * 0.18,
+      alpha: 0.22 + Math.random() * 0.18,
+      w: 1 + Math.random() * 1.2,
+      hue: Math.random() > 0.45 ? 237 : 207,
+    });
+
+    const init = () => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      if (canvas.width === 0 || canvas.height === 0) return;
+      lines.length = 0;
+      const count = Math.max(8, Math.floor(canvas.offsetWidth / 48));
+      for (let i = 0; i < count; i++) {
+        // Seed randomly across the full height so they don't all appear at once
+        lines.push(makeLine(i, count, Math.random() * 1.5 - 0.5));
+      }
+    };
+
+    init();
+
+    let raf = 0;
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      if (W === 0 || H === 0) { raf = requestAnimationFrame(draw); return; }
+      ctx.clearRect(0, 0, W, H);
+
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i]!;
+        l.y -= l.speed;
+        if (l.y + l.len < 0) {
+          lines[i] = makeLine(
+            Math.floor(Math.random() * lines.length),
+            lines.length,
+          );
+          lines[i]!.x = Math.random() * 0.88 + 0.06;
+          continue;
+        }
+
+        const x = l.x * W;
+        const yB = (l.y + l.len) * H;
+        const yT = l.y * H;
+
+        const grad = ctx.createLinearGradient(0, yB, 0, yT);
+        grad.addColorStop(0,    `hsla(${l.hue},72%,55%,0)`);
+        grad.addColorStop(0.25, `hsla(${l.hue},72%,58%,${l.alpha * 0.6})`);
+        grad.addColorStop(0.65, `hsla(${l.hue},78%,60%,${l.alpha})`);
+        grad.addColorStop(1,    `hsla(${l.hue},82%,65%,0)`);
+
+        ctx.beginPath();
+        ctx.moveTo(x, yB);
+        ctx.lineTo(x, yT);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = l.w;
+        ctx.stroke();
+
+        // Bright leading-edge dot
+        const headY = yT + 2;
+        if (headY > -5 && headY < H + 5) {
+          ctx.beginPath();
+          ctx.arc(x, headY, l.w * 2.2, 0, Math.PI * 2);
+          ctx.fillStyle = `hsla(${l.hue},88%,68%,${l.alpha * 0.9})`;
+          ctx.fill();
+        }
+      }
+
+      raf = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    const ro = new ResizeObserver(init);
+    ro.observe(canvas);
+
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      style={{ zIndex: 0 }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Server health indicator (read-only — no config button in production)
 // ---------------------------------------------------------------------------
 function HealthBadge(): JSX.Element {
@@ -359,8 +463,9 @@ export function LoginPage(): JSX.Element {
       {/* Main Dual-Panel Container */}
       <div className="flex w-full max-w-4xl overflow-hidden rounded-3xl border border-border/80 bg-card shadow-2xl shadow-zinc-950/10 transition-all">
         {/* Left Side: Login Form */}
-        <div className="flex w-full flex-col justify-between p-8 sm:p-12 lg:w-1/2 bg-card">
-          <div>
+        <div className="relative flex w-full flex-col justify-between p-8 sm:p-12 lg:w-1/2 bg-card overflow-hidden">
+          <LoginBgLines />
+          <div className="relative z-10">
             {/* Logo */}
             <div className="flex justify-center pt-2 pb-6">
               <img
@@ -473,7 +578,7 @@ export function LoginPage(): JSX.Element {
           </div>
 
           {/* Server health indicator */}
-          <div className="mt-8 pt-4 border-t border-border/50 text-center">
+          <div className="relative z-10 mt-8 pt-4 border-t border-border/50 text-center">
             <HealthBadge />
           </div>
         </div>

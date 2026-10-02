@@ -8,28 +8,22 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
-import { CalendarDays, Plus, Info, XCircle, Clock } from 'lucide-react';
+import { CalendarDays, Plus, Info, XCircle } from 'lucide-react';
 import type { LeaveRequest } from '@attendance/shared';
 
-type LeaveMode = 'day' | 'break';
-
 interface LeaveForm {
-  mode: LeaveMode;
   startDate: string;
   endDate: string;
-  fromTime: string;
-  toTime: string;
   reason: string;
 }
 
 const EMPTY_FORM: LeaveForm = {
-  mode: 'day',
   startDate: '',
   endDate: '',
-  fromTime: '',
-  toTime: '',
   reason: '',
 };
+
+const PAGE_SIZE = 5;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -60,32 +54,14 @@ export function MyLeavesPage(): JSX.Element {
   };
 
   const buildPayload = () => {
-    // Pick first available leave type (or the one most suitable)
     const defaultType = leaveTypes[0];
     if (!defaultType) return null;
-
-    if (form.mode === 'day') {
-      return {
-        leaveTypeId: defaultType.id,
-        startDate: form.startDate,
-        endDate: form.endDate || form.startDate,
-        reason: form.reason,
-      };
-    } else {
-      // Break / short leave — use today's date if no date provided
-      const today = new Date().toISOString().slice(0, 10);
-      const d = form.startDate || today;
-      const reasonWithTime = form.fromTime
-        ? `${form.reason} (${form.fromTime}${form.toTime ? ' – ' + form.toTime : ''})`
-        : form.reason;
-      return {
-        leaveTypeId: defaultType.id,
-        startDate: d,
-        endDate: d,
-        reason: reasonWithTime,
-        dayPart: 'FULL_DAY',
-      };
-    }
+    return {
+      leaveTypeId: defaultType.id,
+      startDate: form.startDate,
+      endDate: form.endDate || form.startDate,
+      reason: form.reason,
+    };
   };
 
   const createMutation = useMutation({
@@ -116,11 +92,13 @@ export function MyLeavesPage(): JSX.Element {
 
   const cancelMutation = useMutation({ mutationFn: leaveApi.cancel, onSuccess: invalidate });
 
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRequests.length / PAGE_SIZE));
+  const paginatedRequests = sortedRequests.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const canSubmit = useMemo(() => {
-    if (!form.reason.trim()) return false;
-    if (form.mode === 'day') return !!form.startDate;
-    // break mode: must have at least a time or date
-    return !!(form.fromTime || form.startDate);
+    return !!(form.reason.trim() && form.startDate);
   }, [form]);
 
   const columns: DataTableColumn<LeaveRequest>[] = [
@@ -212,8 +190,40 @@ export function MyLeavesPage(): JSX.Element {
           </div>
         </div>
         <div className="pt-3">
-          <DataTable columns={columns} rows={sortedRequests} getRowKey={(r) => r.id} isLoading={isLoading} />
+          <DataTable columns={columns} rows={paginatedRequests} getRowKey={(r) => r.id} isLoading={isLoading} />
         </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 mt-3">
+            <p className="text-xs text-muted-foreground">
+              {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, sortedRequests.length)} of {sortedRequests.length}
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-xs border rounded-xl hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1.5 text-xs border rounded-xl ${currentPage === page ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'}`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-xs border rounded-xl hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Request Dialog */}
@@ -237,37 +247,11 @@ export function MyLeavesPage(): JSX.Element {
               </div>
             )}
 
-            {/* Leave mode radio */}
-            <div className="grid grid-cols-2 gap-2.5">
-              {(['day', 'break'] as LeaveMode[]).map((mode) => {
-                const isSelected = form.mode === mode;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, mode }))}
-                    className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
-                      isSelected
-                        ? 'clay-pod border-2 border-emerald-500 text-emerald-800 shadow-[inset_0_2px_4px_rgba(255,255,255,0.9),0_4px_12px_rgba(16,185,129,0.15)]'
-                        : 'clay-button-subtle text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {mode === 'day' ? (
-                      <CalendarDays size={15} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
-                    ) : (
-                      <Clock size={15} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
-                    )}
-                    <span>{mode === 'day' ? 'Full Day Leave' : 'Short Break'}</span>
-                  </button>
-                );
-              })}
-            </div>
-
             {/* Date fields */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="fromDate" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  From Date {form.mode === 'break' && <span className="font-normal normal-case tracking-normal">(optional)</span>}
+                  From Date
                 </Label>
                 <Input
                   id="fromDate"
@@ -279,7 +263,7 @@ export function MyLeavesPage(): JSX.Element {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="toDate" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  To Date {form.mode === 'break' && <span className="font-normal normal-case tracking-normal">(optional)</span>}
+                  To Date
                 </Label>
                 <Input
                   id="toDate"
@@ -292,36 +276,6 @@ export function MyLeavesPage(): JSX.Element {
               </div>
             </div>
 
-            {/* Time fields — only shown for break mode */}
-            {form.mode === 'break' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="fromTime" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    From Time <span className="font-normal normal-case tracking-normal">(optional)</span>
-                  </Label>
-                  <Input
-                    id="fromTime"
-                    type="time"
-                    value={form.fromTime}
-                    onChange={(e) => setForm((f) => ({ ...f, fromTime: e.target.value }))}
-                    className="h-10 rounded-xl border border-slate-200 bg-white text-xs font-medium"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="toTime" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    To Time <span className="font-normal normal-case tracking-normal">(optional)</span>
-                  </Label>
-                  <Input
-                    id="toTime"
-                    type="time"
-                    value={form.toTime}
-                    onChange={(e) => setForm((f) => ({ ...f, toTime: e.target.value }))}
-                    className="h-10 rounded-xl border border-slate-200 bg-white text-xs font-medium"
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Reason */}
             <div className="space-y-1.5">
               <Label htmlFor="reason" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -331,7 +285,7 @@ export function MyLeavesPage(): JSX.Element {
                 id="reason"
                 value={form.reason}
                 onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
-                placeholder={form.mode === 'day' ? 'e.g. Vacation, Sick Leave...' : 'e.g. Doctor appointment, Personal errand...'}
+                placeholder="e.g. Vacation, Sick Leave, Personal..."
                 rows={3}
                 className="resize-none text-xs rounded-xl border border-slate-200 bg-white font-medium"
               />

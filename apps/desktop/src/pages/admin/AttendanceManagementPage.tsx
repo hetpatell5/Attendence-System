@@ -468,8 +468,18 @@ export function AttendanceManagementPage(): JSX.Element {
     } else if (record?.punchInAt) {
       pairs.push({ punchIn: toHHMM(record.punchInAt), punchOut: toHHMM(record.punchOutAt) });
     }
-    // Always show at least one row
-    if (pairs.length === 0) pairs.push({ punchIn: '', punchOut: '' });
+    // Always show at least one row; if PRESENT with no recorded punches, pre-fill shift defaults
+    if (pairs.length === 0) {
+      if (isRecordPresent) {
+        const emp = (employeesData?.items || []).find((e: any) => e.id === selectedEmployeeId) as any;
+        const shift = emp?.employeeShifts?.[0]?.shift;
+        const defaultIn  = shift?.startTime ? shift.startTime.slice(0, 5) : '09:00';
+        const defaultOut = shift?.endTime   ? shift.endTime.slice(0, 5)   : '18:00';
+        pairs.push({ punchIn: defaultIn, punchOut: defaultOut });
+      } else {
+        pairs.push({ punchIn: '', punchOut: '' });
+      }
+    }
 
     setPunchPairs(pairs);
     setEditModalOpen(true);
@@ -926,7 +936,18 @@ export function AttendanceManagementPage(): JSX.Element {
                   type="button"
                   variant="outline"
                   className={`h-12 border-2 font-bold transition-all ${editStatus === 'PRESENT' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' : 'border-slate-200 text-slate-600'}`}
-                  onClick={() => setEditStatus('PRESENT')}
+                  onClick={() => {
+                    setEditStatus('PRESENT');
+                    // Auto-fill default shift times if all punch fields are empty
+                    const allEmpty = punchPairs.every(p => !p.punchIn && !p.punchOut);
+                    if (allEmpty) {
+                      const emp = (employeesData?.items || []).find((e: any) => e.id === selectedEmployeeId) as any;
+                      const shift = emp?.employeeShifts?.[0]?.shift;
+                      const defaultIn  = shift?.startTime ? shift.startTime.slice(0, 5) : '09:00';
+                      const defaultOut = shift?.endTime   ? shift.endTime.slice(0, 5)   : '18:00';
+                      setPunchPairs([{ punchIn: defaultIn, punchOut: defaultOut }]);
+                    }
+                  }}
                 >
                   <span className={`w-4 h-4 rounded-full border-2 mr-2 flex items-center justify-center ${editStatus === 'PRESENT' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-400'}`}>
                     {editStatus === 'PRESENT' && <span className="text-[10px]">✓</span>}

@@ -16,10 +16,13 @@ const STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'];
 
 type Row = LeaveRequest & { employee: Employee };
 
+const PAGE_SIZE = 10;
+
 export function LeaveManagementPage(): JSX.Element {
   const queryClient = useQueryClient();
 
   const [status, setStatus] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [reviewTarget, setReviewTarget] = useState<{ row: Row; action: 'approve' | 'reject' } | null>(null);
   const [remarks, setRemarks] = useState('');
 
@@ -71,16 +74,16 @@ export function LeaveManagementPage(): JSX.Element {
   const sortedRequests = useMemo(() => {
     if (!requestsData?.items) return [];
     return [...requestsData.items].sort((a, b) => {
-      // 1. PENDING status always on top
       if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
       if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
-
-      // 2. Newer leaves first (by startDate, fallback to createdAt)
       const dateA = new Date(a.startDate || a.createdAt).getTime();
       const dateB = new Date(b.startDate || b.createdAt).getTime();
       return dateB - dateA;
     });
   }, [requestsData?.items]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRequests.length / PAGE_SIZE));
+  const paginatedRequests = sortedRequests.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -92,7 +95,7 @@ export function LeaveManagementPage(): JSX.Element {
         <CardContent className="p-4">
           <div className="flex items-center gap-4 mb-4">
             <Label>Filter by Status:</Label>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-48">
+            <Select value={status} onChange={(e) => { setStatus(e.target.value); setCurrentPage(1); }} className="w-48">
               <option value="">All Statuses</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -101,8 +104,42 @@ export function LeaveManagementPage(): JSX.Element {
           </div>
 
           <div className="rounded-md border overflow-hidden">
-            <DataTable columns={requestColumns} rows={sortedRequests} getRowKey={(r) => r.id} isLoading={isRequestsLoading} />
+            <DataTable columns={requestColumns} rows={paginatedRequests} getRowKey={(r) => r.id} isLoading={isRequestsLoading} />
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-3">
+              <p className="text-xs text-muted-foreground">
+                Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, sortedRequests.length)} of {sortedRequests.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 text-xs border rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-3 py-1.5 text-xs border rounded-md ${currentPage === page ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'}`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 text-xs border rounded-md hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

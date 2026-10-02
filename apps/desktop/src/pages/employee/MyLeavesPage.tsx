@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leaveApi } from '@/lib/api';
+import { parseLeaveReason } from '@/lib/leave-reason';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -139,11 +140,17 @@ export function MyLeavesPage(): JSX.Element {
       ),
     },
     {
+      key: 'timing',
+      header: 'Timing',
+      render: (r) => <span className="text-xs text-muted-foreground whitespace-nowrap">{parseLeaveReason(r.reason).timing}</span>,
+    },
+    {
       key: 'reason',
       header: 'Reason',
-      render: (r) => (
-        <span title={r.reason} className="text-muted-foreground text-sm truncate max-w-[200px] inline-block">{r.reason}</span>
-      ),
+      render: (r) => {
+        const { reason } = parseLeaveReason(r.reason);
+        return <span title={reason} className="text-muted-foreground text-sm truncate max-w-[200px] inline-block">{reason}</span>;
+      },
     },
     {
       key: 'status',

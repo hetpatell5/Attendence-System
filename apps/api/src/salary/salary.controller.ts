@@ -284,6 +284,21 @@ export class SalaryController {
     res.send(buffer);
   }
 
+  /** Format a UTC Date as "DD Mon YYYY, HH:MM AM/PM" in IST (UTC+5:30), independent of
+   *  server timezone so slips are always consistent regardless of where the API runs. */
+  private formatPaidOnIST(date: Date): string {
+    const ist = new Date(date.getTime() + (5 * 60 + 30) * 60 * 1000);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const day = String(ist.getUTCDate()).padStart(2, '0');
+    const month = months[ist.getUTCMonth()]!;
+    const year = ist.getUTCFullYear();
+    let h = ist.getUTCHours();
+    const m = String(ist.getUTCMinutes()).padStart(2, '0');
+    const period = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${day} ${month} ${year}, ${String(h).padStart(2, '0')}:${m} ${period}`;
+  }
+
   /** Convert "HH:MM" or "HH:MM:SS" → "H:MM AM/PM". Seconds (if present) are ignored. */
   private to12h(t: string | undefined): string {
     if (!t) return '';
@@ -318,11 +333,17 @@ export class SalaryController {
     const totalDaysInMonth = new Date(yr, mo + 1, 0).getDate();
     const monthName = monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
     const payDate = record.paymentDate
-      ? new Date(record.paymentDate).toLocaleDateString('en-IN')
-      : new Date().toLocaleDateString('en-IN');
-    const paidOn = record.paymentDate
-      ? new Date(record.paymentDate).toLocaleString('en-IN')
-      : 'Pending';
+      ? this.formatPaidOnIST(new Date(record.paymentDate)).split(',')[0]!.trim()
+      : this.formatPaidOnIST(new Date()).split(',')[0]!.trim();
+    // Use paidAt (set when updateStatus marks PAID) for the exact payment timestamp.
+    // paymentDate is @db.Date (date-only), so its UTC midnight shows 05:30 AM IST.
+    // paidAt is a full DateTime stored the moment Mark Paid is clicked.
+    const recAny = record as any;
+    const paidOn = recAny.paidAt
+      ? this.formatPaidOnIST(new Date(recAny.paidAt))          // full datetime (new records)
+      : record.paymentDate
+        ? this.formatPaidOnIST(new Date(record.paymentDate)).split(',')[0]!.trim() // date-only (backfilled)
+        : record.status === 'PAID' ? 'Paid' : 'Pending';       // PAID but no timestamp stored
 
     const empFullName = employee ? [employee.firstName, employee.lastName].filter(Boolean).join(' ') : 'Employee';
     const recObj = record as Record<string, unknown>;

@@ -650,6 +650,7 @@ model SalaryRecord {
   overtimeMinutes   Int          @default(0)
   status            SalaryStatus @default(PENDING)
   paymentDate       DateTime?    @db.Date
+  paidAt            DateTime?    @map("paid_at")
   paymentReference  String?
   remarks           String?
   generatedByUserId String?

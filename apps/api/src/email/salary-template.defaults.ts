@@ -22,22 +22,22 @@ export const DEFAULT_SALARY_SLIP_TEMPLATE = `<div style="max-width:650px;margin:
     {{#if company_logo}}
       <img src="{{company_logo}}" width="340" style="border-radius:10px;border:2.5px solid #dbe7f6;background:#f7fafc;box-shadow:0 2px 12px #bfdcff44;">
     {{/if}}
-    <div style="font-size:21px;font-weight:700;color:#1968a7;letter-spacing:1px;margin-top:6px;">{{company_name}}</div>
+    <div style="font-size:21px;color:#1968a7;letter-spacing:1px;margin-top:6px;">{{company_name}}</div>
     <div style="font-size:12px;color:#757a8a;margin-top:1px;">{{company_address}}</div>
   </div>
-  <div style="margin-top:18px;text-align:center;font-size:19px;color:#2e415a;font-weight:700;">Salary Slip</div>
+  <div style="margin-top:18px;text-align:center;font-size:19px;color:#2e415a;">Salary Slip</div>
   <table style="width:82%;margin:18px auto 6px auto;font-size:13.5px;">
     <tr><td style="padding:1px 6px;"><b>Pay Period:</b></td><td style="padding:1px 6px;">{{pay_period}}</td>
         <td style="padding:1px 6px;"><b>Pay Date:</b></td><td style="padding:1px 6px;">{{pay_date}}</td></tr>
     <tr><td style="padding:1px 6px;"><b>Employee Name:</b></td><td style="padding:1px 6px;">{{employee_name}}</td>
         <td style="padding:1px 6px;"><b>Employee ID:</b></td><td style="padding:1px 6px;">{{employee_id}}</td></tr>
     <tr><td style="padding:1px 6px;"><b>Shift:</b></td><td style="padding:1px 6px;">{{shift_name}} ({{shift_time}})</td>
-        <td style="padding:1px 6px;"><b>Status:</b></td><td style="padding:1px 6px;"><span style="color:green;font-weight:700;">{{payment_status}}</span></td></tr>
+        <td style="padding:1px 6px;"><b>Status:</b></td><td style="padding:1px 6px;">{{payment_status}}</td></tr>
   </table>
   <table style="width:88%;margin:12px auto 0;border-collapse:collapse;font-size:13.2px;">
     <tr style="background:#e9f4fb;"><th colspan="2" style="padding:7px 6px;color:#1563ac;font-weight:600;border-radius:7px 0 0 0;">Earnings</th>
         <th colspan="2" style="padding:7px 6px;color:#d67412;font-weight:600;">Attendance & Hours</th></tr>
-    <tr style="background:#f7fafc;"><td style="padding:6px 4px;">Monthly Salary</td><td style="padding:6px 4px;font-weight:700;">₹ {{monthly_salary}}</td>
+    <tr style="background:#f7fafc;"><td style="padding:6px 4px;">Monthly Salary</td><td style="padding:6px 4px;">₹ {{monthly_salary}}</td>
         <td style="padding:6px 4px;">Total Days in Month</td><td style="padding:6px 4px;">{{total_days}}</td></tr>
     <tr><td style="padding:6px 4px;">Salary Per Day</td><td style="padding:6px 4px;">₹ {{per_day_salary}}</td>
         <td style="padding:6px 4px;">Salary Per Hour</td><td style="padding:6px 4px;">₹ {{per_hour_salary}}</td></tr>

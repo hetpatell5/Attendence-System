@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leaveApi } from '@/lib/api';
+import { parseLeaveReason } from '@/lib/leave-reason';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -44,7 +45,11 @@ export function LeaveManagementPage(): JSX.Element {
     { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString('en-GB') },
     { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString('en-GB') },
     { key: 'totalDays', header: 'Days', render: (r) => <span className="font-semibold">{r.totalDays}</span> },
-    { key: 'reason', header: 'Reason', render: (r) => <span title={r.reason} className="text-muted-foreground text-sm truncate max-w-[220px] inline-block">{r.reason}</span> },
+    { key: 'timing', header: 'Timing', render: (r) => <span className="text-xs text-muted-foreground whitespace-nowrap">{parseLeaveReason(r.reason).timing}</span> },
+    { key: 'reason', header: 'Reason', render: (r) => {
+      const { reason } = parseLeaveReason(r.reason);
+      return <span title={reason} className="text-muted-foreground text-sm truncate max-w-[220px] inline-block">{reason}</span>;
+    } },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
       key: 'actions',
@@ -112,7 +117,8 @@ export function LeaveManagementPage(): JSX.Element {
               <div className="p-3 bg-muted/50 rounded-md text-sm mb-4">
                 <p><strong>Employee:</strong> {reviewTarget.row.employee.firstName} {reviewTarget.row.employee.lastName}</p>
                 <p><strong>Dates:</strong> {new Date(reviewTarget.row.startDate).toLocaleDateString('en-GB')} to {new Date(reviewTarget.row.endDate).toLocaleDateString('en-GB')} ({reviewTarget.row.totalDays} days)</p>
-                {reviewTarget.row.reason && <p><strong>Reason:</strong> {reviewTarget.row.reason}</p>}
+                <p><strong>Timing:</strong> {parseLeaveReason(reviewTarget.row.reason).timing}</p>
+                {parseLeaveReason(reviewTarget.row.reason).reason && <p><strong>Reason:</strong> {parseLeaveReason(reviewTarget.row.reason).reason}</p>}
               </div>
             )}
             <div className="space-y-2">

@@ -154,6 +154,39 @@ function SearchableEmployeeSelect({
   );
 }
 
+/** Format a full datetime ISO string as "DD Mon YYYY, HH:MM AM/PM" in local (IST) time.
+ *  Returns empty string when isoStr is falsy (let callers decide the fallback label). */
+function formatPaidOn(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = months[d.getMonth()]!;
+  const year = d.getFullYear();
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${day} ${month} ${year}, ${String(h).padStart(2, '0')}:${m} ${period}`;
+}
+
+/** Format a date-only ISO string (UTC midnight) as "DD Mon YYYY" using UTC methods so the
+ *  +5:30 IST offset doesn't shift the displayed date by one day. */
+function formatPaidDate(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(d.getUTCDate()).padStart(2, '0')} ${months[d.getUTCMonth()]!} ${d.getUTCFullYear()}`;
+}
+
+/** Pick the best available paid-on label for a card. Priority: paidAt (datetime) →
+ *  paymentDate (date-only) → 'Paid' (status confirmed but no timestamp stored yet). */
+function paidOnLabel(paidAt: string | null | undefined, paymentDate: string | null | undefined): string {
+  if (paidAt) return formatPaidOn(paidAt);
+  if (paymentDate) return formatPaidDate(paymentDate);
+  return 'Paid';
+}
+
 /** Convert a "HH:mm" shift time string to 12-hour AM/PM format, e.g. "09:00" → "09:00 AM" */
 function fmt12h(timeStr: string): string {
   if (!timeStr) return '--:--';
@@ -219,6 +252,8 @@ export function SalaryManagementPage(): JSX.Element {
   const [slipModalTarget, setSlipModalTarget] = useState<any | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [downloadingEmpId, setDownloadingEmpId] = useState<string | null>(null);
+  // Track whether a BULK status change is in progress (separate from single-card mutations)
+  const [isBulkStatusPending, setIsBulkStatusPending] = useState(false);
 
   // Month date range
   const monthStart = `${selectedYear}-${selectedMonth}-01`;
@@ -512,6 +547,10 @@ export function SalaryManagementPage(): JSX.Element {
         status: savedRecord?.status === 'PAID' ? 'PAID' : (currentEdit.status || 'PENDING'),
         savedRecordId: savedRecord?.id,
         paymentDate: savedRecord?.paymentDate || null,
+        // paidAt is set by updateStatus exactly when Mark Paid is clicked (see salary.service.ts).
+        // paymentDate is @db.Date (date-only) so its UTC midnight shows 05:30 AM IST; paidAt
+        // is a full DateTime and is the accurate paid-on timestamp (null until migration runs).
+        paidAt: savedRecord?.status === 'PAID' ? ((savedRecord as any)?.paidAt as string | null ?? null) : null,
       };
     });  // close .map()
   }, [
@@ -780,9 +819,9 @@ export function SalaryManagementPage(): JSX.Element {
       advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       expected_hours: String(card.expectedHours),
       net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
-      paid_on: card.status === 'PAID' && card.paymentDate
-        ? new Date(card.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-        : card.status === 'PAID' ? new Date().toLocaleString('en-IN') : 'Pending',
+      paid_on: card.status === 'PAID'
+        ? paidOnLabel(card.paidAt, card.paymentDate)
+        : 'Pending',
       remarks: card.remarks || '',
     };
 
@@ -845,8 +884,8 @@ export function SalaryManagementPage(): JSX.Element {
       advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       expected_hours: String(card.expectedHours),
       net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
-      paid_on: card.status === 'PAID' && card.paymentDate
-        ? new Date(card.paymentDate).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      paid_on: card.status === 'PAID'
+        ? paidOnLabel(card.paidAt, card.paymentDate)
         : 'Pending',
       remarks: card.remarks || '',
     };
@@ -916,7 +955,8 @@ export function SalaryManagementPage(): JSX.Element {
       alert('Please select at least one employee checkbox.');
       return;
     }
-    statusMutation.mutate({ targets, newStatus: 'PAID' });
+    setIsBulkStatusPending(true);
+    statusMutation.mutate({ targets, newStatus: 'PAID' }, { onSettled: () => setIsBulkStatusPending(false) });
   };
 
   const handleBulkPending = () => {
@@ -925,7 +965,8 @@ export function SalaryManagementPage(): JSX.Element {
       alert('Please select at least one employee checkbox.');
       return;
     }
-    statusMutation.mutate({ targets, newStatus: 'PENDING' });
+    setIsBulkStatusPending(true);
+    statusMutation.mutate({ targets, newStatus: 'PENDING' }, { onSettled: () => setIsBulkStatusPending(false) });
   };
 
   const [bulkZipLoading, setBulkZipLoading] = useState(false);
@@ -986,9 +1027,7 @@ export function SalaryManagementPage(): JSX.Element {
           advance_deducted: Number(card.advance).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
           expected_hours: String(card.expectedHours),
           net_salary: Number(card.thisMonthNet).toLocaleString('en-IN'),
-          paid_on: card.paymentDate
-            ? new Date(card.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-            : 'Paid',
+          paid_on: paidOnLabel(card.paidAt, card.paymentDate),
           remarks: card.remarks || '',
         };
 
@@ -1116,7 +1155,7 @@ export function SalaryManagementPage(): JSX.Element {
 
         <Button
           onClick={handleBulkPaid}
-          disabled={statusMutation.isPending}
+          disabled={isBulkStatusPending}
           className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-6 shadow-sm"
         >
           Bulk Paid
@@ -1124,7 +1163,7 @@ export function SalaryManagementPage(): JSX.Element {
 
         <Button
           onClick={handleBulkPending}
-          disabled={statusMutation.isPending}
+          disabled={isBulkStatusPending}
           className="bg-slate-500 hover:bg-slate-900 text-white font-bold px-6 shadow-sm"
         >
           Bulk Pending
@@ -1329,6 +1368,13 @@ export function SalaryManagementPage(): JSX.Element {
                   placeholder="Add remarks..."
                 />
               </div>
+
+              {/* Paid On timestamp — shown only when salary is marked PAID */}
+              {card.status === 'PAID' && (
+                <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
+                  Paid On: {paidOnLabel(card.paidAt, card.paymentDate)}
+                </div>
+              )}
 
               {/* Card Bottom Action Buttons - only show PDF/Preview/Mail after paid */}
               <div className="flex flex-wrap gap-2 pt-2 mt-auto border-t">

@@ -281,7 +281,7 @@ export function Header({ isUserSide }: HeaderProps): JSX.Element {
     <>
       <header
         className={cn(
-          'relative flex items-center justify-between border-b bg-card/85 backdrop-blur-md px-4 sm:px-6 select-none z-30',
+          'relative flex items-center justify-between border-b bg-card/85 backdrop-blur-md px-4 sm:px-6 select-none z-40',
           effectiveIsUserSide ? 'h-16' : 'h-14'
         )}
       >

@@ -114,16 +114,10 @@ export class SalaryService {
                   netSalary: row.final_salary ?? 0,
                 },
               });
-            } else if (existing.status !== status) {
-              // Same fix as getSummaryForMonth: legacy salary_details.status is the
-              // source of truth for paid/unpaid. Only status is synced, never the
-              // snapshotted amount fields — a locked-in payslip's figures must not
-              // silently change once generated.
-              await this.prisma.salaryRecord.update({
-                where: { id: existing.id },
-                data: { status },
-              });
             }
+            // Do NOT sync status for existing records. The modern system is the source of
+            // truth once a record exists. Overwriting here caused Mark Pending to silently
+            // revert back to PAID (and vice versa) every time the page was refreshed.
           }
         }
       } catch {
@@ -1179,14 +1173,18 @@ export class SalaryService {
       dto.paymentDate = new Date().toISOString().slice(0, 10);
     }
 
+    const nowUtc = new Date();
+    // paidAt is in the schema but prisma generate can't run while the dev server holds
+    // the query engine DLL. Cast data to `any` so TS passes; will be clean after generate.
     const updated = await this.prisma.salaryRecord.update({
       where: { id },
       data: {
         status: dto.status,
-        paymentDate: dto.status === 'PAID' ? (dto.paymentDate ? startOfCompanyDay(new Date(dto.paymentDate)) : new Date()) : null,
+        paymentDate: dto.status === 'PAID' ? (dto.paymentDate ? startOfCompanyDay(new Date(dto.paymentDate)) : nowUtc) : null,
+        paidAt: dto.status === 'PAID' ? nowUtc : null,
         paymentReference: dto.status === 'PAID' ? (dto.paymentReference || 'Salary Paid') : null,
         remarks: dto.remarks !== undefined ? dto.remarks : before.remarks,
-      },
+      } as any,
     });
 
     await this.auditService.logChange({

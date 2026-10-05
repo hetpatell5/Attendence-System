@@ -168,12 +168,10 @@ interface DashboardLeaveRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   startDate: string;
   endDate: string;
+  reason?: string | null;
   employee: {
     firstName: string;
     lastName: string;
-  };
-  leaveType?: {
-    name: string;
   };
 }
 
@@ -1047,11 +1045,10 @@ export function AdminDashboardPage(): JSX.Element {
                     <StatusBadge status={r.status} />
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                    <span>{r.leaveType?.name || 'Leave'}</span>
-                    <span>•</span>
                     <span>
                       {new Date(r.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – {new Date(r.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </span>
+                    {r.reason && <><span>•</span><span className="truncate max-w-[120px]">{r.reason}</span></>}
                   </div>
                 </div>
 

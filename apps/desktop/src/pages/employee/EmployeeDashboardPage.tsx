@@ -775,6 +775,11 @@ export function EmployeeDashboardPage(): JSX.Element {
         .px-ltear-l { animation: ltearL 1.5s ease-out 0.4s infinite; }
         .px-ltear-r { animation: ltearR 1.5s ease-out 0.6s infinite; }
         .px-ctear   { animation: cryDrop 1.65s ease-in infinite; transform-origin: top center; }
+        @keyframes annPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.0); border-color: rgba(16,185,129,0.25); }
+          50%       { box-shadow: 0 0 0 5px rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.6); }
+        }
+        .px-ann { animation: annPulse 2.4s ease-in-out infinite; }
       `}</style>
 
       {/* Ambient background glow accents for rich claymorphism depth */}
@@ -818,7 +823,7 @@ export function EmployeeDashboardPage(): JSX.Element {
           {visibleAnnouncements.map((a) => (
             <div
               key={a.id}
-              className="clay-card p-4 flex items-center gap-3 relative text-sm border border-emerald-500/20 bg-emerald-50/30"
+              className="px-ann clay-card p-4 flex items-center gap-3 relative text-sm border border-emerald-500/20 bg-emerald-50/30"
             >
               <Megaphone size={16} className="text-emerald-600 shrink-0" />
               <div className="flex-1 pr-6 text-xs text-slate-800">

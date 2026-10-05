@@ -123,7 +123,7 @@ export class DashboardService {
       this.prisma.leaveRequest.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
-        include: { employee: true, leaveType: true },
+        include: { employee: true },
       }),
       this.prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 10 }),
     ]);

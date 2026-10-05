@@ -593,10 +593,10 @@ export function SalaryManagementPage(): JSX.Element {
     });
   }, [calculatedCards, filterEmployeeId, filterStatus]);
 
-  // Summary Totals
-  const totalDueSum = useMemo(() => calculatedCards.reduce((sum, c) => sum + c.totalWithPending, 0), [calculatedCards]);
-  const paidSum = useMemo(() => calculatedCards.filter(c => c.status === 'PAID').reduce((sum, c) => sum + c.thisMonthNet, 0), [calculatedCards]);
-  const unpaidSum = useMemo(() => calculatedCards.filter(c => c.status !== 'PAID').reduce((sum, c) => sum + c.totalWithPending, 0), [calculatedCards]);
+  // Summary Totals — scoped to filteredCards so selecting an employee updates the numbers
+  const totalDueSum = useMemo(() => filteredCards.reduce((sum, c) => sum + c.totalWithPending, 0), [filteredCards]);
+  const paidSum = useMemo(() => filteredCards.filter(c => c.status === 'PAID').reduce((sum, c) => sum + c.thisMonthNet, 0), [filteredCards]);
+  const unpaidSum = useMemo(() => filteredCards.filter(c => c.status !== 'PAID').reduce((sum, c) => sum + c.totalWithPending, 0), [filteredCards]);
   
   const selectedTotal = useMemo(() => {
     return calculatedCards
@@ -1070,7 +1070,7 @@ export function SalaryManagementPage(): JSX.Element {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Card className="bg-white border-slate-200 shadow-sm">
           <CardContent className="p-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Due (All)</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">{filterEmployeeId !== 'all' ? 'Total Due (Employee)' : 'Total Due (All)'}</div>
             <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1">₹ {totalDueSum.toLocaleString('en-IN')}</div>
           </CardContent>
         </Card>

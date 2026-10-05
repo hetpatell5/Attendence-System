@@ -206,6 +206,10 @@ export class SettingsService {
     // can be removed from our mirror afterwards (see pruneStaleAttendanceLog).
     const logSnapshot = { ids: new Set<number>(), pairs: new Set<string>(), fullTable: false };
 
+    // Allow zero-dates (0000-00-00 00:00:00) that legacy dumps often contain.
+    // This must run on the same connection before any INSERT that touches those columns.
+    await this.prisma.$executeRawUnsafe(`SET sql_mode = 'NO_ENGINE_SUBSTITUTION'`);
+
     for (const stmt of allowed) {
       collectAttendanceLogSnapshot(stmt, logSnapshot);
       try {

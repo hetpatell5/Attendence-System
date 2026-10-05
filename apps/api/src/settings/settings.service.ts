@@ -206,10 +206,6 @@ export class SettingsService {
     // can be removed from our mirror afterwards (see pruneStaleAttendanceLog).
     const logSnapshot = { ids: new Set<number>(), pairs: new Set<string>(), fullTable: false };
 
-    // Allow zero-dates (0000-00-00 00:00:00) that legacy dumps often contain.
-    // This must run on the same connection before any INSERT that touches those columns.
-    await this.prisma.$executeRawUnsafe(`SET sql_mode = 'NO_ENGINE_SUBSTITUTION'`);
-
     for (const stmt of allowed) {
       collectAttendanceLogSnapshot(stmt, logSnapshot);
       try {
@@ -222,6 +218,9 @@ export class SettingsService {
         // to IGNORE when the statement has no explicit column list to build the
         // UPDATE clause from (can't know the columns without a schema lookup).
         let safe = toIdempotentUpsert(stmt);
+        // Legacy dumps often contain 0000-00-00 00:00:00 which strict MySQL rejects.
+        // Replace with NULL so imports never fail on zero-dates.
+        safe = safe.replace(/'0000-00-00 00:00:00'/g, 'NULL');
         // Dumps exported from MySQL 8 name collations (utf8mb4_0900_ai_ci, ...) that
         // MariaDB / older MySQL don't know ("Unknown collation", error 1273), failing
         // the whole CREATE TABLE. Only schema statements are rewritten — never row data.

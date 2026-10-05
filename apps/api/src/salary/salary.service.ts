@@ -369,8 +369,13 @@ export class SalaryService {
     const targetSalary = employee.targetSalary?.toNumber() ?? 0;
     const incrementInterval = employee.incrementInterval > 0 ? employee.incrementInterval : 1;
 
-    // ── A) Projection mode ──────────────────────────────────────────────────
-    // Only activate when all three increment fields are meaningfully set.
+    const firstOfNextMonth = new Date(
+      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 1),
+    );
+
+    // ── A) Projection mode — only for months ON OR AFTER incrementEffectiveFrom ──
+    // For months before that date, fall through to history mode so that legitimate
+    // pre-increment salary history entries are still returned correctly.
     if (monthlyIncrement > 0 && targetSalary > baseSalary && employee.incrementEffectiveFrom) {
       const incrementStart = employee.incrementEffectiveFrom;
 
@@ -378,17 +383,14 @@ export class SalaryService {
         (monthEnd.getUTCFullYear() - incrementStart.getUTCFullYear()) * 12 +
         (monthEnd.getUTCMonth() - incrementStart.getUTCMonth());
 
-      // Months before the effective-from date → return base salary unchanged
-      if (monthsElapsed < 0) return baseSalary;
-
-      const periods = Math.floor(monthsElapsed / incrementInterval);
-      return Math.min(baseSalary + periods * monthlyIncrement, targetSalary);
+      if (monthsElapsed >= 0) {
+        const periods = Math.floor(monthsElapsed / incrementInterval);
+        return Math.min(baseSalary + periods * monthlyIncrement, targetSalary);
+      }
+      // monthsElapsed < 0 → month is before increment period; fall through to history
     }
 
     // ── B) History mode: use latest salaryHistory entry ≤ month end ─────────
-    const firstOfNextMonth = new Date(
-      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 1),
-    );
     const historyEntry = await this.prisma.salaryHistory.findFirst({
       where: { employeeId: employee.id, effectiveFrom: { lt: firstOfNextMonth } },
       orderBy: { effectiveFrom: 'desc' },

@@ -207,7 +207,7 @@ export function EmployeeDashboardPage(): JSX.Element {
   const prevMonthStr = `${prevMonthYear}-${String(prevMonthNumVal).padStart(2, '0')}`;
   const prevMonthLastDay = new Date(prevMonthYear, prevMonthNumVal, 0).getDate();
 
-  const { data: prevMonthAttendance = [] } = useQuery({
+  const { data: _prevMonthAttendance = [] } = useQuery({
     queryKey: ['attendance', 'me', prevMonthStr],
     queryFn: () => attendanceApi.mine(
       `${prevMonthStr}-01`,

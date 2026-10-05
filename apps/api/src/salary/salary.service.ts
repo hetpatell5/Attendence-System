@@ -342,13 +342,13 @@ export class SalaryService {
   /**
    * Returns the effective monthly salary for a single employee for the given month.
    *
-   * Algorithm (mirrors the old system's get_salary_for_month()):
-   * 1. Look up the latest SalaryHistory entry with effectiveFrom <= last day of month.
-   * 2. Fall back to employee.baseSalary if no history exists.
-   * 3. Project auto-increments on top:
-   *    - If monthlyIncrement > 0 AND targetSalary > baseAmount
-   *    - periods = floor(monthsElapsed / incrementInterval)
-   *    - projectedSalary = min(baseAmount + periods * monthlyIncrement, targetSalary)
+   * Two modes:
+   * A) Projection mode — when monthlyIncrement > 0, targetSalary > baseSalary, and
+   *    incrementEffectiveFrom is set. Projects salary forward from employee.baseSalary
+   *    using (monthsElapsed / incrementInterval) periods, capped at targetSalary.
+   *    Ignores salaryHistory entirely so legacy-imported rows cannot corrupt the result.
+   * B) History mode — looks up the latest salaryHistory entry for this month as a
+   *    manual revision log. Falls back to employee.baseSalary.
    */
   private async getEffectiveSalaryForMonth(
     employee: {
@@ -364,70 +364,37 @@ export class SalaryService {
   ): Promise<number> {
     const { end: monthEnd } = monthBounds(month);
 
-    // effectiveFrom is a @db.Date column: MySQL stores only a calendar date, so Prisma
-    // always reads it back as that date's UTC midnight — there is no time-of-day
-    // ambiguity to correct for. Compare calendar months by their UTC year/month numbers
-    // only; never add or subtract minutes/hours to "convert timezones" on these values.
-    // The exclusive upper bound below is immune to whatever hour a legacy-imported row
-    // happens to carry, since a strict "< first day of next month" test never needs one.
-    const firstOfNextMonth = new Date(
-      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 1),
-    );
-
+    const baseSalary = employee.baseSalary.toNumber();
     const monthlyIncrement = employee.monthlyIncrement?.toNumber() ?? 0;
     const targetSalary = employee.targetSalary?.toNumber() ?? 0;
     const incrementInterval = employee.incrementInterval > 0 ? employee.incrementInterval : 1;
 
-    if (monthlyIncrement > 0 && targetSalary > 0) {
-      // ── Projection mode ────────────────────────────────────────────────────
-      // 1. Find the EARLIEST salary history entry (the joining / initial salary).
-      //    We project forward from there instead of from the LATEST entry.
-      //    This makes the result immune to corrupt/wrong intermediate history rows.
-      const earliestEntry = await this.prisma.salaryHistory.findFirst({
-        where: { employeeId: employee.id },
-        orderBy: { effectiveFrom: 'asc' },
-      });
-
-      const baseSalary = earliestEntry
-        ? earliestEntry.amount.toNumber()
-        : employee.baseSalary.toNumber();
-
-      // Determine increment start: prefer explicit field → joining date → earliest history date
-      const incrementStart =
-        employee.incrementEffectiveFrom ??
-        (employee as any).joiningDate ??
-        earliestEntry?.effectiveFrom ??
-        month;
+    // ── A) Projection mode ──────────────────────────────────────────────────
+    // Only activate when all three increment fields are meaningfully set.
+    if (monthlyIncrement > 0 && targetSalary > baseSalary && employee.incrementEffectiveFrom) {
+      const incrementStart = employee.incrementEffectiveFrom;
 
       const monthsElapsed =
         (monthEnd.getUTCFullYear() - incrementStart.getUTCFullYear()) * 12 +
         (monthEnd.getUTCMonth() - incrementStart.getUTCMonth());
 
-      if (monthsElapsed >= 0) {
-        const periods = Math.floor(monthsElapsed / incrementInterval);
-        const projected = Math.min(baseSalary + periods * monthlyIncrement, targetSalary);
+      // Months before the effective-from date → return base salary unchanged
+      if (monthsElapsed < 0) return baseSalary;
 
-        // 2. Also check if there is a MORE RECENT manual salary revision in history
-        //    (e.g. a big pay rise like ₹8,000 manually entered) that should override.
-        const latestEntry = await this.prisma.salaryHistory.findFirst({
-          where: { employeeId: employee.id, effectiveFrom: { lt: firstOfNextMonth } },
-          orderBy: { effectiveFrom: 'desc' },
-        });
-        const historySalary = latestEntry ? latestEntry.amount.toNumber() : baseSalary;
-
-        // Use whichever is higher: the increment-projected salary or the latest history entry.
-        // This respects manual pay raises (e.g. a big ₹8,000 revision) that exceed the projection.
-        return Math.max(projected, historySalary);
-      }
+      const periods = Math.floor(monthsElapsed / incrementInterval);
+      return Math.min(baseSalary + periods * monthlyIncrement, targetSalary);
     }
 
-    // ── No-increment mode: use latest history entry lte month end ──────────
+    // ── B) History mode: use latest salaryHistory entry ≤ month end ─────────
+    const firstOfNextMonth = new Date(
+      Date.UTC(monthEnd.getUTCFullYear(), monthEnd.getUTCMonth() + 1, 1),
+    );
     const historyEntry = await this.prisma.salaryHistory.findFirst({
       where: { employeeId: employee.id, effectiveFrom: { lt: firstOfNextMonth } },
       orderBy: { effectiveFrom: 'desc' },
     });
 
-    return historyEntry ? historyEntry.amount.toNumber() : employee.baseSalary.toNumber();
+    return historyEntry ? historyEntry.amount.toNumber() : baseSalary;
   }
 
   /**

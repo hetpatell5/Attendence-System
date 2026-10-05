@@ -129,7 +129,7 @@ function useToast() {
 // ── System Info Panel ─────────────────────────────────────────────────────────
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloaded' | 'up-to-date' | 'error';
 
-function SystemInfoPanel({ me }: { me: any }) {
+function SystemInfoPanel({ me: _me }: { me: any }) {
   const [version, setVersion] = useState<string>('...');
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [updateVersion, setUpdateVersion] = useState<string>('');

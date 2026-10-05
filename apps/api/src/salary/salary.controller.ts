@@ -105,6 +105,40 @@ export class SalaryController {
     res.send(buffer);
   }
 
+  @Get('me/:id/slip-preview')
+  async previewMineSlip(
+    @Param('id') id: string,
+    @CurrentUser() user: RequestWithUser['user'],
+  ): Promise<{ html: string }> {
+    const record = await this.salaryService.findForUserOrThrow(user.sub, id);
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: record.employeeId },
+      include: { employeeShifts: { include: { shift: true } }, department: true },
+    });
+    const settings = await this.settingsService.getSettings();
+    const vars = this.buildSlipVariables(record, employee, settings);
+    const html = await this.emailService.renderSalarySlipHtml(vars);
+    return { html };
+  }
+
+  @Get('me/:id/slip-pdf-base64')
+  async downloadMineSlipBase64(
+    @Param('id') id: string,
+    @CurrentUser() user: RequestWithUser['user'],
+  ): Promise<{ success: boolean; base64: string; filename: string }> {
+    const record = await this.salaryService.findForUserOrThrow(user.sub, id);
+    const buffer = await this.buildSlip(record);
+    const employee = await this.prisma.employee.findUnique({ where: { id: record.employeeId } });
+    const safeEmp = ([employee?.firstName, employee?.lastName].filter(Boolean).join('_') || 'employee').replace(/[^A-Za-z0-9_-]/g, '_');
+    const monthDate = new Date(record.month);
+    const safeMonth = monthDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }).replace(/[^A-Za-z0-9_-]/g, '_');
+    return {
+      success: true,
+      base64: buffer.toString('base64'),
+      filename: `Salary_Slip_${safeEmp}_${safeMonth}.pdf`,
+    };
+  }
+
   @Roles('SUPER_ADMIN', 'ADMIN', 'HR')
   @Get('summary')
   getSummary(@Query('month') month: string) {
@@ -332,22 +366,18 @@ export class SalaryController {
     const mo = monthDate.getMonth();
     const totalDaysInMonth = new Date(yr, mo + 1, 0).getDate();
     const monthName = monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
     const payDate = record.paymentDate
       ? this.formatPaidOnIST(new Date(record.paymentDate)).split(',')[0]!.trim()
-      : this.formatPaidOnIST(new Date()).split(',')[0]!.trim();
-    // Use paidAt (set when updateStatus marks PAID) for the exact payment timestamp.
-    // paymentDate is @db.Date (date-only), so its UTC midnight shows 05:30 AM IST.
-    // paidAt is a full DateTime stored the moment Mark Paid is clicked.
+      : monthName;
     const recAny = record as any;
     const paidOn = recAny.paidAt
-      ? this.formatPaidOnIST(new Date(recAny.paidAt))          // full datetime (new records)
+      ? this.formatPaidOnIST(new Date(recAny.paidAt))
       : record.paymentDate
-        ? this.formatPaidOnIST(new Date(record.paymentDate)).split(',')[0]!.trim() // date-only (backfilled)
-        : record.status === 'PAID' ? 'Paid' : 'Pending';       // PAID but no timestamp stored
+        ? this.formatPaidOnIST(new Date(record.paymentDate)).split(',')[0]!.trim()
+        : record.status === 'PAID' ? 'Paid' : 'Pending';
 
     const empFullName = employee ? [employee.firstName, employee.lastName].filter(Boolean).join(' ') : 'Employee';
-    const recObj = record as Record<string, unknown>;
-    const empObj = employee as Record<string, unknown> | null;
     const settingsObj = (settings || {}) as Record<string, unknown>;
     const shift = employee?.employeeShifts?.[0]?.shift;
 
@@ -360,59 +390,36 @@ export class SalaryController {
       shiftHours = diff / 60;
     }
 
-    const monthlySalary = Number(
-      (recObj.monthlySalary as number | undefined) ||
-      (Number(record.basicSalary) >= 5000 && !record.workedHours ? record.basicSalary : 0) ||
-      employee?.baseSalary ||
-      8000
-    );
-
-    const perDaySalaryExact = totalDaysInMonth > 0 ? monthlySalary / totalDaysInMonth : 0;
-    const hourRateExact = Number(record.hourRate) > 0
+    // Monthly salary = employee's full-month base salary (never from record.basicSalary which
+    // holds the hours-based earned amount, not the full-month rate).
+    const monthlySalary = Number(employee?.baseSalary || 8000);
+    const perDaySalary = totalDaysInMonth > 0 ? monthlySalary / totalDaysInMonth : 0;
+    const hourRate = Number(record.hourRate) > 0
       ? Number(record.hourRate)
-      : (shiftHours > 0 ? perDaySalaryExact / shiftHours : 0);
+      : (shiftHours > 0 ? perDaySalary / shiftHours : 0);
 
-    const workedHours = Number(record.workedHours ?? 0);
+    // Use stored values directly — they were computed and saved by the admin salary engine.
+    const basicSalary  = Number(record.basicSalary  || 0);
+    const sundayHolidayPay = Number(record.totalAllowances || 0);
+    const commission   = Number(record.commissionAmount || 0);
+    const advance      = Number(record.advanceDeducted  || 0);
+    const netSalary    = Number(record.netSalary || (basicSalary + sundayHolidayPay + commission - advance));
+    const workedHours  = Number(record.workedHours  ?? 0);
     const expectedHours = Number(record.expectedHours ?? (record.workingDays ? record.workingDays * shiftHours : 0));
-
-    let presentDays = Number(record.presentDays || 0);
-    if (presentDays === 0 && expectedHours > 0 && shiftHours > 0) {
-      presentDays = Math.round(expectedHours / shiftHours);
-    }
-
-    let basicSalary = Number(record.basicSalary || 0);
-    if (basicSalary <= 0 || (workedHours > 0 && Math.abs(basicSalary - monthlySalary) < 0.01)) {
-      basicSalary = Number((workedHours * hourRateExact).toFixed(2));
-    }
-
-    let sundayHolidayPay = Number((recObj.sundayHolidayPay as number | undefined) ?? record.totalAllowances ?? 0);
-    if (sundayHolidayPay <= 0) {
-      const net = Number(record.netSalary || 0);
-      const commission = Number(record.commissionAmount || 0);
-      const advance = Number(record.advanceDeducted || 0);
-      if (net > 0 && basicSalary > 0) {
-        sundayHolidayPay = Math.max(0, Number((net - basicSalary - commission + advance).toFixed(2)));
-      }
-    }
-
-    const overtimeHours = Number((recObj.overtimeHours as number | undefined) ?? Math.max(0, workedHours - expectedHours));
-    const overtimePayout = Number(record.overtimeAmount ?? (overtimeHours * hourRateExact));
-    const commission = Number(record.commissionAmount ?? 0);
-    const advance = Number(record.advanceDeducted ?? 0);
-    const netSalary = Number(record.netSalary || (basicSalary + sundayHolidayPay + overtimePayout + commission - advance));
-    const workingDays = record.workingDays > 0 ? record.workingDays : 26;
+    const presentDays  = Number(record.presentDays  || 0);
+    const workingDays  = record.workingDays > 0 ? record.workingDays : 26;
+    const overtimePayout = Number(record.overtimeAmount || 0);
+    const overtimeHours = Number(record.overtimeMinutes ? (record.overtimeMinutes / 60) : 0);
 
     return {
       company_name: settings?.companyName || 'BMAP Pvt Ltd',
       company_logo: settings?.companyLogo || '',
       company_address: (settingsObj.companyAddress as string) || '',
       employee_name: empFullName,
-      // GST-portal submissions flagged the letter-prefixed employee codes (e.g. "BMA-23") as a
-      // concern, so the slip shows the numeric portion only, never the "BMA"/"EMP" prefix.
-      employee_id: (employee?.employeeCode || `${(empObj?.legacySourceId as number | undefined) ?? '001'}`).replace(/[^0-9]/g, '') || '1',
+      employee_id: (employee?.employeeCode || '').replace(/[^0-9]/g, '') || '1',
       employee_email: recipientEmail || employee?.email || '',
       month_name: monthName,
-      pay_period: `01 ${monthName} - ${monthDate.getDate()} ${monthName}`,
+      pay_period: `01 ${monthName} - ${totalDaysInMonth} ${monthName}`,
       pay_date: payDate,
       shift_name: shift?.name || 'Standard Shift',
       shift_time: shift?.startTime && shift?.endTime
@@ -421,14 +428,14 @@ export class SalaryController {
       payment_status: record.status === 'PAID' ? 'Paid' : 'Pending',
       monthly_salary: monthlySalary.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       total_days: String(totalDaysInMonth),
-      per_day_salary: perDaySalaryExact.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      per_hour_salary: hourRateExact.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      per_day_salary: perDaySalary.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+      per_hour_salary: hourRate.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       basic_salary: basicSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       working_days: String(workingDays),
       sunday_holiday_pay: sundayHolidayPay.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       present_days: String(presentDays),
       overtime_pay: overtimePayout.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      overtime_hours: String(overtimeHours),
+      overtime_hours: String(Number(overtimeHours.toFixed(1))),
       commission: commission.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
       total_hours_worked: String(workedHours),
       advance_deducted: advance.toLocaleString('en-IN', { minimumFractionDigits: 2 }),

@@ -42,7 +42,16 @@ function ShiftsTab(): JSX.Element {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => shiftsApi.remove(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['shifts'] }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['shifts'] });
+      const previous = queryClient.getQueryData<Shift[]>(['shifts']);
+      queryClient.setQueryData<Shift[]>(['shifts'], (old) => old?.filter((s) => s.id !== id) ?? []);
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) queryClient.setQueryData(['shifts'], context.previous);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['shifts'] }),
   });
 
   const columns: DataTableColumn<Shift>[] = [

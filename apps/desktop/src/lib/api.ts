@@ -198,6 +198,10 @@ export const salaryApi = {
   previewSlipById: (id: string) => request<{ html: string }>(`/salary/${id}/slip-preview`),
   downloadSlipPdfById: (id: string) =>
     request<{ success: boolean; base64: string; filename: string }>(`/salary/${id}/slip-pdf-base64`),
+  /** Employee-accessible equivalents — verifies ownership server-side. */
+  previewMineSlip: (id: string) => request<{ html: string }>(`/salary/me/${id}/slip-preview`),
+  downloadMineSlipBase64: (id: string) =>
+    request<{ success: boolean; base64: string; filename: string }>(`/salary/me/${id}/slip-pdf-base64`),
 };
 
 

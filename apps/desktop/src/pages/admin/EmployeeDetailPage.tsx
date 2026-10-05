@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
-import { employeesApi, attendanceApi, leaveApi, salaryApi, departmentsApi, designationsApi, shiftsApi } from '@/lib/api';
+import { employeesApi, leaveApi, salaryApi, departmentsApi, designationsApi, shiftsApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +11,9 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { StatusBadge } from '@/components/StatusBadge';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
-import { User, Calendar, Clock, Banknote, Edit, Save, X, Key, Eye, Download, Loader2, FileArchive } from 'lucide-react';
+import { User, Calendar, Banknote, Edit, Save, X, Key, Eye, Download, Loader2, FileArchive } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Attendance, LeaveRequest, SalaryRecord } from '@attendance/shared';
+import type { LeaveRequest, SalaryRecord } from '@attendance/shared';
 
 function base64ToBlob(base64: string, contentType = 'application/pdf'): Blob {
   const byteChars = atob(base64);
@@ -22,7 +22,7 @@ function base64ToBlob(base64: string, contentType = 'application/pdf'): Blob {
   return new Blob([new Uint8Array(byteNumbers)], { type: contentType });
 }
 
-type Tab = 'profile' | 'attendance' | 'leaves' | 'salary';
+type Tab = 'profile' | 'leaves' | 'salary';
 
 export function EmployeeDetailPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -74,13 +74,7 @@ export function EmployeeDetailPage(): JSX.Element {
     }
   }, [employee?.id]);
 
-  const { data: attendance = [], isLoading: isAttendanceLoading } = useQuery({
-    queryKey: ['attendance', 'employee', id],
-    queryFn: () => attendanceApi.listAll({ employeeId: id!, pageSize: '30' }).then((r) => r.items),
-    enabled: !!id && tab === 'attendance',
-  });
-
-  const { data: leaves, isLoading: isLeavesLoading } = useQuery({
+const { data: leaves, isLoading: isLeavesLoading } = useQuery({
     queryKey: ['leaves', 'employee', id],
     queryFn: () => leaveApi.listAll({ employeeId: id! }),
     enabled: !!id && tab === 'leaves',
@@ -210,15 +204,7 @@ export function EmployeeDetailPage(): JSX.Element {
     return <p className="text-muted-foreground p-6">Loading employee details…</p>;
   }
 
-  const attendanceColumns: DataTableColumn<Attendance>[] = [
-    { key: 'attendanceDate', header: 'Date', render: (r) => new Date(r.attendanceDate).toLocaleDateString('en-GB') },
-    { key: 'punchIn', header: 'Punch-In', render: (r) => r.punchInAt ? new Date(r.punchInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--' },
-    { key: 'punchOut', header: 'Punch-Out', render: (r) => r.punchOutAt ? new Date(r.punchOutAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '--' },
-    { key: 'workedMinutes', header: 'Worked', render: (r) => r.workedMinutes ? `${Math.floor(r.workedMinutes/60)}h ${r.workedMinutes%60}m` : '--' },
-    { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
-  ];
-
-  const leaveColumns: DataTableColumn<LeaveRequest & any>[] = [
+const leaveColumns: DataTableColumn<LeaveRequest & any>[] = [
     { key: 'startDate', header: 'From', render: (r) => new Date(r.startDate).toLocaleDateString('en-GB') },
     { key: 'endDate', header: 'To', render: (r) => new Date(r.endDate).toLocaleDateString('en-GB') },
     { key: 'days', header: 'Days', render: (r) => r.totalDays },
@@ -239,7 +225,6 @@ export function EmployeeDetailPage(): JSX.Element {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: <User size={16} /> },
-    { id: 'attendance', label: 'Attendance', icon: <Clock size={16} /> },
     { id: 'leaves', label: 'Leaves', icon: <Calendar size={16} /> },
     { id: 'salary', label: 'Salary', icon: <Banknote size={16} /> },
   ] as const;
@@ -265,7 +250,6 @@ export function EmployeeDetailPage(): JSX.Element {
               <StatusBadge status={employee.status} />
             </p>
             <div className="flex flex-wrap gap-4 mt-4 justify-center md:justify-start text-sm">
-              <div><span className="text-muted-foreground">Code:</span> <span className="font-medium">{employee.employeeCode}</span></div>
               <div><span className="text-muted-foreground">Email:</span> <span className="font-medium">{employee.email}</span></div>
               <div className="font-medium">{(employee as any).shift?.name ?? '—'}</div>
               <div><span className="text-muted-foreground">Joined:</span> <span className="font-medium">{new Date(employee.joiningDate).toLocaleDateString('en-GB')}</span></div>
@@ -575,16 +559,7 @@ export function EmployeeDetailPage(): JSX.Element {
             </div>
           )}
 
-          {tab === 'attendance' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Attendance Log</h3>
-              </div>
-              <DataTable columns={attendanceColumns} rows={attendance} getRowKey={(r) => r.id} isLoading={isAttendanceLoading} />
-            </div>
-          )}
-
-          {tab === 'leaves' && (
+{tab === 'leaves' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Leave History</h3>

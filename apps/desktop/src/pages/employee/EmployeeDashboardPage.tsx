@@ -871,7 +871,7 @@ export function EmployeeDashboardPage(): JSX.Element {
       </div>
 
       {/* Top Hero: Focused Claymorphic Clock, 3 Metric Pods & Circular Action Button Sticked on Wall */}
-      <div className="relative py-2 transition-all duration-300">
+      <div className="relative py-2 transition-all duration-300 sticky top-0 z-20 bg-slate-50 -mx-6 px-6 pb-4 pt-2">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           {/* Left (4 cols): Status Badge, Digital Clock, Date & Shift Info (Sticked on Wall) */}
           <div className="lg:col-span-4 flex flex-col items-start gap-1.5 min-w-0">

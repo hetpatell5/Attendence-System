@@ -1048,7 +1048,7 @@ export function AdminDashboardPage(): JSX.Element {
                     <span>
                       {new Date(r.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – {new Date(r.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </span>
-                    {r.reason && <><span>•</span><span className="truncate max-w-[120px]">{r.reason}</span></>}
+                    {r.reason && <span className="truncate">{r.reason}</span>}
                   </div>
                 </div>
 

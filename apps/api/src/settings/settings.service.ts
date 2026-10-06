@@ -219,8 +219,8 @@ export class SettingsService {
         // UPDATE clause from (can't know the columns without a schema lookup).
         let safe = toIdempotentUpsert(stmt);
         // Legacy dumps often contain 0000-00-00 00:00:00 which strict MySQL rejects.
-        // Replace with NULL so imports never fail on zero-dates.
-        safe = safe.replace(/'0000-00-00 00:00:00'/g, 'NULL');
+        // Replace with a valid placeholder — NOT NULL so NOT NULL columns don't fail with 1048.
+        safe = safe.replace(/'0000-00-00 00:00:00'/g, "'1970-01-01 00:00:00'");
         // Dumps exported from MySQL 8 name collations (utf8mb4_0900_ai_ci, ...) that
         // MariaDB / older MySQL don't know ("Unknown collation", error 1273), failing
         // the whole CREATE TABLE. Only schema statements are rewritten — never row data.

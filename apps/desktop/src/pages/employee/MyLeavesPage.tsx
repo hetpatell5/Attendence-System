@@ -25,8 +25,13 @@ const EMPTY_FORM: LeaveForm = {
 
 const PAGE_SIZE = 5;
 
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const parts = (iso || '').split('T')[0]!.split('-');
+  const y = parts[0] ?? '';
+  const m = parseInt(parts[1] ?? '1', 10) - 1;
+  const d = parts[2] ?? '';
+  return `${d} ${MONTHS_SHORT[m] ?? ''} ${y}`;
 }
 
 export function MyLeavesPage(): JSX.Element {

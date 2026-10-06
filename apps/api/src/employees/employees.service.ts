@@ -84,7 +84,9 @@ export class EmployeesService {
     const where: Prisma.EmployeeWhereInput = {
       departmentId: query.departmentId,
       designationId: query.designationId,
-      status: query.status,
+      // When no specific status is requested (ALL view), still exclude TERMINATED employees —
+      // they are permanently removed and should never appear in normal UI listings.
+      status: query.status ?? { not: 'TERMINATED' },
       ...(query.search
         ? {
             OR: [
@@ -527,13 +529,23 @@ export class EmployeesService {
   async remove(id: string, actorUserId: string, ip?: string): Promise<{ success: boolean }> {
     const employee = await this.findByIdOrThrow(id);
 
-    // Legacy-sourced employees must not be hard-deleted: the migration idempotency check
-    // uses legacySourceId to skip already-imported employees, so a hard delete would cause
-    // them to be re-imported on the next migration run. Soft-delete (INACTIVE) instead.
+    // Legacy-sourced employees cannot be hard-deleted: the migration idempotency check uses
+    // legacySourceId to skip already-imported rows, so a hard delete would re-import them on
+    // the next migration run. Use TERMINATED (not INACTIVE) so they are clearly permanently
+    // removed and never appear in any active-employee filter.
     if (employee.legacySourceId !== null) {
-      await this.prisma.employee.update({
-        where: { id },
-        data: { status: 'INACTIVE' },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.employee.update({
+          where: { id },
+          data: { status: 'TERMINATED', deactivatedAt: new Date() },
+        });
+        if (employee.userId) {
+          await tx.user.update({ where: { id: employee.userId }, data: { isActive: false } });
+          await tx.refreshToken.updateMany({
+            where: { userId: employee.userId, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+        }
       });
     } else {
       await this.prisma.$transaction(async (tx) => {

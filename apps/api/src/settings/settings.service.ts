@@ -739,6 +739,39 @@ export class SettingsService {
       }
     }
 
+    // 1b. Terminate legacy employees who were deleted from the old system.
+    // legacyEmployees only contains `status = 'active'` rows, so any employee
+    // in app_employees with a legacySourceId NOT in that set has been deleted
+    // (or deactivated) in the old system since the last import.
+    try {
+      const activeImportedIds = new Set(legacyEmployees.map((e) => e.id));
+      const legacyInNewSystem = await this.prisma.employee.findMany({
+        where: { legacySourceId: { not: null }, status: 'ACTIVE' },
+        select: { id: true, legacySourceId: true, userId: true },
+      });
+      const toTerminate = legacyInNewSystem.filter(
+        (e) => !activeImportedIds.has(e.legacySourceId!),
+      );
+      for (const emp of toTerminate) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.employee.update({
+            where: { id: emp.id },
+            data: { status: 'TERMINATED', deactivatedAt: new Date() },
+          });
+          if (emp.userId) {
+            await tx.user.update({ where: { id: emp.userId }, data: { isActive: false } });
+            await tx.refreshToken.updateMany({
+              where: { userId: emp.userId, revokedAt: null },
+              data: { revokedAt: new Date() },
+            });
+          }
+        });
+        result.employeesSkipped++;
+      }
+    } catch (err: any) {
+      result.errors.push(`Terminate-deleted-employees: ${err?.message}`);
+    }
+
     // ── 2. Migrate attendance ────────────────────────────────────────────────
     //
     // 2a: `attendance_log` (the raw punch-in/punch-out records) is the *authoritative*

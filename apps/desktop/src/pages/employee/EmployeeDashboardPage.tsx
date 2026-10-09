@@ -336,7 +336,8 @@ export function EmployeeDashboardPage(): JSX.Element {
   // Shift Countdown & Progress Info
   // -------------------------------------------------------------------------
   const shiftCountdownInfo = useMemo(() => {
-    if (!isClockedIn || !shiftEndTimestamp) return null;
+    // Show shift progress whenever the employee has punched in today (clocked in OR already clocked out)
+    if (!firstClockIn || !shiftEndTimestamp) return null;
 
     const remainingMs = shiftEndTimestamp - now.getTime();
     if (remainingMs <= 0) {
@@ -959,7 +960,7 @@ export function EmployeeDashboardPage(): JSX.Element {
             </div>
 
             {/* Box 3: Shift Progress Bar (when clocked in) or Scheduled Shift */}
-            {isClockedIn && shiftCountdownInfo ? (
+            {shiftCountdownInfo ? (
               <div className="clay-pod px-4 py-2.5 w-full">
                 <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 mb-1.5">
                   <span className="flex items-center gap-1.5 text-slate-700 font-bold">

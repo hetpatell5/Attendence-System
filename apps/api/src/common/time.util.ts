@@ -71,3 +71,26 @@ export function combineDateAndTime(date: Date, hhMm: string): Date {
   result.setUTCHours(hours, minutes, 0, 0);
   return result;
 }
+
+/**
+ * Returns the UTC epoch (ms) for an "HH:mm" wall-clock time on a calendar day
+ * in the given IANA timezone. Unlike setHours() (which uses server-local time
+ * and is wrong on a UTC-hosted Linux server), this is timezone-correct.
+ */
+export function wallClockToUtcMs(calendarDayUtcMidnight: Date, hhMm: string, timezone: string): number {
+  const { hours, minutes } = parseHhMm(hhMm);
+  // Derive the TZ offset using noon UTC on the same calendar day — noon never
+  // crosses a day boundary in any real timezone, so the offset is unambiguous.
+  const noon = new Date(calendarDayUtcMidnight);
+  noon.setUTCHours(12, 0, 0, 0);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(noon);
+  const gp = (t: Intl.DateTimeFormatPartTypes): number =>
+    parseInt(parts.find((p) => p.type === t)?.value ?? '0', 10);
+  // tzOffsetMinutes = how many minutes ahead of UTC the company timezone is
+  // e.g. IST (UTC+5:30) → 330
+  const tzOffsetMinutes = (gp('hour') - 12) * 60 + gp('minute');
+  return calendarDayUtcMidnight.getTime() + (hours * 60 + minutes - tzOffsetMinutes) * 60_000;
+}

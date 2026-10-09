@@ -13,7 +13,7 @@ import { ShiftsService } from '../shifts/shifts.service';
 import { SettingsService } from '../settings/settings.service';
 import { AttendanceCalculationService } from './attendance-calculation.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { serverNow, toCompanyDay } from '../common/time.util';
+import { serverNow, toCompanyDay, wallClockToUtcMs } from '../common/time.util';
 import type { Paginated } from '../common/dto/pagination.dto';
 import type { CreateAttendanceDto } from './dto/create-attendance.dto';
 import type { AdjustAttendanceDto } from './dto/adjust-attendance.dto';
@@ -543,19 +543,10 @@ export class AttendanceService {
     let shiftEndTimestamp: number | null = null;
     let shiftStartTimestamp: number | null = null;
     if (shift?.startTime && shift?.endTime) {
-      const [sh, sm] = shift.startTime.split(':').map(Number);
-      const [eh, em] = shift.endTime.split(':').map(Number);
-
-      const shiftStartDate = new Date(today);
-      shiftStartDate.setHours(sh || 0, sm || 0, 0, 0);
-      shiftStartTimestamp = shiftStartDate.getTime();
-
-      const shiftEndDate = new Date(today);
-      shiftEndDate.setHours(eh || 0, em || 0, 0, 0);
-      if ((eh || 0) < (sh || 0)) {
-        shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-      }
-      shiftEndTimestamp = shiftEndDate.getTime();
+      shiftStartTimestamp = wallClockToUtcMs(today, shift.startTime, settings.timezone);
+      const endMs = wallClockToUtcMs(today, shift.endTime, settings.timezone);
+      // Overnight shift: end wall-clock is earlier than start → add 24h
+      shiftEndTimestamp = endMs <= shiftStartTimestamp ? endMs + 24 * 60 * 60_000 : endMs;
     }
 
     return {

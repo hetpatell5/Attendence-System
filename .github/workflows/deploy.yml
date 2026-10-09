@@ -1,0 +1,52 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Deploy API to live server ──────────────────────────────────────
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH → pull, build, restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd ~/htdocs/projectadmin.bookmyassignments.com
+            git checkout -- pnpm-lock.yaml
+            git pull
+            git log -1 --oneline
+            cd apps/api
+            pnpm install
+            npx prisma migrate deploy
+            pnpm build
+            pm2 restart attendance-api
+
+  # ── Job 2: Build & publish desktop installer to GitHub Releases ───────────
+  build-desktop:
+    name: Build Desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build & publish installer
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: cd apps/desktop && pnpm package:publish

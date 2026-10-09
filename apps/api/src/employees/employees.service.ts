@@ -69,6 +69,21 @@ export class EmployeesService {
         data: { employeeCode: `TEMP-REINDEX-${i + 1}-${now}` },
       });
     }
+
+    // Non-active employees may still hold BMA-N codes from before they were
+    // deactivated. Rename them now so those numeric slots are free for the
+    // second pass below (unique constraint would fire otherwise).
+    const nonActiveWithBmaCode = await this.prisma.employee.findMany({
+      where: { status: { not: 'ACTIVE' }, employeeCode: { startsWith: 'BMA-' } },
+      select: { id: true },
+    });
+    for (const emp of nonActiveWithBmaCode) {
+      await this.prisma.employee.update({
+        where: { id: emp.id },
+        data: { employeeCode: `ARCH-${emp.id}` },
+      });
+    }
+
     for (let i = 0; i < activeEmps.length; i++) {
       await this.prisma.employee.update({
         where: { id: activeEmps[i]!.id },

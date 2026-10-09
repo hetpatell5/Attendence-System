@@ -1,17 +1,86 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { employeesApi } from '@/lib/api';
-import { 
-  MapPin, HeartPulse, 
-  Mail, Calendar, Clock, IndianRupee, Phone
+import {
+  MapPin, HeartPulse,
+  Mail, Calendar, Clock, IndianRupee, Phone, RefreshCw
 } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { to12h } from '@/lib/utils';
 
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloaded' | 'up-to-date' | 'error';
+
+function AppVersionCard(): JSX.Element {
+  const [version, setVersion] = useState<string>('...');
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateVersion, setUpdateVersion] = useState<string>('');
+  const api = (window as any).electronApi;
+
+  useEffect(() => {
+    api?.getVersion?.().then((v: string) => setVersion(v)).catch(() => setVersion('—'));
+    const offAvailable = api?.updater?.onUpdateAvailable?.((info: { version: string }) => {
+      setUpdateStatus('available');
+      setUpdateVersion(info.version);
+    });
+    const offDownloaded = api?.updater?.onUpdateDownloaded?.((info: { version: string }) => {
+      setUpdateStatus('downloaded');
+      setUpdateVersion(info.version);
+    });
+    return () => { offAvailable?.(); offDownloaded?.(); };
+  }, []);
+
+  const handleCheck = async () => {
+    setUpdateStatus('checking');
+    try {
+      await api?.updater?.checkNow?.();
+      setTimeout(() => setUpdateStatus((s) => s === 'checking' ? 'up-to-date' : s), 5000);
+    } catch { setUpdateStatus('error'); }
+  };
+
+  const handleInstall = () => api?.updater?.installNow?.();
+
+  const statusBit = () => {
+    if (updateStatus === 'checking') return <span className="text-blue-500 animate-pulse">Checking…</span>;
+    if (updateStatus === 'available') return <span className="text-amber-500">⬇ v{updateVersion}</span>;
+    if (updateStatus === 'downloaded') return <span className="text-emerald-600">✅ v{updateVersion} ready</span>;
+    if (updateStatus === 'up-to-date') return <span className="text-emerald-600">✅ Up to date</span>;
+    if (updateStatus === 'error') return <span className="text-red-500">⚠ Failed</span>;
+    return null;
+  };
+
+  return (
+    <div className="clay-pod flex items-center gap-3 px-4 py-2.5 rounded-2xl shrink-0">
+      <RefreshCw size={14} className="text-slate-500 shrink-0" />
+      <div className="flex flex-col items-end">
+        <span className="font-mono font-bold text-slate-800 text-xs">v{version}</span>
+        {statusBit() && <span className="text-[10px] font-medium">{statusBit()}</span>}
+      </div>
+      {updateStatus === 'downloaded' ? (
+        <button
+          type="button"
+          onClick={handleInstall}
+          className="clay-btn-green h-7 px-3 rounded-xl text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
+        >
+          Restart &amp; Install
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => { void handleCheck(); }}
+          disabled={updateStatus === 'checking'}
+          className="h-7 px-3 rounded-xl text-xs font-semibold bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900 border border-slate-300/60 cursor-pointer disabled:opacity-50 disabled:pointer-events-none transition-all active:scale-95"
+        >
+          Check for Updates
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ProfilePage(): JSX.Element {
-  const { data: employee, isLoading } = useQuery({ 
-    queryKey: ['employee', 'me'], 
-    queryFn: employeesApi.me 
+  const { data: employee, isLoading } = useQuery({
+    queryKey: ['employee', 'me'],
+    queryFn: employeesApi.me
   });
 
   const shiftInfo = useMemo(() => {
@@ -71,6 +140,7 @@ export function ProfilePage(): JSX.Element {
             Personal employee credentials, assigned shift details, and compensation.
           </p>
         </div>
+        <AppVersionCard />
       </div>
 
       {/* Profile Header Hero Card */}
@@ -93,7 +163,7 @@ export function ProfilePage(): JSX.Element {
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
               <span className="clay-pod px-3 py-1 text-slate-800 font-bold">{employee.designation?.title ?? 'Staff'}</span>
               <span className="clay-pod px-3 py-1 text-slate-600">{employee.department?.name ?? 'General'}</span>
-              <span className="clay-pod px-3 py-1 font-mono text-emerald-700 font-bold border border-emerald-500/30">ID: {employee.employeeCode}</span>
+              <span className="clay-pod px-3 py-1 font-mono text-emerald-700 font-bold border border-emerald-500/30">ID: {employee.employeeCode.replace(/^BMA-/i, '')}</span>
             </div>
 
             {/* Quick Metadata Row */}

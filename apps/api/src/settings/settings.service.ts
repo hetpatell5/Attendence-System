@@ -698,10 +698,11 @@ export class SettingsService {
       monthly_salary: string;
       joining_date: Date | null;
       dob: Date | null;
+      address: string | null;
     };
 
     const legacyEmployees = await this.prisma.$queryRaw<LegEmp[]>`
-      SELECT id, full_name, email, mobile_number, monthly_salary, joining_date, dob
+      SELECT id, full_name, email, mobile_number, monthly_salary, joining_date, dob, address
       FROM employees
       WHERE status = 'active'
     `;
@@ -727,6 +728,7 @@ export class SettingsService {
             lastName,
             email,
             phone: leg.mobile_number ?? undefined,
+            address: leg.address ?? undefined,
             joiningDate,
             dateOfBirth: leg.dob ? new Date(leg.dob) : undefined,
             baseSalary,

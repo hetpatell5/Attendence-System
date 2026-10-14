@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { SettingsService, type ParsedCompanySettings, type SqlImportResult, type MigrationResult } from './settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -112,6 +113,17 @@ export class SettingsController {
   @Post('run-migration')
   async runMigration(@CurrentUser() user: RequestWithUser['user']): Promise<MigrationResult> {
     return this.settingsService.runMigration(user.sub);
+  }
+
+  /** Generate a full SQL dump of all app_ tables — importable back into this system */
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Get('export-sql')
+  async exportSql(@Res() res: Response): Promise<void> {
+    const sql = await this.settingsService.exportSql();
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/sql');
+    res.setHeader('Content-Disposition', `attachment; filename="attendance_backup_${date}.sql"`);
+    res.send(sql);
   }
 
   /** Diagnostic: check what data exists in legacy + new tables */

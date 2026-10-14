@@ -14,6 +14,7 @@ import { SalaryAnalyticsCharts } from '@/components/SalaryAnalyticsCharts';
 export function MySalaryPage(): JSX.Element {
   const [selected, setSelected] = useState<SalaryRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [analyticsRange, setAnalyticsRange] = useState<'6m' | 'alltime'>('6m');
 
   const { data: slipPreviewData, isLoading: isSlipPreviewLoading } = useQuery({
     queryKey: ['salary', 'my-slip-preview', selected?.id],
@@ -382,6 +383,22 @@ export function MySalaryPage(): JSX.Element {
             Visual earnings trajectory, career progression, and past salary slips.
           </p>
         </div>
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
+          {(['6m', 'alltime'] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setAnalyticsRange(r)}
+              className={`px-3.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                analyticsRange === r
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              {r === '6m' ? 'Past 6 Months' : 'All Time'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Visual Analytics Suite: Modern Charts & Graphs */}
@@ -393,6 +410,8 @@ export function MySalaryPage(): JSX.Element {
         currentYear={currentYear}
         currentMonthNum={currentMonthNum}
         employee={employee}
+        range={analyticsRange}
+        onRangeChange={setAnalyticsRange}
       />
 
       {/* Finalized Salary History */}

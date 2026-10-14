@@ -525,7 +525,7 @@ export function AttendanceManagementPage(): JSX.Element {
                     {summary.employee.firstName} {summary.employee.lastName}
                   </h3>
                   <p className="text-[11px] font-mono text-muted-foreground mt-0.5">
-                    {summary.employee.employeeCode || '—'}
+                    {summary.employee.employeeCode?.replace(/^BMA-/i, '') || '—'}
                   </p>
                 </div>
 

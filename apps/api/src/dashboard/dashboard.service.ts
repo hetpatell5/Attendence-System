@@ -5,7 +5,7 @@ import { AttendanceService } from '../attendance/attendance.service';
 import { LeaveService } from '../leave/leave.service';
 import { SalaryService } from '../salary/salary.service';
 import { SettingsService } from '../settings/settings.service';
-import { serverNow, toCompanyDay } from '../common/time.util';
+import { serverNow, toCompanyDay, wallClockToUtcMs } from '../common/time.util';
 
 export interface EmployeeDashboardPayload {
   today: Awaited<ReturnType<AttendanceService['getTodayForUser']>>;
@@ -106,7 +106,17 @@ export class DashboardService {
       this.prisma.employee.findMany({ where: { status: 'ACTIVE' }, include: { department: true, designation: true } }),
       this.prisma.attendance.findMany({
         where: { attendanceDate: today },
-        include: { employee: true },
+        include: {
+          employee: {
+            include: {
+              employeeShifts: {
+                include: { shift: true },
+                orderBy: { effectiveFrom: 'desc' },
+                take: 1,
+              },
+            },
+          },
+        },
       }),
       this.prisma.leaveRequest.count({ where: { status: 'PENDING' } }),
       this.prisma.salaryRecord.findMany({ where: { status: 'PENDING' }, include: { employee: true } }),
@@ -132,8 +142,24 @@ export class DashboardService {
 
     const presentList = todayAttendanceRows.filter((a) => a.status === 'PRESENT');
     const onLeaveList = todayAttendanceRows.filter((a) => a.status === 'LEAVE');
-    const lateList = todayAttendanceRows.filter((a) => a.lateMinutes > 0);
     const earlyList = todayAttendanceRows.filter((a) => a.earlyLeaveMinutes > 0);
+
+    // lateMinutes in DB is only stored after punch-out. For clocked-in employees we
+    // derive lateness live by comparing punchInAt against the employee's shift start.
+    // Shift start times are company-local wall-clock ("09:00" IST, not UTC) — must go
+    // through wallClockToUtcMs (timezone-aware), not naive UTC-hour math, or every
+    // real punch-in looks "early" by the IST offset and nobody is ever shown as late.
+    const effectiveLateMinutes = (a: (typeof todayAttendanceRows)[number]): number => {
+      if (a.lateMinutes > 0) return a.lateMinutes;
+      if (!a.punchInAt) return 0;
+      const empShift = a.employee.employeeShifts[0]?.shift;
+      if (!empShift) return 0;
+      const shiftStartMs = wallClockToUtcMs(today, empShift.startTime, settings.timezone);
+      return Math.max(0, Math.round((a.punchInAt.getTime() - shiftStartMs) / 60_000) - empShift.gracePeriodMinutes);
+    };
+    const lateList = todayAttendanceRows
+      .map((a) => ({ ...a, lateMinutes: Math.max(a.lateMinutes, effectiveLateMinutes(a)) }))
+      .filter((a) => a.lateMinutes > 0);
 
     // Absent list: active employees who are NOT present and NOT on leave today
     const presentOrLeaveIds = new Set(todayAttendanceRows.filter(a => a.status === 'PRESENT' || a.status === 'LEAVE').map(a => a.employeeId));

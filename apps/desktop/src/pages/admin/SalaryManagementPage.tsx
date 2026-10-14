@@ -675,6 +675,11 @@ export function SalaryManagementPage(): JSX.Element {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['salary', 'all'] });
+      // Dashboard's "Salary & Payroll Status" card reads ['salary', 'summary', month] —
+      // not invalidated by the above, so it kept showing pre-save totals until something
+      // else happened to refresh it.
+      void queryClient.invalidateQueries({ queryKey: ['salary', 'summary'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'admin'] });
     },
     onError: (err: any) => {
       alert(`Save failed: ${err?.message || 'Error occurred'}`);
@@ -719,6 +724,8 @@ export function SalaryManagementPage(): JSX.Element {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['salary', 'all'] });
+      void queryClient.invalidateQueries({ queryKey: ['salary', 'summary'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'admin'] });
     },
     onError: (err: any) => {
       alert(`Status update failed: ${err?.message || 'Error occurred'}`);

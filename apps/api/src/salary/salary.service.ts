@@ -499,19 +499,13 @@ export class SalaryService {
                 status,
               },
             });
-          } else if (existing.status !== status) {
-            // The legacy `salary_details.status` is the source of truth for paid/unpaid
-            // (mirrors the old system exactly) — a SalaryRecord created before that legacy
-            // row existed/was current (e.g. an early placeholder from before the real data
-            // was imported) must not permanently freeze a stale status. Only `status` is
-            // synced here, not the snapshotted amount fields (basicSalary, netSalary, etc.)
-            // — those intentionally stay locked to whatever they were generated with, so a
-            // past payslip's figures never silently change.
-            await this.prisma.salaryRecord.update({
-              where: { id: existing.id },
-              data: { status },
-            });
           }
+          // Do NOT sync status for existing records. The modern system is the source of
+          // truth once a record exists — same fix as listAll() below, applied here too.
+          // This used to overwrite status from the legacy (old system) salary_details
+          // table on every dashboard load, silently reverting Mark Paid back to Pending
+          // minutes after it was clicked, since the old system's row is never updated
+          // once the new system takes over.
         }
       }
     } catch {

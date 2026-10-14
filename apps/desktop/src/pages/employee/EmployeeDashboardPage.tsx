@@ -138,6 +138,15 @@ function formatDuration(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
+function formatDurationLive(totalSeconds: number): string {
+  if (totalSeconds <= 0) return '0h 00m 00s';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${h}h ${pad(m)}m ${pad(s)}s`;
+}
+
 function fmt12h(timeStr?: string | null): string {
   if (!timeStr) return '';
   const [hStr, mStr] = timeStr.split(':');
@@ -539,9 +548,14 @@ export function EmployeeDashboardPage(): JSX.Element {
   };
 
   let todayWorkedMinutes = today?.workedMinutes || 0;
-  if (today?.punchInAt && !today?.punchOutAt) {
-    const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(today.punchInAt).getTime()) / 60000));
-    todayWorkedMinutes = Math.max(todayWorkedMinutes, elapsed);
+  let todayWorkedSecs = todayWorkedMinutes * 60;
+  // Use isClockedIn (from punchState.currentState) — more reliable than !today.punchOutAt,
+  // which can be set from a prior session even when the employee is currently clocked back in.
+  if (isClockedIn && today?.punchInAt) {
+    const elapsedSecs = Math.max(0, Math.floor((now.getTime() - new Date(today.punchInAt).getTime()) / 1000));
+    const elapsedMins = Math.floor(elapsedSecs / 60);
+    todayWorkedMinutes = Math.max(todayWorkedMinutes, elapsedMins);
+    todayWorkedSecs = Math.max(todayWorkedSecs, elapsedSecs);
   }
 
   const weeklyDaysData = useMemo(() => {
@@ -658,27 +672,24 @@ export function EmployeeDashboardPage(): JSX.Element {
       else { break; } // absent → streak ends
     }
 
-    // Tier classification
+    // Tier classification — thresholds match Sunday/Holiday claim breakpoints (5, 12, 18)
     const tier =
       currentStreak === 0 ? 0
-      : currentStreak <= 4 ? 1
-      : currentStreak <= 9 ? 2
-      : currentStreak <= 14 ? 3
-      : currentStreak <= 20 ? 4
-      : currentStreak <= 25 ? 5 : 6;
+      : currentStreak < 5 ? 1
+      : currentStreak < 12 ? 2
+      : currentStreak < 18 ? 3
+      : 4;
 
     const TIER_INFO = [
       { emoji: '💤', label: 'No Streak Yet' },
       { emoji: '🔥', label: 'Getting Started' },
-      { emoji: '🔥', label: 'On Fire!' },
-      { emoji: '⚡', label: 'Electrifying' },
+      { emoji: '⚡', label: 'On Fire!' },
       { emoji: '🌟', label: 'Superstar!' },
-      { emoji: '💎', label: 'Diamond' },
       { emoji: '👑', label: 'Legendary!' },
     ];
 
     // Next milestone progress
-    const THRESHOLDS = [1, 5, 10, 15, 21, 26] as const;
+    const THRESHOLDS = [1, 5, 12, 18] as const;
     const nextThreshIdx = THRESHOLDS.findIndex(t => currentStreak < t);
     const nextMilestone = nextThreshIdx >= 0 ? (() => {
       const nextT = THRESHOLDS[nextThreshIdx] ?? 26;
@@ -824,19 +835,21 @@ export function EmployeeDashboardPage(): JSX.Element {
           {visibleAnnouncements.map((a) => (
             <div
               key={a.id}
-              className="px-ann clay-card p-4 flex items-center gap-3 relative text-sm border border-emerald-500/20 bg-emerald-50/30"
+              className="px-ann clay-card p-4 sm:p-5 flex items-center gap-4 relative border-2 border-emerald-400/50 bg-emerald-50/60"
             >
-              <Megaphone size={16} className="text-emerald-600 shrink-0" />
-              <div className="flex-1 pr-6 text-xs text-slate-800">
-                <span className="font-bold text-emerald-700 mr-2 uppercase tracking-wide text-[10px]">Announcement:</span>
-                {a.message}
+              <div className="clay-pod p-2.5 bg-emerald-100 text-emerald-700 shrink-0 rounded-xl">
+                <Megaphone size={18} />
+              </div>
+              <div className="flex-1 pr-6 min-w-0">
+                <span className="block text-[11px] font-black text-emerald-700 uppercase tracking-widest mb-0.5">Announcement</span>
+                <span className="text-sm font-semibold text-slate-800 leading-snug">{a.message}</span>
               </div>
               <button
                 onClick={() => handleDismissAnnouncement(a.id)}
-                className="text-slate-400 hover:text-slate-700 p-1 transition-colors"
+                className="text-slate-400 hover:text-slate-700 p-1.5 transition-colors shrink-0"
                 title="Dismiss"
               >
-                <X size={14} />
+                <X size={16} />
               </button>
             </div>
           ))}
@@ -937,8 +950,8 @@ export function EmployeeDashboardPage(): JSX.Element {
                   <Clock size={13} className="text-slate-400 shrink-0" />
                   <span className="truncate">Active Time Today</span>
                 </div>
-                <div className="text-2xl sm:text-[26px] font-extrabold text-slate-900 tracking-tight leading-none">
-                  {formatDuration(todayWorkedMinutes)}
+                <div className={`font-extrabold text-slate-900 tracking-tight leading-none tabular-nums ${isClockedIn ? 'text-lg sm:text-xl' : 'text-2xl sm:text-[26px]'}`}>
+                  {isClockedIn ? formatDurationLive(todayWorkedSecs) : formatDuration(todayWorkedMinutes)}
                 </div>
               </div>
 
@@ -1070,13 +1083,11 @@ export function EmployeeDashboardPage(): JSX.Element {
 
       {/* ── Attendance Streak & Monthly Breakdown Banner ── */}
       <div className={`clay-card p-5 sm:p-6 relative overflow-hidden transition-all duration-500 ${
-        streakData.tier >= 6
+        streakData.tier >= 4
           ? 'bg-gradient-to-br from-purple-50/70 via-violet-50/40 to-white border-purple-200/50'
-          : streakData.tier >= 5
-          ? 'bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-white border-blue-200/50'
-          : streakData.tier >= 4
-          ? 'bg-gradient-to-br from-amber-50/70 via-yellow-50/40 to-white border-amber-200/50'
           : streakData.tier >= 3
+          ? 'bg-gradient-to-br from-amber-50/70 via-yellow-50/40 to-white border-amber-200/50'
+          : streakData.tier >= 2
           ? 'bg-gradient-to-br from-yellow-50/70 via-amber-50/40 to-white border-yellow-200/50'
           : streakData.isActive
           ? 'bg-gradient-to-br from-orange-50/70 via-amber-50/40 to-white border-orange-200/50'
@@ -1098,10 +1109,9 @@ export function EmployeeDashboardPage(): JSX.Element {
               <div className="min-w-0">
                 <div className="flex items-end gap-1.5">
                   <span className={`text-3xl sm:text-4xl font-black tabular-nums leading-none ${
-                    streakData.tier >= 6 ? 'text-purple-600'
-                    : streakData.tier >= 5 ? 'text-blue-600'
-                    : streakData.tier >= 4 ? 'text-amber-600'
-                    : streakData.tier >= 3 ? 'text-yellow-600'
+                    streakData.tier >= 4 ? 'text-purple-600'
+                    : streakData.tier >= 3 ? 'text-amber-600'
+                    : streakData.tier >= 2 ? 'text-yellow-600'
                     : streakData.isActive ? 'text-orange-600'
                     : 'text-slate-400'
                   }`}>
@@ -1114,10 +1124,9 @@ export function EmployeeDashboardPage(): JSX.Element {
 
                 <div className="flex items-center gap-2 mt-1.5">
                   <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                    streakData.tier >= 6 ? 'bg-purple-100 text-purple-700 border border-purple-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                    : streakData.tier >= 5 ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                    : streakData.tier >= 4 ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
-                    : streakData.tier >= 3 ? 'bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    streakData.tier >= 4 ? 'bg-purple-100 text-purple-700 border border-purple-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : streakData.tier >= 3 ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
+                    : streakData.tier >= 2 ? 'bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
                     : streakData.isActive ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)]'
                     : 'clay-pill text-slate-500'
                   }`}>
@@ -1146,9 +1155,9 @@ export function EmployeeDashboardPage(): JSX.Element {
                 <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden shadow-[inset_0_1.5px_2px_rgba(0,0,0,0.08)]">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ${
-                      streakData.tier >= 5 ? 'bg-gradient-to-r from-purple-500 to-violet-400 shadow-[0_2px_6px_rgba(168,85,247,0.4)]'
-                      : streakData.tier >= 4 ? 'bg-gradient-to-r from-amber-500 to-yellow-400 shadow-[0_2px_6px_rgba(245,158,11,0.4)]'
-                      : streakData.tier >= 3 ? 'bg-gradient-to-r from-yellow-500 to-amber-400 shadow-[0_2px_6px_rgba(234,179,8,0.4)]'
+                      streakData.tier >= 3 ? 'bg-gradient-to-r from-purple-500 to-violet-400 shadow-[0_2px_6px_rgba(168,85,247,0.4)]'
+                      : streakData.tier >= 2 ? 'bg-gradient-to-r from-amber-500 to-yellow-400 shadow-[0_2px_6px_rgba(245,158,11,0.4)]'
+                      : streakData.tier >= 1 ? 'bg-gradient-to-r from-yellow-500 to-amber-400 shadow-[0_2px_6px_rgba(234,179,8,0.4)]'
                       : 'bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_2px_6px_rgba(249,115,22,0.4)]'
                     }`}
                     style={{ width: `${streakData.nextMilestone.progress}%` }}
@@ -1166,7 +1175,7 @@ export function EmployeeDashboardPage(): JSX.Element {
 
           {/* RIGHT (8 cols): 4 Smart Attendance Stat Pods + Sunday & Holiday Earned Strip */}
           <div className="xl:col-span-8 w-full">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 w-full">
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 w-full">
               {[
                 { 
                   prefix: 'Weekday', 
@@ -1184,21 +1193,13 @@ export function EmployeeDashboardPage(): JSX.Element {
                   color: 'text-rose-600', 
                   bg: 'bg-rose-50 text-rose-600' 
                 },
-                { 
-                  prefix: 'Sunday', 
+                {
+                  prefix: 'Sunday',
                   suffix: 'Present',
-                  value: data?.monthSummary?.sundayPresent || 0, 
-                  icon: CheckCircle2, 
-                  color: 'text-emerald-600', 
-                  bg: 'bg-emerald-50 text-emerald-600' 
-                },
-                { 
-                  prefix: 'Sunday', 
-                  suffix: 'Absent',
-                  value: data?.monthSummary?.sundayAbsent || 0, 
-                  icon: XCircle, 
-                  color: 'text-amber-600', 
-                  bg: 'bg-amber-50 text-amber-600' 
+                  value: data?.monthSummary?.sundayPresent || 0,
+                  icon: CheckCircle2,
+                  color: 'text-emerald-600',
+                  bg: 'bg-emerald-50 text-emerald-600'
                 },
               ].map((stat, i) => (
                 <div 

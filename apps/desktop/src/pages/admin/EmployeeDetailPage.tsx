@@ -246,7 +246,9 @@ const leaveColumns: DataTableColumn<LeaveRequest & any>[] = [
           <div className="flex-1 text-center md:text-left">
             <h2 className="text-2xl font-bold">{employee.firstName} {employee.lastName}</h2>
             <p className="text-muted-foreground flex items-center justify-center md:justify-start gap-2 mt-1">
-              {employee.designation?.title ?? 'No Designation'} · {employee.department?.name ?? 'No Department'}
+              {employee.designation?.title}
+              {employee.designation?.title && employee.department?.name ? ' · ' : ''}
+              {employee.department?.name}
               <StatusBadge status={employee.status} />
             </p>
             <div className="flex flex-wrap gap-4 mt-4 justify-center md:justify-start text-sm">

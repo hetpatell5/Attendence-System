@@ -153,6 +153,11 @@ export async function getSession(): Promise<AuthUser | null> {
         return null;
       }
     }
+    // 404 = user deleted or DB was restored — treat as logged out, not a crash
+    if (error instanceof AuthApiError && error.status === 404) {
+      await clearSession();
+      return null;
+    }
     throw error;
   }
 }

@@ -24,11 +24,11 @@ process.on('unhandledRejection', (reason: unknown) => {
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
-    // Allow large SQL file imports (up to 50 MB as JSON body)
+    // Allow large SQL file imports — backup files can exceed 150 MB as JSON body
     bodyParser: true,
   });
-  app.use(require('express').json({ limit: '50mb' }));
-  app.use(require('express').urlencoded({ extended: true, limit: '50mb' }));
+  app.use(require('express').json({ limit: '500mb' }));
+  app.use(require('express').urlencoded({ extended: true, limit: '500mb' }));
 
   app.use(helmet());
 

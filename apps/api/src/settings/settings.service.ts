@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CompanySettings } from '@prisma/client';
+import * as mysql from 'mysql2/promise';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SINGLETON_COMPANY_SETTINGS_ID } from '../common/constants';
@@ -104,6 +105,69 @@ function toIdempotentUpsert(stmt: string): string {
   return `${withoutTrailingSemicolon} ON DUPLICATE KEY UPDATE ${updateClause}`;
 }
 
+const MAX_INSERT_BATCH_BYTES = 512 * 1024; // stay well under common max_allowed_packet defaults (1-4MB)
+
+/**
+ * mysqldump packs every row of a table into ONE multi-row INSERT statement
+ * (`INSERT INTO t (...) VALUES (row1),(row2),(row3)...;`). For a table with
+ * many rows and/or wide columns, that single statement can exceed the MySQL
+ * server's `max_allowed_packet` limit — the server then drops the connection
+ * entirely ("Got a packet bigger than max_allowed_packet bytes"), which kills
+ * every statement after it too (shared connection, now closed). Splitting the
+ * VALUES tuples into byte-budgeted batches up front avoids ever sending an
+ * oversized packet, regardless of what the server's packet limit is set to.
+ */
+function splitLargeInsert(stmt: string): string[] {
+  const match = /^(\s*(?:INSERT|REPLACE)(?:\s+IGNORE)?\s+INTO\s+[`"]?\w+[`"]?\s*(?:\([^)]+\))?\s*VALUES\s*)([\s\S]+?)(;\s*)$/i.exec(stmt);
+  if (!match) return [stmt];
+  const [, prefix, valuesBlob, suffix] = match;
+
+  // Split the VALUES blob into individual (...) tuples, tracking paren depth
+  // and string literals so commas/parens inside values never confuse the split.
+  const tuples: string[] = [];
+  let depth = 0;
+  let current = '';
+  let inString = false;
+  let stringChar = '';
+  for (let i = 0; i < valuesBlob!.length; i++) {
+    const ch = valuesBlob![i];
+    const prev = i > 0 ? valuesBlob![i - 1] : '';
+    if (!inString && (ch === "'" || ch === '"' || ch === '`')) {
+      inString = true;
+      stringChar = ch;
+    } else if (inString && ch === stringChar && prev !== '\\') {
+      inString = false;
+    }
+    if (!inString && ch === '(') depth++;
+    if (!inString && ch === ')') depth--;
+    current += ch;
+    if (!inString && depth === 0 && ch === ')') {
+      const trimmed = current.trim().replace(/^,/, '').trim();
+      if (trimmed) tuples.push(trimmed);
+      current = '';
+    }
+  }
+  if (tuples.length <= 1) return [stmt];
+
+  // Group tuples into batches that stay under the byte budget.
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  let batchBytes = 0;
+  for (const tuple of tuples) {
+    const tupleBytes = Buffer.byteLength(tuple, 'utf8');
+    if (batch.length > 0 && batchBytes + tupleBytes > MAX_INSERT_BATCH_BYTES) {
+      batches.push(batch);
+      batch = [];
+      batchBytes = 0;
+    }
+    batch.push(tuple);
+    batchBytes += tupleBytes;
+  }
+  if (batch.length > 0) batches.push(batch);
+
+  return batches.map((b) => `${prefix}${b.join(', ')}${suffix}`);
+}
+
 /**
  * Records which attendance_log rows a dump contains. The old system's admin "edit
  * punches" (admin/view_attendance.php) does DELETE ... WHERE employee_id=? AND date=?
@@ -185,12 +249,78 @@ export class SettingsService {
     return updated;
   }
 
+  // ── SQL Export ─────────────────────────────────────────────────────────────
+  async exportSql(): Promise<string> {
+    // Fetch all app_ table names ordered so parents come before children where possible.
+    const tables = await this.prisma.$queryRaw<{ TABLE_NAME: string }[]>`
+      SELECT TABLE_NAME FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'app_%'
+      ORDER BY TABLE_NAME
+    `;
+
+    const parts: string[] = [
+      `-- Attendance System backup — generated ${new Date().toISOString()}`,
+      `-- Re-import via Settings → SQL Import / Export → Restore / Merge`,
+      ``,
+      `SET FOREIGN_KEY_CHECKS=0;`,
+      `SET UNIQUE_CHECKS=0;`,
+      `SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';`,
+      ``,
+    ];
+
+    for (const { TABLE_NAME } of tables) {
+      // DDL
+      const [ddlRow] = await this.prisma.$queryRawUnsafe<{ 'Create Table': string }[]>(
+        `SHOW CREATE TABLE \`${TABLE_NAME}\``,
+      );
+      const ddl = ddlRow?.['Create Table'] ?? '';
+      parts.push(`-- Table: ${TABLE_NAME}`);
+      parts.push(`DROP TABLE IF EXISTS \`${TABLE_NAME}\`;`);
+      parts.push(`${ddl};`);
+      parts.push(``);
+
+      // Rows — fetch in batches of 1000 to avoid huge single result sets
+      let offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        const rows = await this.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT * FROM \`${TABLE_NAME}\` LIMIT ${batchSize} OFFSET ${offset}`,
+        );
+        if (rows.length === 0) break;
+
+        for (const row of rows) {
+          const cols = Object.keys(row).map((c) => `\`${c}\``).join(', ');
+          const vals = Object.values(row)
+            .map((v) => {
+              if (v === null || v === undefined) return 'NULL';
+              if (v instanceof Date) return `'${v.toISOString().replace('T', ' ').slice(0, 19)}'`;
+              if (typeof v === 'number' || typeof v === 'bigint') return String(v);
+              if (typeof v === 'boolean') return v ? '1' : '0';
+              // Escape single quotes and backslashes for string values
+              return `'${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+            })
+            .join(', ');
+          parts.push(`INSERT INTO \`${TABLE_NAME}\` (${cols}) VALUES (${vals});`);
+        }
+        parts.push(``);
+        offset += batchSize;
+        if (rows.length < batchSize) break;
+      }
+    }
+
+    parts.push(`SET FOREIGN_KEY_CHECKS=1;`);
+    parts.push(`SET UNIQUE_CHECKS=1;`);
+    parts.push(``);
+
+    return parts.join('\n');
+  }
+
   // ── SQL Import ─────────────────────────────────────────────────────────────
   async importLegacySql(sql: string): Promise<SqlImportResult> {
     const result: SqlImportResult = { successCount: 0, errorCount: 0, errors: [] };
     const statements = splitSqlStatements(sql);
 
-    // Only allow INSERT / REPLACE / CREATE TABLE / ALTER TABLE — block DROP DATABASE etc.
+    // Only allow INSERT / REPLACE / CREATE TABLE / ALTER TABLE / DROP TABLE — block DROP DATABASE etc.
     const allowed = statements.filter((s) => {
       const upper = s.trimStart().toUpperCase();
       return (
@@ -198,56 +328,188 @@ export class SettingsService {
         upper.startsWith('REPLACE') ||
         upper.startsWith('CREATE TABLE') ||
         upper.startsWith('ALTER TABLE') ||
+        upper.startsWith('DROP TABLE') ||
         upper.startsWith('SET ')
       );
     });
+
+    // A dump from our own exportSql() emits "DROP TABLE IF EXISTS `x`;" before each
+    // table's CREATE + rows — intended as a full mirror restore. Actually running those
+    // DROP statements would also blow away indexes/columns added since the dump was
+    // taken (CREATE TABLE's "already exists" error is deliberately ignored below), so
+    // instead treat each one as a signal to TRUNCATE that table first. Without this,
+    // every table just accumulates: old rows from a prior import/dev seed that no
+    // longer exist on the source are NEVER removed, since nothing in this loop ever
+    // deletes a row — only inserts/upserts ones present in the new dump. That silently
+    // turns every "restore" into "merge on top of whatever was already here", which is
+    // how a since-deleted employee, stale leave requests, etc. can reappear after a
+    // supposedly fresh import.
+    const tablesToReset = new Set<string>();
+    for (const s of allowed) {
+      const m = /^DROP TABLE IF EXISTS\s+`?(\w+)`?/i.exec(s.trim());
+      if (m?.[1]) tablesToReset.add(m[1]);
+    }
 
     // What the dump says attendance_log contains, so rows the old system has since deleted
     // can be removed from our mirror afterwards (see pruneStaleAttendanceLog).
     const logSnapshot = { ids: new Set<number>(), pairs: new Set<string>(), fullTable: false };
 
-    for (const stmt of allowed) {
-      collectAttendanceLogSnapshot(stmt, logSnapshot);
-      try {
-        // Re-importing a fresher dump of the SAME legacy row ids (e.g. re-exporting
-        // attendance_log after new punches were corrected on the live phpMyAdmin system)
-        // must actually overwrite the existing row — turning INSERT INTO into
-        // INSERT IGNORE INTO instead silently keeps whatever content was imported FIRST
-        // forever, no matter how many times a corrected dump is re-imported afterwards.
-        // Upsert on every column via ON DUPLICATE KEY UPDATE fixes that; only fall back
-        // to IGNORE when the statement has no explicit column list to build the
-        // UPDATE clause from (can't know the columns without a schema lookup).
-        let safe = toIdempotentUpsert(stmt);
-        // Legacy dumps often contain 0000-00-00 00:00:00 which strict MySQL rejects.
-        // Replace with a valid placeholder — NOT NULL so NOT NULL columns don't fail with 1048.
-        safe = safe.replace(/'0000-00-00 00:00:00'/g, "'1970-01-01 00:00:00'");
-        // Dumps exported from MySQL 8 name collations (utf8mb4_0900_ai_ci, ...) that
-        // MariaDB / older MySQL don't know ("Unknown collation", error 1273), failing
-        // the whole CREATE TABLE. Only schema statements are rewritten — never row data.
-        if (/^\s*(CREATE|ALTER)\s/i.test(safe)) {
-          safe = safe.replace(/utf8mb4_0900_[a-z0-9_]+/gi, 'utf8mb4_general_ci');
-        }
-        await this.prisma.$executeRawUnsafe(safe);
-        result.successCount++;
-      } catch (err: any) {
-        const errMsg = String(err?.message ?? err);
-        // Silently skip known safe errors (duplicate keys, already-exists). Prisma puts
-        // the real underlying MySQL error number at `err.meta.code` (a string) for a
-        // failed $executeRawUnsafe — NOT `err.meta.error_number` (that field doesn't
-        // exist) and NOT `err.code` (that's Prisma's own generic wrapper code, e.g.
-        // 'P2010', not a MySQL number). The old field name meant this check never
-        // actually matched anything, so every "table already exists" / "duplicate key"
-        // from a safe re-import was being reported as a real error.
-        const ignoredCodes = [1022, 1050, 1060, 1061, 1062, 1068, 1826];
-        const code = err?.meta?.code ?? err?.code;
-        if (!ignoredCodes.includes(Number(code))) {
-          result.errorCount++;
-          if (result.errors.length < 20) result.errors.push(errMsg);
+    // Use ONE dedicated raw mysql2 connection for the whole import instead of Prisma's
+    // pool or $transaction. Two earlier attempts both failed on large (160MB+) dumps:
+    //   1. Plain pooled $executeRawUnsafe calls — SET FOREIGN_KEY_CHECKS=0 is
+    //      session-scoped in MySQL, but Prisma's pool routes later statements to a
+    //      DIFFERENT pooled connection where FK checks are back on → 1452 errors.
+    //   2. Wrapping everything in one Prisma $transaction — pins all statements to a
+    //      single connection (fixing the above), but turns 2900 statements into one
+    //      giant uncommitted transaction. The dev MySQL server dropped the connection
+    //      mid-way ("Server has closed the connection"), rolling back EVERYTHING —
+    //      worse than before, since even the partial progress was lost.
+    // A raw connection with autocommit (default) commits each statement individually,
+    // so a dropped connection partway through only loses what's left, never what's
+    // already landed — and FK_CHECKS=0 still applies for the life of this one socket.
+    // A single oversized row (e.g. one audit log with a huge JSON diff, or a company
+    // settings row embedding a base64 logo) can't be split into smaller batches —
+    // the only fix for those is raising the server's own packet limit. Doing this on
+    // a short-lived throwaway connection first (SET GLOBAL takes effect for NEW
+    // connections only, not the one that issued it) means the main import connection
+    // below picks up the higher limit from the moment it connects.
+    try {
+      const bumpConn = await mysql.createConnection({ uri: process.env.DATABASE_URL });
+      await bumpConn.query('SET GLOBAL max_allowed_packet = 1073741824'); // 1GB
+      await bumpConn.end();
+    } catch (err: any) {
+      this.logger.warn(`Could not raise max_allowed_packet (needs SUPER/SYSTEM_VARIABLES_ADMIN privilege) — large single-row statements may still fail: ${err?.message ?? err}`);
+    }
+
+    let conn = await mysql.createConnection({
+      uri: process.env.DATABASE_URL,
+      multipleStatements: false,
+    });
+
+    const initSession = async (): Promise<void> => {
+      await conn.query('SET FOREIGN_KEY_CHECKS=0');
+      await conn.query('SET UNIQUE_CHECKS=0');
+      await conn.query('SET SESSION wait_timeout=28800');
+      await conn.query('SET SESSION net_read_timeout=600');
+      await conn.query('SET SESSION net_write_timeout=600');
+    };
+
+    try {
+      await initSession();
+
+      // FK checks are off for the life of this connection, so truncation order
+      // across tables doesn't matter here.
+      this.logger.log(`Full-restore reset: ${tablesToReset.size} table(s) flagged for TRUNCATE before import: [${[...tablesToReset].join(', ')}]`);
+      for (const table of tablesToReset) {
+        try {
+          await conn.query(`TRUNCATE TABLE \`${table}\``);
+          this.logger.log(`Truncated ${table} OK`);
+        } catch (err: any) {
+          this.logger.warn(`Could not truncate ${table} before restore: ${err?.message ?? err}`);
         }
       }
+
+      for (const rawStmt of allowed) {
+        // Already handled above as a TRUNCATE — running the literal DROP would also
+        // discard any columns/indexes added by migrations since the dump was taken.
+        if (/^\s*DROP TABLE/i.test(rawStmt)) continue;
+
+        collectAttendanceLogSnapshot(rawStmt, logSnapshot);
+        // mysqldump packs an entire table's rows into one multi-row INSERT. A table
+        // with many/wide rows can exceed the server's max_allowed_packet, which kills
+        // the connection outright — splitting into byte-budgeted batches up front
+        // avoids ever sending an oversized packet in the first place.
+        const subStatements = splitLargeInsert(rawStmt);
+
+        for (const stmt of subStatements) {
+          try {
+            // Re-importing a fresher dump of the SAME legacy row ids (e.g. re-exporting
+            // attendance_log after new punches were corrected on the live phpMyAdmin system)
+            // must actually overwrite the existing row — turning INSERT INTO into
+            // INSERT IGNORE INTO instead silently keeps whatever content was imported FIRST
+            // forever, no matter how many times a corrected dump is re-imported afterwards.
+            // Upsert on every column via ON DUPLICATE KEY UPDATE fixes that; only fall back
+            // to IGNORE when the statement has no explicit column list to build the
+            // UPDATE clause from (can't know the columns without a schema lookup).
+            let safe = toIdempotentUpsert(stmt);
+            // Legacy dumps often contain 0000-00-00 00:00:00 which strict MySQL rejects.
+            // Replace with a valid placeholder — NOT NULL so NOT NULL columns don't fail with 1048.
+            safe = safe.replace(/'0000-00-00 00:00:00'/g, "'1970-01-01 00:00:00'");
+            // Dumps exported from MySQL 8 name collations (utf8mb4_0900_ai_ci, ...) that
+            // MariaDB / older MySQL don't know ("Unknown collation", error 1273), failing
+            // the whole CREATE TABLE. Only schema statements are rewritten — never row data.
+            if (/^\s*(CREATE|ALTER)\s/i.test(safe)) {
+              safe = safe.replace(/utf8mb4_0900_[a-z0-9_]+/gi, 'utf8mb4_general_ci');
+            }
+            await conn.query(safe);
+            result.successCount++;
+          } catch (err: any) {
+            const errMsg = String(err?.message ?? err);
+            const ignoredCodes = [1022, 1050, 1060, 1061, 1062, 1068, 1826];
+            const code = Number(err?.errno);
+
+            // If the connection itself died (packet-too-big, network blip, server
+            // restart, ...), reconnect and retry THIS statement once instead of
+            // letting every remaining statement in the import fail as collateral
+            // damage from one bad connection.
+            const connectionDied =
+              err?.fatal === true ||
+              /closed state|ECONNRESET|PROTOCOL_CONNECTION_LOST|server has closed the connection/i.test(errMsg);
+            if (connectionDied) {
+              this.logger.warn(`Import connection dropped mid-statement, reconnecting: ${errMsg.slice(0, 200)}`);
+              try {
+                await conn.end().catch(() => {});
+                conn = await mysql.createConnection({ uri: process.env.DATABASE_URL, multipleStatements: false });
+                await initSession();
+                await conn.query(toIdempotentUpsert(stmt));
+                result.successCount++;
+                continue;
+              } catch (retryErr: any) {
+                const retryMsg = String(retryErr?.message ?? retryErr);
+                const retryCode = Number(retryErr?.errno);
+                if (!ignoredCodes.includes(retryCode)) {
+                  result.errorCount++;
+                  this.logger.warn(`Import retry after reconnect also failed: ${retryMsg.slice(0, 300)}`);
+                  if (result.errors.length < 20) result.errors.push(retryMsg);
+                }
+                continue;
+              }
+            }
+
+            if (!ignoredCodes.includes(code)) {
+              result.errorCount++;
+              // Log every error server-side (not just the first 20 kept in the response)
+              // so failures on small tables like app_employees are never silently buried
+              // behind a wall of unrelated errors on large tables.
+              const tableMatch = /INTO\s+[`"]?(\w+)[`"]?/i.exec(stmt);
+              this.logger.warn(`Import error on ${tableMatch?.[1] ?? 'unknown table'} (errno ${code}): ${errMsg.slice(0, 300)}`);
+              if (result.errors.length < 20) result.errors.push(errMsg);
+            }
+          }
+        }
+      }
+
+      await conn.query('SET FOREIGN_KEY_CHECKS=1').catch(() => {});
+      await conn.query('SET UNIQUE_CHECKS=1').catch(() => {});
+    } finally {
+      await conn.end().catch(() => {});
     }
 
     this.logger.log(`SQL Import: ${result.successCount} ok, ${result.errorCount} errors`);
+
+    // FOREIGN_KEY_CHECKS=0 during import (required so tables can land in any order)
+    // means a dump that itself contains stale rows — e.g. attendance/leave/shift rows
+    // for an employee hard-deleted on the live system without a proper cascade — gets
+    // imported as-is instead of being rejected. Prisma then refuses to serve ANY query
+    // that touches one of these rows ("Field employee is required ... got null"),
+    // crashing the whole dashboard over a handful of orphaned rows. Deleting them is
+    // safe: a row with no valid employee can never be displayed or acted on anyway.
+    try {
+      const orphansDeleted = await this.cleanupOrphanedEmployeeRows();
+      if (orphansDeleted > 0) this.logger.log(`Orphan cleanup: removed ${orphansDeleted} row(s) referencing a non-existent employee`);
+    } catch (err: any) {
+      this.logger.warn(`orphan cleanup failed (import itself still succeeded): ${err?.message ?? err}`);
+    }
 
     try {
       const pruned = await this.pruneStaleAttendanceLog(logSnapshot);
@@ -405,6 +667,34 @@ export class SettingsService {
       updated += Math.min(CONCURRENCY, pending.length - i);
     }
     return { updated };
+  }
+
+  /**
+   * Deletes rows in EVERY table with a foreign key column pointing at app_employees.id
+   * where that employee no longer exists. These can only come from importing a dump
+   * with FOREIGN_KEY_CHECKS=0 (see importLegacySql) — under normal operation the
+   * schema's ON DELETE CASCADE makes this state impossible. Safe to run any time:
+   * a row with no valid employee can never be displayed or acted on by the app.
+   *
+   * Queries information_schema for the FK list rather than hardcoding table names —
+   * a hardcoded list (app_attendance, app_leave_requests, ...) silently missed
+   * non-"app_"-prefixed tables (leave_balances, salary_records, salary_advances,
+   * legacy_salary_snapshots) the first time, each crashing a different page the same
+   * way ("Field employee is required ... got null") one at a time as it was hit.
+   */
+  private async cleanupOrphanedEmployeeRows(): Promise<number> {
+    const fks = await this.prisma.$queryRawUnsafe<{ TABLE_NAME: string; COLUMN_NAME: string }[]>(`
+      SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+      WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'app_employees'
+    `);
+    let total = 0;
+    for (const { TABLE_NAME, COLUMN_NAME } of fks) {
+      const result = await this.prisma.$executeRawUnsafe(
+        `DELETE a FROM \`${TABLE_NAME}\` a LEFT JOIN app_employees e ON a.\`${COLUMN_NAME}\` = e.id WHERE e.id IS NULL`,
+      );
+      total += Number(result);
+    }
+    return total;
   }
 
   /**
@@ -607,9 +897,19 @@ export class SettingsService {
         continue;
       }
       const [y, m, d] = dateKey.split('-').map(Number);
-      await this.prisma.holiday.create({
-        data: { name, date: new Date(Date.UTC(y!, m! - 1, d!)) },
+      const asOfDate = new Date(Date.UTC(y!, m! - 1, d!));
+      // existingByDate is a snapshot taken once before this loop — re-check right
+      // before inserting so two legacy rows (or two overlapping sync calls) can
+      // never both decide the same date is missing and each create their own row.
+      const stillMissing = await this.prisma.holiday.findFirst({
+        where: { date: asOfDate, departmentId: null },
+        select: { id: true },
       });
+      if (stillMissing) continue;
+      const created = await this.prisma.holiday.create({
+        data: { name, date: asOfDate },
+      });
+      existingByDate.set(dateKey, { id: created.id, date: created.date, name: created.name });
       upserted++;
     }
     return { upserted };
@@ -1053,4 +1353,5 @@ export class SettingsService {
 
     return result;
   }
+
 }

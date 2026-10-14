@@ -314,10 +314,14 @@ export function RequestsStatusCard(): JSX.Element {
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-semibold text-xs text-foreground truncate">
-                            {item.title}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">·</span>
+                          {item.category === 'PUNCH_EDIT' && (
+                            <>
+                              <span className="font-semibold text-xs text-foreground truncate">
+                                {item.title}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">·</span>
+                            </>
+                          )}
                           <span className="text-[11px] font-medium text-foreground/80">
                             {item.dateLabel}
                           </span>

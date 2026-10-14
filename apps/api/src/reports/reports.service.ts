@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toMoney } from '../common/money';
-import { serverNow, toCompanyDay } from '../common/time.util';
+import { serverNow, toCompanyDay, wallClockToUtcMs } from '../common/time.util';
 import type { ReportEnvelope } from './report-envelope.type';
 import type { ReportQueryDto } from './dto/report-query.dto';
 
@@ -360,8 +360,22 @@ export class ReportsService {
         }).toUpperCase();
       }
 
+      // Compute effective late minutes — lateMinutes in DB is only stored after punch-out,
+      // so for employees still clocked in we derive it live from punchInAt vs shift start.
+      // Shift start is a company-local wall-clock time ("09:00" IST, not UTC) — must go
+      // through wallClockToUtcMs (timezone-aware), not naive UTC-hour math.
+      const shift = emp.employeeShifts?.[0]?.shift;
+      let computedLateMinutes = att?.lateMinutes ?? 0;
+      if (att?.punchInAt && shift && computedLateMinutes === 0) {
+        const shiftStartMs = wallClockToUtcMs(targetDate, shift.startTime, timezone);
+        computedLateMinutes = Math.max(
+          0,
+          Math.round((att.punchInAt.getTime() - shiftStartMs) / 60_000) - shift.gracePeriodMinutes,
+        );
+      }
+
       if (hasPunchIn && !hasPunchOut) {
-        if (att && att.lateMinutes > 0) {
+        if (computedLateMinutes > 0) {
           status = 'LATE';
           lateArrived++;
         } else {
@@ -372,7 +386,7 @@ export class ReportsService {
       } else if (hasPunchIn && hasPunchOut) {
         status = 'CHECKED_OUT';
         checkedOut++;
-        if (att && att.lateMinutes > 0) lateArrived++;
+        if (computedLateMinutes > 0) lateArrived++;
         if (att && att.earlyLeaveMinutes > 0) earlyLeft++;
         punchTime = formattedPunchOut || formattedPunchIn || '--:--';
       } else {
@@ -383,7 +397,6 @@ export class ReportsService {
       const rawFullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim().replace(/\s+-\s*$/, '').trim();
       const fullName = rawFullName || emp.employeeCode || 'Employee';
       const initial = (emp.firstName || 'E').charAt(0).toUpperCase();
-      const shift = emp.employeeShifts?.[0]?.shift;
 
       return {
         id: emp.id,
@@ -401,7 +414,7 @@ export class ReportsService {
         formattedPunchIn,
         formattedPunchOut,
         workedMinutes: att?.workedMinutes || 0,
-        lateMinutes: att?.lateMinutes || 0,
+        lateMinutes: computedLateMinutes,
         earlyLeaveMinutes: att?.earlyLeaveMinutes || 0,
         shiftName: shift?.name || 'General Shift',
         shiftStart: shift?.startTime || '09:00',

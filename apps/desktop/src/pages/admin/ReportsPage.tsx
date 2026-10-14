@@ -1034,9 +1034,15 @@ export function ReportsPage(): JSX.Element {
                             {/* Punch In */}
                             <td className="py-3 px-4">
                               {rec.formattedPunchIn ? (
-                                <span className="font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
-                                  {rec.formattedPunchIn}
-                                </span>
+                                rec.lateMinutes > 0 ? (
+                                  <span className="font-mono text-xs font-semibold text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">
+                                    {rec.formattedPunchIn}
+                                  </span>
+                                ) : (
+                                  <span className="font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                                    {rec.formattedPunchIn}
+                                  </span>
+                                )
                               ) : (
                                 <span className="font-mono text-xs text-muted-foreground/40">—</span>
                               )}
@@ -1045,9 +1051,15 @@ export function ReportsPage(): JSX.Element {
                             {/* Punch Out */}
                             <td className="py-3 px-4">
                               {rec.formattedPunchOut ? (
-                                <span className="font-mono text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">
-                                  {rec.formattedPunchOut}
-                                </span>
+                                rec.earlyLeaveMinutes > 0 ? (
+                                  <span className="font-mono text-xs font-semibold text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">
+                                    {rec.formattedPunchOut}
+                                  </span>
+                                ) : (
+                                  <span className="font-mono text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">
+                                    {rec.formattedPunchOut}
+                                  </span>
+                                )
                               ) : (
                                 <span className="font-mono text-xs text-muted-foreground/40">—</span>
                               )}

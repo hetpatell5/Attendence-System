@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { attendanceApi, employeesApi, holidaysApi, attendanceRequestsApi, type AttendanceRequestItem } from '@/lib/api';
+import { attendanceApi, employeesApi, holidaysApi, attendanceRequestsApi, salaryApi, type AttendanceRequestItem } from '@/lib/api';
 import { DataTable, type DataTableColumn } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -102,6 +102,15 @@ export function MyAttendancePage(): JSX.Element {
     queryKey: ['holidays', year],
     queryFn: () => holidaysApi.list({ year: String(year) }) as Promise<any[]>,
   });
+
+  // Actual salary record for this month (authoritative — replaces the unreliable frontend estimate)
+  const { data: mySalaryRecords = [] } = useQuery({
+    queryKey: ['salary', 'me'],
+    queryFn: () => salaryApi.mine(),
+  });
+  const actualSalaryRecord = useMemo(() => {
+    return mySalaryRecords.find((r) => r.month?.slice(0, 7) === month) ?? null;
+  }, [mySalaryRecords, month]);
 
   // Query employee's own punch correction requests for this month
   const { data: myRequests = [] } = useQuery({
@@ -796,13 +805,13 @@ export function MyAttendancePage(): JSX.Element {
               <span className="text-slate-500 font-medium text-[11px] hidden sm:inline">Holiday</span>
             </div>
 
-            {/* Est. Earnings */}
-            {month < new Date().toISOString().slice(0, 7) && (
+            {/* Net Salary (from actual salary record) */}
+            {actualSalaryRecord && (
               <>
                 <div className="hidden sm:block w-[1.5px] h-3.5 bg-slate-200" />
-                <div className="inline-flex items-center gap-1 text-slate-900 font-black" title="Estimated Earnings">
+                <div className="inline-flex items-center gap-1 text-slate-900 font-black" title="Net Salary">
                   <IndianRupee size={12} className="text-emerald-600" />
-                  <span>{rateMetrics.monthEstimatedSalary.toLocaleString()}</span>
+                  <span>{Number(actualSalaryRecord.netSalary).toLocaleString()}</span>
                 </div>
               </>
             )}
@@ -1009,6 +1018,53 @@ export function MyAttendancePage(): JSX.Element {
                       ))}
                     </div>
                   );
+                } else if (isHoliday) {
+                  if (hasAttended) {
+                    // Present on a holiday — show holiday name + punch times
+                    cardClayClass = 'bg-gradient-to-br from-white via-purple-50/50 to-emerald-50/40 border border-purple-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),0_4px_12px_-2px_rgba(168,85,247,0.12)] hover:scale-[1.02]';
+                    statusBadge = (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
+                        Holiday (Worked)
+                      </span>
+                    );
+                    dailySalaryBadge = (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[10px] text-purple-700 font-bold truncate">
+                          {holiday?.name || 'Holiday'}
+                        </span>
+                        {cellWorkedMins > 0 && (
+                          <span className="text-[10px] text-emerald-700 font-bold ml-1 shrink-0">
+                            {formatDuration(cellWorkedMins)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                    bottomTimings = (
+                      <div className="space-y-0.5 pt-1">
+                        {pairs.map((p, pIdx) => (
+                          <div key={pIdx} className="flex items-center justify-between text-[11px] font-mono text-slate-600 font-medium">
+                            <span>{formatTimeTo12h(p.punchInAt)}</span>
+                            <span>{p.punchOutAt ? formatTimeTo12h(p.punchOutAt) : '--:--'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  } else {
+                    // Holiday, not worked — show holiday name only
+                    cardClayClass = 'bg-gradient-to-br from-white via-purple-50/50 to-purple-100/40 border border-purple-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(168,85,247,0.1),0_4px_12px_-2px_rgba(168,85,247,0.12)] hover:scale-[1.02]';
+                    statusBadge = (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
+                        HOLIDAY
+                      </span>
+                    );
+                    centerContent = (
+                      <div className="py-1 text-center">
+                        <span className="text-xs font-bold text-purple-900 line-clamp-1">
+                          {holiday?.name || 'Holiday'}
+                        </span>
+                      </div>
+                    );
+                  }
                 } else if (hasAttended) {
                   cardClayClass = 'bg-gradient-to-br from-white via-emerald-50/50 to-emerald-100/40 border border-emerald-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(16,185,129,0.12),0_4px_12px_-2px_rgba(16,185,129,0.12)] hover:scale-[1.02] hover:shadow-[0_8px_18px_-2px_rgba(16,185,129,0.2)]';
                   statusBadge = (
@@ -1031,20 +1087,6 @@ export function MyAttendancePage(): JSX.Element {
                           <span>{p.punchOutAt ? formatTimeTo12h(p.punchOutAt) : '--:--'}</span>
                         </div>
                       ))}
-                    </div>
-                  );
-                } else if (isHoliday) {
-                  cardClayClass = 'bg-gradient-to-br from-white via-purple-50/50 to-purple-100/40 border border-purple-300/80 shadow-[inset_1.5px_1.5px_3px_rgba(255,255,255,0.95),inset_-1.5px_-1.5px_3px_rgba(168,85,247,0.1),0_4px_12px_-2px_rgba(168,85,247,0.12)] hover:scale-[1.02]';
-                  statusBadge = (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)]">
-                      HOLIDAY
-                    </span>
-                  );
-                  centerContent = (
-                    <div className="py-1 text-center">
-                      <span className="text-xs font-bold text-purple-900 line-clamp-1">
-                        {holiday?.name || 'Holiday'}
-                      </span>
                     </div>
                   );
                 } else if (isSunday) {

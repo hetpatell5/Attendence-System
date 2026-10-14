@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { TrendingUp, ArrowUpRight, Award, Sparkles } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { SalaryRecord } from '@attendance/shared';
 
 interface SalaryAnalyticsChartsProps {
@@ -24,6 +23,8 @@ interface SalaryAnalyticsChartsProps {
   currentYear: number;
   currentMonthNum: number;
   employee?: any;
+  range: '6m' | 'alltime';
+  onRangeChange: (range: '6m' | 'alltime') => void;
 }
 
 function getSmartTooltipStyle(x: number, y: number, chartWidth: number, chartHeight: number) {
@@ -53,8 +54,8 @@ export function SalaryAnalyticsCharts({
   pastRecords,
   currentMetrics,
   employee,
+  range,
 }: SalaryAnalyticsChartsProps): JSX.Element {
-  const [range, setRange] = useState<'6m' | 'alltime'>('6m');
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
   const [hoveredIncIndex, setHoveredIncIndex] = useState<number | null>(null);
 
@@ -438,28 +439,10 @@ export function SalaryAnalyticsCharts({
         </div>
       </div>
 
-      {/* Analytics Toolbar: Section Title & Range Toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-        <div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">Earnings Analytics</h3>
-          <p className="text-xs text-slate-500 font-medium">Historical payouts and compensation growth up to previous month</p>
-        </div>
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-card p-1 rounded-xl border border-slate-200 dark:border-border/60 self-start sm:self-auto">
-          {(['6m', 'alltime'] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={cn(
-                'px-3.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer',
-                range === r
-                  ? 'bg-white dark:bg-accent text-slate-900 dark:text-foreground shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-foreground'
-              )}
-            >
-              {r === '6m' ? 'Past 6 Months' : 'All Time'}
-            </button>
-          ))}
-        </div>
+      {/* Analytics Section Title (range toggle lives in the page header now) */}
+      <div className="pt-1">
+        <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">Earnings Analytics</h3>
+        <p className="text-xs text-slate-500 font-medium">Historical payouts and compensation growth up to previous month</p>
       </div>
 
       {/* Balanced 2-Column Analytics Suite */}

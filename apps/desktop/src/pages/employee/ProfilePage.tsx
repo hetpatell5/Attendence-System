@@ -59,7 +59,7 @@ function AppVersionCard(): JSX.Element {
         <button
           type="button"
           onClick={handleInstall}
-          className="clay-btn-green h-7 px-3 rounded-xl text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
+          className="h-7 px-3 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white cursor-pointer active:scale-95 transition-all"
         >
           Restart &amp; Install
         </button>
@@ -68,7 +68,7 @@ function AppVersionCard(): JSX.Element {
           type="button"
           onClick={() => { void handleCheck(); }}
           disabled={updateStatus === 'checking'}
-          className="h-7 px-3 rounded-xl text-xs font-semibold bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900 border border-slate-300/60 cursor-pointer disabled:opacity-50 disabled:pointer-events-none transition-all active:scale-95"
+          className="clay-btn-green h-7 px-3 rounded-xl text-xs font-bold text-white cursor-pointer disabled:opacity-50 disabled:pointer-events-none active:scale-95 transition-all"
         >
           Check for Updates
         </button>
@@ -130,27 +130,9 @@ export function ProfilePage(): JSX.Element {
       <div className="absolute -top-12 -right-12 -z-10 w-96 h-96 bg-emerald-100/35 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-48 -left-12 -z-10 w-96 h-96 bg-sky-100/35 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Page Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200/70">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
-            My Profile
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            Personal employee credentials, assigned shift details, and compensation.
-          </p>
-        </div>
-        <AppVersionCard />
-      </div>
-
       {/* Profile Header Hero Card */}
       <div className="clay-card p-6 sm:p-7 relative overflow-hidden transition-all">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-          {/* Avatar Icon */}
-          <div className="clay-pod h-20 w-20 sm:h-24 sm:w-24 rounded-3xl flex items-center justify-center text-2xl sm:text-3xl font-black text-emerald-700 border-2 border-emerald-500/30 shrink-0 select-none shadow-[inset_0_2px_6px_rgba(255,255,255,0.9),0_6px_16px_rgba(16,185,129,0.12)]">
-            {employee.firstName.charAt(0)}{employee.lastName.charAt(0)}
-          </div>
-
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           {/* Name, Role & Core Identifiers */}
           <div className="flex-1 min-w-0 space-y-2.5">
             <div className="flex flex-wrap items-center gap-3">
@@ -158,12 +140,16 @@ export function ProfilePage(): JSX.Element {
                 {employee.firstName} {employee.lastName}
               </h3>
               <StatusBadge status={employee.status} />
+              <span className="clay-pod px-3 py-1 font-mono text-emerald-700 font-bold border border-emerald-500/30">ID: {employee.employeeCode.replace(/^BMA-/i, '')}</span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-              <span className="clay-pod px-3 py-1 text-slate-800 font-bold">{employee.designation?.title ?? 'Staff'}</span>
-              <span className="clay-pod px-3 py-1 text-slate-600">{employee.department?.name ?? 'General'}</span>
-              <span className="clay-pod px-3 py-1 font-mono text-emerald-700 font-bold border border-emerald-500/30">ID: {employee.employeeCode.replace(/^BMA-/i, '')}</span>
+              {employee.designation?.title && (
+                <span className="clay-pod px-3 py-1 text-slate-800 font-bold">{employee.designation.title}</span>
+              )}
+              {employee.department?.name && (
+                <span className="clay-pod px-3 py-1 text-slate-600">{employee.department.name}</span>
+              )}
             </div>
 
             {/* Quick Metadata Row */}
@@ -195,6 +181,8 @@ export function ProfilePage(): JSX.Element {
               )}
             </div>
           </div>
+
+          <AppVersionCard />
         </div>
       </div>
 

@@ -568,8 +568,13 @@ export class SalaryService {
 
     // Last month's unpaid amount rolls into this month's due, exactly like the salary page and
     // the old system. `includeCarry` is false only when computing that carry itself, which
-    // would otherwise recurse back through every earlier month.
-    const carry = includeCarry ? await this.getLastMonthPendingForMonth(monthIso) : {};
+    // would otherwise recurse back through every earlier month. Also skipped for a month that
+    // hasn't started yet (no attendance/salary exists for it) — otherwise picking a future
+    // month shows a confusing non-zero "Unpaid" total that's really just last month's carry.
+    const now = startOfCompanyDay(new Date());
+    const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const isFutureMonth = monthDate.getTime() > currentMonthStart.getTime();
+    const carry = includeCarry && !isFutureMonth ? await this.getLastMonthPendingForMonth(monthIso) : {};
 
     let paidSum = 0;
     let unpaidSum = 0;

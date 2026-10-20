@@ -937,6 +937,34 @@ export class AttendanceService {
     const employee = await this.employeesService.requireEmployeeForUser(userId);
     const targetDate = new Date(dto.attendanceDate);
 
+    // Sanity-check every punch pair being requested. A punch-out earlier than
+    // punch-in (e.g. 9:00 AM in, 7:00 AM out) is ambiguous: it could be a typo,
+    // or a genuine overnight shift crossing midnight. approveRequest() resolves
+    // that ambiguity by always assuming "next day" — which silently turns an
+    // obvious mistake into a ~22-hour workday. Catch it here instead, before
+    // the request is ever created, rather than let an admin approve garbage.
+    const MAX_SHIFT_HOURS = 16;
+    const checkPair = (inIso?: string | null, outIso?: string | null) => {
+      if (!inIso || !outIso) return;
+      const inMs = new Date(inIso).getTime();
+      let outMs = new Date(outIso).getTime();
+      if (outMs <= inMs) outMs += 24 * 60 * 60 * 1000; // assume next-day wrap, same as approveRequest()
+      const hours = (outMs - inMs) / (60 * 60 * 1000);
+      if (hours > MAX_SHIFT_HOURS) {
+        const inTime = new Date(inIso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const outTime = new Date(outIso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        throw new BadRequestException(
+          `Punch-in ${inTime} to punch-out ${outTime} would be a ${hours.toFixed(1)}-hour shift, which looks like a mistake. Please double-check the times (use AM/PM correctly).`,
+        );
+      }
+    };
+
+    if (dto.punchPairs?.length) {
+      for (const p of dto.punchPairs) checkPair(p.punchInAt, p.punchOutAt);
+    } else {
+      checkPair(dto.punchInAt, dto.punchOutAt);
+    }
+
     // Existing attendance on this date (if any)
     const existing = await this.prisma.attendance.findUnique({
       where: {
@@ -1132,6 +1160,19 @@ export class AttendanceService {
     if (punchIn && punchOut && punchOut < punchIn) {
       // Cross-midnight shift safety: punch out is on the next calendar day
       punchOut = new Date(punchOut.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    // Backstop for requests created before the submit-time sanity check existed:
+    // refuse to approve a shift that works out to an implausible length rather
+    // than silently writing a ~22-hour attendance record to the database.
+    const MAX_APPROVED_SHIFT_HOURS = 16;
+    if (punchIn && punchOut) {
+      const hours = (punchOut.getTime() - punchIn.getTime()) / (60 * 60 * 1000);
+      if (hours > MAX_APPROVED_SHIFT_HOURS) {
+        throw new BadRequestException(
+          `This request works out to a ${hours.toFixed(1)}-hour shift, which looks like a mistake in the requested times. Reject it and ask the employee to resubmit instead of approving.`,
+        );
+      }
     }
 
     const rawPairs = (req.punchPairs as any[]) || [];

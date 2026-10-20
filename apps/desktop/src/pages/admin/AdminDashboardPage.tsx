@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { dashboardApi, leaveApi, salaryApi, announcementsApi, holidaysApi, attendanceRequestsApi, type AttendanceRequestItem } from '@/lib/api';
@@ -10,6 +10,8 @@ import {
   Users,
   CheckCircle2,
   XCircle,
+  Check,
+  X,
   Clock,
   Plane,
   CalendarClock,
@@ -20,6 +22,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   FileText,
+  MessageSquareText,
   Percent,
   CheckCheck,
   Gift,
@@ -29,6 +32,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
@@ -180,6 +184,10 @@ export function AdminDashboardPage(): JSX.Element {
   const navigate = useNavigate();
 
   const [activeModal, setActiveModal] = useState<'present' | 'absent' | 'late' | 'early' | 'birthdays' | 'paid' | 'unpaid' | null>(null);
+  const userRequestsSectionRef = useRef<HTMLDivElement>(null);
+  const scrollToUserRequests = () => {
+    userRequestsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const now = useMemo(() => new Date(), []);
   const currentYear = now.getFullYear();
@@ -194,6 +202,10 @@ export function AdminDashboardPage(): JSX.Element {
   }, [now]);
   const [salaryYear, setSalaryYear] = useState(String(prevMonthDate.getFullYear()));
   const [salaryMonth, setSalaryMonth] = useState(String(prevMonthDate.getMonth() + 1).padStart(2, '0'));
+
+  // Reject-reason dialog state for Attendance Punch Requests
+  const [rejectTarget, setRejectTarget] = useState<AttendanceRequestItem | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const salaryMonthIso = `${salaryYear}-${salaryMonth}-01`;
   const salaryMonthLabel = MONTH_OPTIONS.find((m) => m.value === salaryMonth)?.label || 'Month';
@@ -250,12 +262,18 @@ export function AdminDashboardPage(): JSX.Element {
     queryFn: attendanceRequestsApi.listPending,
   });
 
+  // Combined badge count for the "User Requests" header button — punch corrections + pending leaves
+  const totalPendingRequests = pendingRequests.length + (data?.pendingLeaveCount || 0);
+
   const approveRequestMutation = useMutation({
     mutationFn: (id: string) => attendanceRequestsApi.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance', 'requests', 'pending'] });
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+    onError: (err: any) => {
+      alert(err?.message || 'Failed to approve this request.');
     },
   });
 
@@ -274,6 +292,11 @@ export function AdminDashboardPage(): JSX.Element {
       attendanceRequestsApi.reject(id, remarks),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance', 'requests', 'pending'] });
+      setRejectTarget(null);
+      setRejectReason('');
+    },
+    onError: (err: any) => {
+      alert(err?.message || 'Failed to reject this request.');
     },
   });
 
@@ -302,12 +325,17 @@ export function AdminDashboardPage(): JSX.Element {
     }
   };
 
+  // window.prompt() is unreliable in Electron (unlike alert()/confirm(), which do
+  // work) — it silently returns null with no dialog ever shown, which is why the
+  // Reject button appeared to do nothing. Use an in-app dialog instead.
   const handleRejectRequest = (r: AttendanceRequestItem) => {
-    const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim() || 'Employee';
-    const remarks = window.prompt(`Enter rejection reason for ${empName} (optional):`, 'Punch times could not be verified');
-    if (remarks !== null) {
-      rejectRequestMutation.mutate({ id: r.id, remarks });
-    }
+    setRejectTarget(r);
+    setRejectReason('Punch times could not be verified');
+  };
+
+  const confirmRejectRequest = () => {
+    if (!rejectTarget) return;
+    rejectRequestMutation.mutate({ id: rejectTarget.id, remarks: rejectReason });
   };
 
   // Sorted Holidays for Current Year
@@ -361,21 +389,16 @@ export function AdminDashboardPage(): JSX.Element {
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
             size="sm"
-            onClick={() => navigate('/admin/attendance')}
-            className="gap-1.5 text-xs font-medium h-9 rounded-xl border-border/70 hover:border-primary/50"
+            onClick={scrollToUserRequests}
+            className="relative gap-1.5 text-xs font-medium h-9 rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
           >
-            <Clock size={14} className="text-primary" />
-            <span>Attendance Log</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => navigate('/admin/salary')}
-            className="gap-1.5 text-xs font-medium h-9 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-          >
-            <IndianRupee size={14} />
-            <span>Manage Payroll</span>
+            <span>User Requests</span>
+            {totalPendingRequests > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 h-[18px] min-w-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center leading-none shadow-sm">
+                {totalPendingRequests > 99 ? '99+' : totalPendingRequests}
+              </span>
+            )}
           </Button>
         </div>
       </div>
@@ -783,7 +806,7 @@ export function AdminDashboardPage(): JSX.Element {
       </div>
 
       {/* Row 3: Attendance Punch Requests (7 cols) + Recent Leaves (5 cols) */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+      <div ref={userRequestsSectionRef} className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
         {/* Attendance Punch Requests Widget */}
         <Card className="xl:col-span-7 rounded-2xl border border-border/70 shadow-sm overflow-hidden bg-card flex flex-col justify-between">
           <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-border/40 gap-3">
@@ -842,20 +865,21 @@ export function AdminDashboardPage(): JSX.Element {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-muted/40 text-muted-foreground uppercase text-[10px] font-semibold border-b border-border/60">
-                    <tr>
-                      <th className="px-3.5 py-3">Employee</th>
-                      <th className="px-3.5 py-3">Date</th>
-                      <th className="px-3.5 py-3">Requested In</th>
-                      <th className="px-3.5 py-3">Requested Out</th>
-                      <th className="px-3.5 py-3">Original In / Out</th>
-                      <th className="px-3.5 py-3">Reason / Note</th>
-                      <th className="px-3.5 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40">
+                // CSS Grid, not a <table> — avoids the sticky-column / table-layout conflict
+                // entirely. Columns are also kept narrow enough that the whole row fits
+                // without horizontal scroll at all, so there's no sticky positioning needed
+                // in the first place (the previous sticky-column attempts kept breaking on
+                // this exact interaction).
+                <div>
+                  <div className="grid grid-cols-[0.7fr_0.6fr_2fr_1.3fr_40px_90px] gap-1 bg-muted/40 text-muted-foreground uppercase text-[10px] font-semibold border-b border-border/60">
+                    <div className="px-3.5 py-3">Employee</div>
+                    <div className="px-3.5 py-3">Date</div>
+                    <div className="px-3.5 py-3">Requested In / Out</div>
+                    <div className="px-3.5 py-3">Original In / Out</div>
+                    <div className="py-3"></div>
+                    <div className="px-2 py-3 text-center">Actions</div>
+                  </div>
+                  <div className="divide-y divide-border/40">
                     {pendingRequests.map((r) => {
                       const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim() || 'Employee';
                       const dObj = new Date(r.attendanceDate);
@@ -872,142 +896,136 @@ export function AdminDashboardPage(): JSX.Element {
                       };
 
                       return (
-                        <tr key={r.id} className="hover:bg-muted/15 transition-colors">
+                        <div key={r.id} className="grid grid-cols-[0.7fr_0.6fr_2fr_1.3fr_40px_90px] gap-1 items-center hover:bg-muted/15 transition-colors">
                           {/* Employee */}
-                          <td className="px-3.5 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="h-7 w-7 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center border border-primary/20 shrink-0">
-                                {r.employee?.firstName?.charAt(0) || 'E'}{r.employee?.lastName?.charAt(0) || ''}
-                              </div>
-                              <div>
-                                <div className="font-semibold text-xs text-foreground leading-tight">
-                                  {empName}
-                                </div>
-                                <div className="text-[10px] text-muted-foreground mt-0.5">
-                                  {r.employee?.employeeCode || 'EMP'}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
+                          <div className="px-3.5 py-3 overflow-hidden">
+                            <span className="font-semibold text-xs text-foreground truncate block" title={empName}>
+                              {empName}
+                            </span>
+                          </div>
 
                           {/* Date */}
-                          <td className="px-3.5 py-3 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                              <Calendar size={13} className="text-primary shrink-0" />
-                              <span>{dateStr}</span>
-                            </div>
-                          </td>
+                          <div className="px-3.5 py-3 overflow-hidden">
+                            <span className="text-xs font-medium text-foreground truncate block" title={dateStr}>
+                              {dObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                            </span>
+                          </div>
 
-                          {/* Requested Punch In */}
-                          <td className="px-3.5 py-3 whitespace-nowrap">
+                          {/* Requested In / Out (merged) */}
+                          <div className="px-3.5 py-3 overflow-hidden">
                             {Array.isArray(r.punchPairs) && r.punchPairs.length > 0 ? (
                               <div className="flex flex-col gap-1 py-0.5">
                                 {r.punchPairs.map((p, idx) => (
-                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                                    <Clock size={11} className="text-emerald-600 shrink-0" />
-                                    <span>{formatTime(p.punchInAt)}</span>
-                                  </span>
+                                  <div key={idx} className="flex items-center gap-1">
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                                      <Clock size={11} className="text-emerald-600 shrink-0" />
+                                      <span>{formatTime(p.punchInAt)}</span>
+                                    </span>
+                                    <span className="text-muted-foreground">→</span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
+                                      <Clock size={11} className="text-orange-600 shrink-0" />
+                                      <span>{formatTime(p.punchOutAt)}</span>
+                                    </span>
+                                  </div>
                                 ))}
                               </div>
-                            ) : r.punchInAt ? (
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                                <Clock size={12} className="text-emerald-600 shrink-0" />
-                                {formatTime(r.punchInAt)}
-                              </span>
                             ) : (
-                              <span className="text-muted-foreground font-mono">--:--</span>
-                            )}
-                          </td>
-
-                          {/* Requested Punch Out */}
-                          <td className="px-3.5 py-3 whitespace-nowrap">
-                            {Array.isArray(r.punchPairs) && r.punchPairs.length > 0 ? (
-                              <div className="flex flex-col gap-1 py-0.5">
-                                {r.punchPairs.map((p, idx) => (
-                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
-                                    <Clock size={11} className="text-orange-600 shrink-0" />
-                                    <span>{formatTime(p.punchOutAt)}</span>
+                              <div className="flex items-center gap-1">
+                                {r.punchInAt ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                                    <Clock size={12} className="text-emerald-600 shrink-0" />
+                                    {formatTime(r.punchInAt)}
                                   </span>
-                                ))}
+                                ) : (
+                                  <span className="text-muted-foreground font-mono">--:--</span>
+                                )}
+                                <span className="text-muted-foreground">→</span>
+                                {r.punchOutAt ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
+                                    <Clock size={12} className="text-orange-600 shrink-0" />
+                                    {formatTime(r.punchOutAt)}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground font-mono">--:--</span>
+                                )}
                               </div>
-                            ) : r.punchOutAt ? (
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold text-orange-700 bg-orange-500/10 border border-orange-500/20 text-xs">
-                                <Clock size={12} className="text-orange-600 shrink-0" />
-                                {formatTime(r.punchOutAt)}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground font-mono">--:--</span>
                             )}
-                          </td>
+                          </div>
 
                           {/* Original In / Out */}
-                          <td className="px-3.5 py-3 whitespace-nowrap">
+                          <div className="px-3.5 py-3 overflow-hidden">
                             {Array.isArray(r.originalPairs) && r.originalPairs.length > 0 ? (
                               <div className="text-[11px] text-muted-foreground space-y-0.5">
                                 {r.originalPairs.map((op, idx) => (
-                                  <div key={idx} className="line-through decoration-muted-foreground/60">
-                                    #{idx + 1}: {formatTime(op.punchInAt)} – {formatTime(op.punchOutAt)}
+                                  <div key={idx}>
+                                    <span className="text-muted-foreground/70">#{idx + 1}:</span>{' '}
+                                    <span className="line-through decoration-muted-foreground/60">{formatTime(op.punchInAt)}</span>
+                                    {' – '}
+                                    {op.punchOutAt ? (
+                                      <span className="line-through decoration-muted-foreground/60">{formatTime(op.punchOutAt)}</span>
+                                    ) : (
+                                      <span className="italic">no punch-out</span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
                             ) : (r.originalPunchIn || r.originalPunchOut) ? (
                               <div className="text-[11px] text-muted-foreground space-y-0.5">
                                 {r.originalPunchIn && (
-                                  <div className="line-through decoration-muted-foreground/60">
-                                    In: {formatTime(r.originalPunchIn)}
-                                  </div>
+                                  <div>In: <span className="line-through decoration-muted-foreground/60">{formatTime(r.originalPunchIn)}</span></div>
                                 )}
-                                {r.originalPunchOut && (
-                                  <div className="line-through decoration-muted-foreground/60">
-                                    Out: {formatTime(r.originalPunchOut)}
-                                  </div>
+                                {r.originalPunchOut ? (
+                                  <div>Out: <span className="line-through decoration-muted-foreground/60">{formatTime(r.originalPunchOut)}</span></div>
+                                ) : (
+                                  <div className="italic">no original punch-out</div>
                                 )}
                               </div>
                             ) : (
                               <span className="text-[11px] text-muted-foreground italic">No prior punch</span>
                             )}
-                          </td>
+                          </div>
 
-                          {/* Reason / Note */}
-                          <td className="px-3.5 py-3 max-w-[130px]">
-                            {r.reason ? (
-                              <span className="text-[11px] text-foreground/80 italic line-clamp-2" title={r.reason}>
-                                “{r.reason}”
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-muted-foreground/60 italic">No reason provided</span>
-                            )}
-                          </td>
+                          {/* Reason / Note — icon only, full text in a custom tooltip. The native
+                              title attribute has a ~1-1.5s built-in hover delay in Chromium;
+                              this CSS-only tooltip (group-hover, no transition-delay) shows
+                              instantly instead. */}
+                          <div className="relative group/tip flex items-center justify-center py-3">
+                            <MessageSquareText
+                              size={15}
+                              className={r.reason ? 'text-amber-500 shrink-0 cursor-default' : 'text-muted-foreground/30 shrink-0 cursor-default'}
+                            />
+                            <div className="pointer-events-none absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1.5 hidden group-hover/tip:block w-max max-w-[220px] px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] leading-snug shadow-lg">
+                              {r.reason || 'No reason provided'}
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-slate-900" />
+                            </div>
+                          </div>
 
                           {/* Actions */}
-                          <td className="px-3.5 py-3 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleRejectRequest(r)}
-                                disabled={rejectRequestMutation.isPending || approveRequestMutation.isPending}
-                                className="h-7 text-xs px-2 rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10 font-medium"
-                              >
-                                Reject
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => handleApproveRequest(r)}
-                                disabled={approveRequestMutation.isPending || rejectRequestMutation.isPending}
-                                className="h-7 text-xs px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1 shadow-xs"
-                              >
-                                <CheckCircle2 size={12} />
-                                <span>Approve</span>
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
+                          <div className="px-1.5 py-3 flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleRejectRequest(r)}
+                              disabled={rejectRequestMutation.isPending || approveRequestMutation.isPending}
+                              title="Reject"
+                              className="h-7 w-7 flex items-center justify-center rounded-md border border-rose-500/30 text-rose-600 hover:bg-rose-500/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                            >
+                              <X size={15} strokeWidth={2.5} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveRequest(r)}
+                              disabled={approveRequestMutation.isPending || rejectRequestMutation.isPending}
+                              title="Approve"
+                              className="h-7 w-7 flex items-center justify-center rounded-md border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                            >
+                              <Check size={15} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
             )}
           </CardContent>
         </Card>
@@ -1039,39 +1057,47 @@ export function AdminDashboardPage(): JSX.Element {
                 key={r.id}
                 className="flex flex-col sm:flex-row sm:items-center justify-between border border-border/60 rounded-xl p-3 gap-3 bg-card hover:bg-muted/10 transition-colors"
               >
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="font-medium text-sm text-foreground flex items-center gap-2">
                     <span>{r.employee.firstName} {r.employee.lastName}</span>
                     <StatusBadge status={r.status} />
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                    <span>
+                  <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 min-w-0">
+                    <span className="shrink-0">
                       {new Date(r.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – {new Date(r.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </span>
-                    {r.reason && <span className="truncate">{r.reason}</span>}
+                    {r.reason && (
+                      <div className="relative group/tip flex items-center shrink-0">
+                        <MessageSquareText size={14} className="text-amber-500 cursor-default" />
+                        <div className="pointer-events-none absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1.5 hidden group-hover/tip:block w-max max-w-[220px] px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] leading-snug shadow-lg">
+                          {r.reason}
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-slate-900" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {r.status === 'PENDING' && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs px-2.5 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 rounded-lg"
-                      onClick={() => approveLeave.mutate(r.id)}
-                      disabled={approveLeave.isPending}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs px-2.5 border-rose-500/30 text-rose-600 hover:bg-rose-500/10 rounded-lg"
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
                       onClick={() => rejectLeave.mutate(r.id)}
-                      disabled={rejectLeave.isPending}
+                      disabled={rejectLeave.isPending || approveLeave.isPending}
+                      title="Reject"
+                      className="h-7 w-7 flex items-center justify-center rounded-md border border-rose-500/30 text-rose-600 hover:bg-rose-500/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
                     >
-                      Reject
-                    </Button>
+                      <X size={15} strokeWidth={2.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => approveLeave.mutate(r.id)}
+                      disabled={approveLeave.isPending || rejectLeave.isPending}
+                      title="Approve"
+                      className="h-7 w-7 flex items-center justify-center rounded-md border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                    >
+                      <Check size={15} strokeWidth={2.5} />
+                    </button>
                   </div>
                 )}
               </div>
@@ -1230,6 +1256,50 @@ export function AdminDashboardPage(): JSX.Element {
           </CardContent>
         </Card>
       </div>
+
+      {/* Reject punch request dialog — replaces window.prompt(), which Electron
+          does not reliably support (unlike alert()/confirm()) */}
+      <Dialog open={Boolean(rejectTarget)} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectReason(''); } }}>
+        <DialogContent className="sm:max-w-[420px] rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-foreground">
+              Reject Punch Correction Request
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Rejecting {rejectTarget ? `${rejectTarget.employee?.firstName || ''} ${rejectTarget.employee?.lastName || ''}`.trim() || 'this employee' : ''}'s request. You can add a reason (optional) — they'll see it.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              placeholder="Reason for rejection (optional)"
+              className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <DialogFooter className="pt-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => { setRejectTarget(null); setRejectReason(''); }}
+              className="rounded-lg"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={confirmRejectRequest}
+              disabled={rejectRequestMutation.isPending}
+              className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {rejectRequestMutation.isPending ? 'Rejecting...' : 'Reject Request'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

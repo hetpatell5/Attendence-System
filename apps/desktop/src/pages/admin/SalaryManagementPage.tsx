@@ -314,8 +314,20 @@ export function SalaryManagementPage(): JSX.Element {
     staleTime: 60_000,
   });
 
-  // Build a map of employeeId -> last month's PENDING net salary (carry-forward)
-  const lastPendingMap = useMemo(() => lastPendingData ?? {}, [lastPendingData]);
+  // Build a map of employeeId -> last month's PENDING net salary (carry-forward).
+  // Only applies to the current or a past month — a future month (not yet started,
+  // no attendance generated) shouldn't inherit prior months' pending dues, or the
+  // summary cards show a confusing non-zero "Unpaid" total for a month that hasn't
+  // happened yet.
+  const isCurrentOrPastMonth = useMemo(() => {
+    const now = new Date();
+    const currentMonthIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    return monthIso <= currentMonthIso;
+  }, [monthIso]);
+  const lastPendingMap = useMemo(
+    () => (isCurrentOrPastMonth ? (lastPendingData ?? {}) : {}),
+    [lastPendingData, isCurrentOrPastMonth],
+  );
 
   // Populate local card edits whenever saved salaries or month changes
   useEffect(() => {

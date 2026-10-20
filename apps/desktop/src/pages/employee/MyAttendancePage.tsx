@@ -177,6 +177,7 @@ export function MyAttendancePage(): JSX.Element {
   ]);
   const [reason, setReason] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [isEditingPunch, setIsEditingPunch] = useState(false);
 
   const createRequestMutation = useMutation({
@@ -189,12 +190,17 @@ export function MyAttendancePage(): JSX.Element {
     }) => attendanceRequestsApi.create(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance', 'requests', 'mine'] });
+      setErrorMsg('');
       setFeedbackMsg('Request submitted successfully! Admin will review your punches.');
       setTimeout(() => {
         setFeedbackMsg('');
         setIsEditingPunch(false);
         setEditModalOpen(false);
       }, 1500);
+    },
+    onError: (err: any) => {
+      setFeedbackMsg('');
+      setErrorMsg(err?.message || 'Could not submit your request. Please check the punch times and try again.');
     },
   });
 
@@ -216,6 +222,7 @@ export function MyAttendancePage(): JSX.Element {
     setSelectedAttendance(r ?? null);
     setSelectedRequest(req ?? null);
     setFeedbackMsg('');
+    setErrorMsg('');
     setIsEditingPunch(false);
 
     // Pre-populate punch sessions
@@ -252,6 +259,7 @@ export function MyAttendancePage(): JSX.Element {
   };
 
   const handleSubmitRequest = () => {
+    setErrorMsg('');
     const validPairs = editPunchPairs.filter((p) => p.punchIn.trim() || p.punchOut.trim());
     if (validPairs.length === 0) {
       alert('Please enter at least one punch in time.');
@@ -1297,11 +1305,26 @@ export function MyAttendancePage(): JSX.Element {
             );
           })()}
 
-          {/* Existing Pending Alert if any */}
+          {/* Existing Pending Alert if any — shows what was actually requested, not just that something is pending */}
           {selectedRequest?.status === 'PENDING' && (
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs my-2 font-medium">
-              <AlertCircle size={14} className="shrink-0 text-amber-600" />
-              <span>A correction request is already pending Admin approval.</span>
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs my-2 space-y-1.5">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertCircle size={14} className="shrink-0 text-amber-600" />
+                <span>A correction request is already pending Admin approval.</span>
+              </div>
+              <div className="pl-[22px] space-y-1">
+                {(Array.isArray(selectedRequest.punchPairs) && selectedRequest.punchPairs.length > 0
+                  ? selectedRequest.punchPairs
+                  : [{ punchInAt: selectedRequest.punchInAt, punchOutAt: selectedRequest.punchOutAt }]
+                ).map((p, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-200">
+                    <span className="text-amber-600/70 font-normal">Requested:</span>
+                    <span>{formatIsoTo12h(p.punchInAt)}</span>
+                    <span className="text-amber-600/70">→</span>
+                    <span>{formatIsoTo12h(p.punchOutAt)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1465,6 +1488,14 @@ export function MyAttendancePage(): JSX.Element {
             <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2 mt-3 animate-in fade-in">
               <CheckCircle2 size={14} className="shrink-0" />
               <span>{feedbackMsg}</span>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {errorMsg && (
+            <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2 mt-3 animate-in fade-in">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
